@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amarillo ATS — Fiche Entreprise</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="sidebar-logo">Amarillo ATS</div>
+    <div class="sidebar-nav">
+      <a href="index.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>Dashboard</a>
+      <a href="candidats.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Candidats</a>
+      <a href="missions.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>Missions</a>
+      <a href="entreprises.html" class="active"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>Entreprises</a>
+      <a href="decideurs.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Décideurs</a>
+      <a href="actions.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>Actions</a>
+      <a href="facturation.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Facturation</a>
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid #334155;"><button onclick="UI.showConfigModal()" class="btn btn-secondary" style="width:100%;justify-content:center;font-size:0.75rem;">Configuration</button></div>
+  </nav>
+
+  <div class="main-content">
+    <header class="topbar">
+      <a href="entreprises.html" style="color:#64748b;text-decoration:none;font-size:0.8125rem;">← Retour aux entreprises</a>
+      <div class="search-global"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg><input type="text" placeholder="Rechercher..." /><div class="search-results-dropdown"></div></div>
+    </header>
+    <div class="page-content" id="entreprise-content"></div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/components.js"></script>
+  <script>
+  (async function() {
+    if (!API.isConfigured()) { UI.showConfigModal(); return; }
+    const id = UI.getParam('id');
+    if (!id) { window.location.href = 'entreprises.html'; return; }
+    await Store.loadAll();
+    UI.initGlobalSearch();
+
+    const e = Store.findById('entreprises', id);
+    if (!e) { document.getElementById('entreprise-content').innerHTML = '<div class="empty-state"><p>Entreprise introuvable</p></div>'; return; }
+
+    document.title = `${e.nom} — Amarillo ATS`;
+
+    const decideurs = Store.filter('decideurs', d => d.entreprise_id === id);
+    const candidats = Store.filter('candidats', c => c.entreprise_actuelle_id === id);
+    const actions = Store.filter('actions', a => a.entreprise_id === id);
+
+    document.getElementById('entreprise-content').innerHTML = `
+      <div class="detail-header">
+        <div>
+          <h1>${UI.escHtml(e.nom)}</h1>
+          <div class="subtitle">${UI.escHtml(e.secteur || '')} • ${UI.escHtml(e.taille || '')} • ${UI.escHtml(e.localisation || '')}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${UI.badge(e.icp_fit ? 'Haute' : 'Moyenne')}
+          <span style="font-size:0.8125rem;color:#64748b;">${UI.escHtml(e.statut || '')}</span>
+        </div>
+      </div>
+
+      <div class="detail-grid">
+        <div class="detail-main">
+          <div class="card">
+            <div class="card-header"><h2>Informations</h2></div>
+            <div class="card-body">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">CA</div><div>${UI.escHtml(e.ca || '—')}</div></div>
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Source</div><div>${UI.escHtml(e.source || '—')}</div></div>
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Site web</div><div>${e.site_web ? `<a href="${UI.escHtml(e.site_web)}" target="_blank" class="entity-link">${UI.escHtml(e.site_web)}</a>` : '—'}</div></div>
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Téléphone</div><div>${UI.escHtml(e.telephone || '—')}</div></div>
+              </div>
+              ${e.angle_approche ? `<div style="margin-top:16px;"><div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:4px;">Angle d'approche</div><p style="font-size:0.875rem;white-space:pre-wrap;">${UI.escHtml(e.angle_approche)}</p></div>` : ''}
+              ${e.notes ? `<div style="margin-top:16px;"><div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:4px;">Notes</div><p style="font-size:0.875rem;white-space:pre-wrap;">${UI.escHtml(e.notes)}</p></div>` : ''}
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h2>Décideurs (${decideurs.length})</h2></div>
+            <div class="card-body">
+              ${decideurs.length === 0 ? '<div class="empty-state"><p>Aucun décideur</p></div>' :
+                decideurs.map(d => `
+                  <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+                    <div>
+                      <a href="decideur.html?id=${d.id}" class="entity-link" style="font-weight:600;">${UI.escHtml((d.prenom||'')+' '+(d.nom||''))}</a>
+                      <div style="font-size:0.75rem;color:#64748b;">${UI.escHtml(d.fonction || '')} • ${UI.escHtml(d.niveau_hierarchique || '')}</div>
+                    </div>
+                    <div>${UI.badge(d.priorite_prospection)}</div>
+                  </div>
+                `).join('')}
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h2>Candidats employés (${candidats.length})</h2></div>
+            <div class="card-body">
+              ${candidats.length === 0 ? '<div class="empty-state"><p>Aucun candidat</p></div>' :
+                candidats.map(c => `
+                  <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+                    <div>
+                      <a href="candidat.html?id=${c.id}" class="entity-link" style="font-weight:600;">${UI.escHtml((c.prenom||'')+' '+(c.nom||''))}</a>
+                      <div style="font-size:0.75rem;color:#64748b;">${UI.escHtml(c.poste_actuel || '')}</div>
+                    </div>
+                    <div>${UI.badge(c.statut)}</div>
+                  </div>
+                `).join('')}
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-sidebar">
+          <div class="card">
+            <div class="card-header"><h2>Résumé</h2></div>
+            <div class="card-body">
+              <div style="font-size:0.75rem;color:#64748b;">Décideurs</div>
+              <div style="font-size:1.25rem;font-weight:700;margin-bottom:12px;">${decideurs.length}</div>
+              <div style="font-size:0.75rem;color:#64748b;">Candidats identifiés</div>
+              <div style="font-size:1.25rem;font-weight:700;margin-bottom:12px;">${candidats.length}</div>
+              <div style="font-size:0.75rem;color:#64748b;">Actions</div>
+              <div style="font-size:1.25rem;font-weight:700;margin-bottom:12px;">${actions.length}</div>
+              <div style="margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:0.75rem;color:#94a3b8;">
+                Dernier contact : ${UI.formatDate(e.dernier_contact)}<br/>
+                Prochaine relance : ${UI.formatDate(e.prochaine_relance)}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  })();
+  </script>
+</body>
+</html>

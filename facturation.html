@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amarillo ATS — Facturation</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="sidebar-logo">Amarillo ATS</div>
+    <div class="sidebar-nav">
+      <a href="index.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>Dashboard</a>
+      <a href="candidats.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Candidats</a>
+      <a href="missions.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>Missions</a>
+      <a href="entreprises.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>Entreprises</a>
+      <a href="decideurs.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Décideurs</a>
+      <a href="actions.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>Actions</a>
+      <a href="facturation.html" class="active"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Facturation</a>
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid #334155;"><button onclick="UI.showConfigModal()" class="btn btn-secondary" style="width:100%;justify-content:center;font-size:0.75rem;">Configuration</button></div>
+  </nav>
+
+  <div class="main-content">
+    <header class="topbar">
+      <h1 class="topbar-title">Facturation</h1>
+      <div class="search-global"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg><input type="text" placeholder="Rechercher..." /><div class="search-results-dropdown"></div></div>
+      <button class="btn btn-primary" id="btn-new-facture">+ Nouvelle facture</button>
+    </header>
+
+    <div class="page-content">
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-label">CA facturé HT</div><div class="kpi-value" id="kpi-facture">—</div></div>
+        <div class="kpi-card"><div class="kpi-label">CA encaissé</div><div class="kpi-value" id="kpi-encaisse">—</div></div>
+        <div class="kpi-card"><div class="kpi-label">En attente</div><div class="kpi-value" id="kpi-attente">—</div></div>
+        <div class="kpi-card"><div class="kpi-label">Nb factures</div><div class="kpi-value" id="kpi-nb">—</div></div>
+      </div>
+
+      <div class="card"><div class="card-body"><div id="factures-table"></div></div></div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/components.js"></script>
+  <script>
+  (async function() {
+    if (!API.isConfigured()) { UI.showConfigModal(); return; }
+    await Store.loadAll();
+    UI.initGlobalSearch();
+
+    const factures = Store.get('facturation');
+
+    const totalHT = factures.reduce((s, f) => s + (f.montant_ht || 0), 0);
+    const totalEncaisse = factures.reduce((s, f) => s + (f.montant_encaisse || 0), 0);
+
+    document.getElementById('kpi-facture').textContent = UI.formatCurrency(totalHT);
+    document.getElementById('kpi-encaisse').textContent = UI.formatCurrency(totalEncaisse);
+    document.getElementById('kpi-attente').textContent = UI.formatCurrency(totalHT - totalEncaisse);
+    document.getElementById('kpi-nb').textContent = factures.length;
+
+    UI.dataTable('factures-table', {
+      columns: [
+        { key: 'facture', label: 'N° Facture', render: r => `<strong>${UI.escHtml(r.facture || '')}</strong>` },
+        { key: 'mission', label: 'Mission', render: r => r.mission_id ? UI.resolveLink('missions', r.mission_id) : '—' },
+        { key: 'montant_ht', label: 'Montant HT', render: r => UI.formatCurrency(r.montant_ht) },
+        { key: 'montant_ttc', label: 'Montant TTC', render: r => UI.formatCurrency(r.montant_ttc) },
+        { key: 'date_emission', label: 'Émission', render: r => UI.formatDate(r.date_emission) },
+        { key: 'date_echeance', label: 'Échéance', render: r => UI.formatDate(r.date_echeance) },
+        { key: 'paye', label: 'Payé', render: r => r.paye ? '<span style="color:#16a34a;font-weight:600;">Oui</span>' : '<span style="color:#dc2626;">Non</span>' },
+        { key: 'type_facture', label: 'Type' },
+      ],
+      data: factures,
+      emptyMessage: 'Aucune facture'
+    });
+
+    document.getElementById('btn-new-facture').addEventListener('click', () => {
+      const missions = Store.get('missions');
+      const candidats = Store.get('candidats');
+
+      const bodyHtml = `
+        <div class="form-group"><label>N° Facture</label><input type="text" id="f-num" placeholder="FA-2025-001" /></div>
+        <div class="form-row">
+          <div class="form-group"><label>Mission</label>
+            <select id="f-mission"><option value="">—</option>${missions.map(m=>`<option value="${m.id}">${UI.escHtml(m.nom||m.ref)}</option>`).join('')}</select>
+          </div>
+          <div class="form-group"><label>Candidat placé</label>
+            <select id="f-candidat"><option value="">—</option>${candidats.map(c=>`<option value="${c.id}">${UI.escHtml((c.prenom||'')+' '+(c.nom||''))}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Montant HT (€)</label><input type="number" id="f-ht" /></div>
+          <div class="form-group"><label>TVA (%)</label><input type="number" id="f-tva" value="20" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Date émission</label><input type="date" id="f-emission" value="${new Date().toISOString().split('T')[0]}" /></div>
+          <div class="form-group"><label>Date échéance</label><input type="date" id="f-echeance" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Type</label>
+            <select id="f-type"><option value="Succès">Succès</option><option value="Acompte">Acompte</option></select>
+          </div>
+          <div class="form-group"><label>Payé ?</label>
+            <select id="f-paye"><option value="false">Non</option><option value="true">Oui</option></select>
+          </div>
+        </div>
+      `;
+
+      UI.modal('Nouvelle facture', bodyHtml, {
+        width: 560,
+        onSave: async (overlay) => {
+          const ht = parseFloat(overlay.querySelector('#f-ht').value) || 0;
+          const tva = parseFloat(overlay.querySelector('#f-tva').value) || 20;
+          const data = {
+            id: API.generateId('fac'),
+            facture: overlay.querySelector('#f-num').value.trim(),
+            mission_id: overlay.querySelector('#f-mission').value || null,
+            candidat_place_id: overlay.querySelector('#f-candidat').value || null,
+            montant_ht: ht,
+            tva_pct: tva,
+            montant_ttc: Math.round(ht * (1 + tva/100) * 100) / 100,
+            montant_encaisse: 0,
+            date_emission: overlay.querySelector('#f-emission').value || null,
+            date_echeance: overlay.querySelector('#f-echeance').value || null,
+            date_paiement: null,
+            paye: overlay.querySelector('#f-paye').value === 'true',
+            type_facture: overlay.querySelector('#f-type').value,
+            statut: 'Émise',
+          };
+          await Store.add('facturation', data);
+          UI.toast('Facture créée');
+          setTimeout(() => location.reload(), 500);
+        }
+      });
+    });
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+# Ne pas commiter les données et configs sensibles
+data/jsonbin-config.json
+data/upload-to-jsonbin.js
+data/*.json
+js/migration.js

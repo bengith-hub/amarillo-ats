@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amarillo ATS — Fiche Mission</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="sidebar-logo">Amarillo ATS</div>
+    <div class="sidebar-nav">
+      <a href="index.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>Dashboard</a>
+      <a href="candidats.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Candidats</a>
+      <a href="missions.html" class="active"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>Missions</a>
+      <a href="entreprises.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>Entreprises</a>
+      <a href="decideurs.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Décideurs</a>
+      <a href="actions.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>Actions</a>
+      <a href="facturation.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Facturation</a>
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid #334155;"><button onclick="UI.showConfigModal()" class="btn btn-secondary" style="width:100%;justify-content:center;font-size:0.75rem;">Configuration</button></div>
+  </nav>
+
+  <div class="main-content">
+    <header class="topbar">
+      <a href="missions.html" style="color:#64748b;text-decoration:none;font-size:0.8125rem;">← Retour aux missions</a>
+      <div class="search-global"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg><input type="text" placeholder="Rechercher..." /><div class="search-results-dropdown"></div></div>
+    </header>
+    <div class="page-content" id="mission-content"></div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/components.js"></script>
+  <script>
+  (async function() {
+    if (!API.isConfigured()) { UI.showConfigModal(); return; }
+    const id = UI.getParam('id');
+    if (!id) { window.location.href = 'missions.html'; return; }
+    await Store.loadAll();
+    UI.initGlobalSearch();
+
+    const m = Store.findById('missions', id);
+    if (!m) { document.getElementById('mission-content').innerHTML = '<div class="empty-state"><p>Mission introuvable</p></div>'; return; }
+
+    document.title = `${m.nom||m.ref||''} — Amarillo ATS`;
+
+    const candidats = (m.candidats_ids || []).map(cid => Store.findById('candidats', cid)).filter(Boolean);
+    const decideurs = (m.decideurs_ids || []).map(did => Store.findById('decideurs', did)).filter(Boolean);
+    const actions = Store.filter('actions', a => a.mission_id === id);
+    const candidatPlace = m.candidat_place_id ? Store.findById('candidats', m.candidat_place_id) : null;
+
+    // Exclusivité calcul
+    let excluStatus = '—';
+    if (m.date_demarrage && m.duree_exclusivite_sem) {
+      const start = new Date(m.date_demarrage);
+      const end = new Date(start.getTime() + m.duree_exclusivite_sem * 7 * 24*60*60*1000);
+      const now = new Date();
+      if (now < start) excluStatus = '<span style="color:#94a3b8;">Non démarrée</span>';
+      else if (now > end) excluStatus = '<span style="color:#dc2626;">Expirée</span>';
+      else {
+        const daysLeft = Math.ceil((end - now) / (24*60*60*1000));
+        excluStatus = `<span style="color:#16a34a;">Active — ${daysLeft}j restants</span>`;
+      }
+    }
+
+    document.getElementById('mission-content').innerHTML = `
+      <div class="detail-header">
+        <div>
+          <h1>${UI.escHtml(m.nom || '')}</h1>
+          <div class="subtitle">${UI.escHtml(m.ref || '')} ${m.date_demarrage ? `• Démarrage : ${UI.formatDate(m.date_demarrage)}` : ''}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${UI.badge(m.statut)} ${UI.badge(m.niveau)}
+        </div>
+      </div>
+
+      <div class="detail-grid">
+        <div class="detail-main">
+          <div class="card">
+            <div class="card-header"><h2>Cadre de mission</h2></div>
+            <div class="card-body">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Taux honoraires</div><div style="font-size:1.125rem;font-weight:700;">${m.taux_honoraires || '—'}%</div></div>
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Fee estimée</div><div style="font-size:1.125rem;font-weight:700;">${UI.formatCurrency(m.fee_estimee)}</div></div>
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Probabilité</div><div style="font-size:1.125rem;font-weight:700;">${m.probabilite || '—'}%</div></div>
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Exclusivité</div><div>${UI.escHtml(m.exclusivite || '—')} (${m.duree_exclusivite_sem || '—'} sem)</div></div>
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Statut exclusivité</div><div>${excluStatus}</div></div>
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Garantie</div><div>${UI.escHtml(m.garantie || '—')}</div></div>
+              </div>
+              ${m.notes ? `<div style="margin-top:16px;"><div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:4px;">Notes</div><p style="white-space:pre-wrap;font-size:0.875rem;">${UI.escHtml(m.notes)}</p></div>` : ''}
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h2>Candidats en lice (${candidats.length})</h2></div>
+            <div class="card-body">
+              ${candidats.length === 0 ? '<div class="empty-state"><p>Aucun candidat associé</p></div>' :
+                candidats.map(c => `
+                  <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f1f5f9;">
+                    <div>
+                      <a href="candidat.html?id=${c.id}" class="entity-link" style="font-weight:600;">${UI.escHtml((c.prenom||'')+' '+(c.nom||''))}</a>
+                      <div style="font-size:0.75rem;color:#64748b;">${UI.escHtml(c.poste_actuel || '')}</div>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                      ${UI.badge(c.statut)}
+                      ${candidatPlace && candidatPlace.id === c.id ? '<span class="badge badge-place">Placé</span>' : ''}
+                    </div>
+                  </div>
+                `).join('')}
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h2>Actions liées (${actions.length})</h2></div>
+            <div class="card-body"><div id="mission-timeline"></div></div>
+          </div>
+        </div>
+
+        <div class="detail-sidebar">
+          <div class="card">
+            <div class="card-header"><h2>Décideurs</h2></div>
+            <div class="card-body">
+              ${decideurs.length === 0 ? '<p style="color:#94a3b8;font-size:0.8125rem;">Aucun décideur lié</p>' :
+                decideurs.map(d => `
+                  <div style="margin-bottom:8px;">
+                    <a href="decideur.html?id=${d.id}" class="entity-link" style="font-weight:600;">${UI.escHtml((d.prenom||'')+' '+(d.nom||''))}</a>
+                    <div style="font-size:0.75rem;color:#64748b;">${UI.escHtml(d.fonction||'')}</div>
+                  </div>
+                `).join('')}
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px;">
+            <div class="card-header"><h2>Résumé</h2></div>
+            <div class="card-body">
+              <div style="font-size:0.75rem;color:#64748b;">Candidats</div>
+              <div style="font-size:1.25rem;font-weight:700;margin-bottom:8px;">${candidats.length}</div>
+              <div style="font-size:0.75rem;color:#64748b;">Actions</div>
+              <div style="font-size:1.25rem;font-weight:700;margin-bottom:8px;">${actions.length}</div>
+              <div style="font-size:0.75rem;color:#64748b;">Priorité</div>
+              <div style="margin-bottom:8px;">${UI.badge(m.priorite)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    UI.timeline('mission-timeline', actions);
+  })();
+  </script>
+</body>
+</html>
