@@ -81,6 +81,7 @@
         <div class="kpi-card">
           <div class="kpi-label">Actions à faire</div>
           <div class="kpi-value" id="kpi-actions">—</div>
+          <div class="kpi-sub" id="kpi-actions-sub"></div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Fees potentielles</div>
@@ -88,7 +89,17 @@
         </div>
       </div>
 
-      <!-- Actions du jour -->
+      <!-- Bloc urgent -->
+      <div class="card" style="border-left:4px solid #dc2626;">
+        <div class="card-header">
+          <h2>⚠️ Urgent — Actions en retard & relances</h2>
+        </div>
+        <div class="card-body">
+          <div id="dashboard-urgent"></div>
+        </div>
+      </div>
+
+      <!-- Actions à faire -->
       <div class="card">
         <div class="card-header">
           <h2>Actions à faire</h2>
@@ -99,7 +110,28 @@
         </div>
       </div>
 
-      <!-- Pipeline mini -->
+      <!-- Relances à venir -->
+      <div class="card">
+        <div class="card-header">
+          <h2>🔔 Relances à venir (7 jours)</h2>
+        </div>
+        <div class="card-body">
+          <div id="dashboard-relances"></div>
+        </div>
+      </div>
+
+      <!-- Pipeline candidats -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Pipeline Candidats</h2>
+          <a href="candidats.html" class="btn btn-sm btn-secondary">Voir tout</a>
+        </div>
+        <div class="card-body">
+          <div id="dashboard-pipeline-candidats"></div>
+        </div>
+      </div>
+
+      <!-- Pipeline missions -->
       <div class="card">
         <div class="card-header">
           <h2>Pipeline Missions</h2>

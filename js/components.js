@@ -16,10 +16,24 @@ const UI = (() => {
     // Actions
     'À faire': 'badge-a-faire',
     'A faire': 'badge-a-faire',
+    'En cours': 'badge-en-cours',
     'Fait': 'badge-fait',
+    'Annulé': 'badge-annule',
     // Priorité
     'Haute': 'badge-haute',
     'Moyenne': 'badge-moyenne',
+    'Basse': 'badge-basse',
+    // Canaux
+    'LinkedIn': 'badge-linkedin',
+    'Appel': 'badge-appel',
+    'Email': 'badge-email',
+    'Visio': 'badge-visio',
+    // Présentations
+    'En attente': 'badge-a-faire',
+    'Intéressé': 'badge-en-cours',
+    'Entretien planifié': 'badge-shortliste',
+    'Refusé': 'badge-annule',
+    'Offre': 'badge-place',
     // Niveau
     'Middle': 'badge-middle',
     'Top': 'badge-top',

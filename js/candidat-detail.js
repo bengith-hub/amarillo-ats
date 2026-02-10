@@ -23,8 +23,10 @@
   renderEntretien();
   renderMissions();
   renderActions();
+  renderPresentations();
   renderReferences();
   renderSidebar();
+  renderEntreprisesCibles();
 
   function renderHeader() {
     const entreprise = candidat.entreprise_actuelle_id ? Store.resolve('entreprises', candidat.entreprise_actuelle_id) : null;
@@ -214,19 +216,167 @@
   }
 
   function renderActions() {
-    const actions = Store.filter('actions', a => a.candidat_id === id);
+    const actions = Store.filter('actions', a => a.candidat_id === id)
+      .sort((a, b) => (b.date_action || '').localeCompare(a.date_action || ''));
+    const todayStr = new Date().toISOString().split('T')[0];
+
     document.getElementById('tab-actions').innerHTML = `
       <div class="card">
         <div class="card-header">
-          <h2>Historique des actions</h2>
+          <h2>Historique des actions (${actions.length})</h2>
           <button class="btn btn-sm btn-primary" onclick="newAction()">+ Action</button>
         </div>
         <div class="card-body">
-          <div id="candidat-timeline"></div>
+          <div id="candidat-actions-table"></div>
         </div>
       </div>
     `;
-    UI.timeline('candidat-timeline', actions);
+
+    UI.dataTable('candidat-actions-table', {
+      columns: [
+        { key: 'action', label: 'Action', render: r => {
+          const overdue = (r.statut === 'À faire' || r.statut === 'A faire') && r.date_action && r.date_action < todayStr;
+          return `<strong${overdue ? ' style="color:#dc2626;"' : ''}>${UI.escHtml(r.action || '')}</strong>`;
+        }},
+        { key: 'type_action', label: 'Type', render: r => `<span style="font-size:0.75rem;color:#64748b;">${UI.escHtml(r.type_action || '')}</span>` },
+        { key: 'canal', label: 'Canal', render: r => UI.badge(r.canal) },
+        { key: 'date_action', label: 'Date', render: r => UI.formatDate(r.date_action) },
+        { key: 'next_step', label: 'Next step', render: r => r.next_step ? `<span style="font-size:0.75rem;color:#c9a000;">→ ${UI.escHtml(r.next_step)}</span>` : '' },
+        { key: 'statut', label: 'Statut', render: r => UI.badge(r.statut) },
+      ],
+      data: actions,
+      onRowClick: (actionId) => showActionDetail(actionId),
+      emptyMessage: 'Aucune action enregistrée'
+    });
+  }
+
+  // Show action detail modal (consult / edit / delete)
+  function showActionDetail(actionId) {
+    const action = Store.findById('actions', actionId);
+    if (!action) return;
+    const missionName = action.mission_id ? (Store.resolve('missions', action.mission_id)?.displayName || '') : '';
+
+    const bodyHtml = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Action</div><div style="font-size:0.875rem;">${UI.escHtml(action.action || '—')}</div></div>
+        <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Type</div><div style="font-size:0.875rem;">${UI.escHtml(action.type_action || '—')}</div></div>
+        <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Canal</div><div>${UI.badge(action.canal)}</div></div>
+        <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Statut</div><div>${UI.badge(action.statut)}</div></div>
+        <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Date</div><div style="font-size:0.875rem;">${UI.formatDate(action.date_action)}</div></div>
+        <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Réponse</div><div style="font-size:0.875rem;">${action.reponse ? '<span style="color:#16a34a;font-weight:600;">Oui</span>' : 'Non'}</div></div>
+        ${missionName ? `<div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Mission</div><div style="font-size:0.875rem;">${UI.escHtml(missionName)}</div></div>` : ''}
+        ${action.date_relance ? `<div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Relance</div><div style="font-size:0.875rem;">${UI.formatDate(action.date_relance)}</div></div>` : ''}
+      </div>
+      ${action.message_notes ? `
+        <div style="margin-bottom:12px;">
+          <div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:4px;">Message / Notes</div>
+          <div style="background:#f8fafc;border-radius:8px;padding:12px;font-size:0.8125rem;white-space:pre-wrap;max-height:300px;overflow-y:auto;border:1px solid #e2e8f0;">${UI.escHtml(action.message_notes)}</div>
+        </div>
+      ` : ''}
+      ${action.next_step ? `
+        <div style="margin-bottom:16px;">
+          <div style="font-size:0.75rem;font-weight:600;color:#c9a000;margin-bottom:4px;">→ Next step</div>
+          <div style="font-size:0.875rem;">${UI.escHtml(action.next_step)}</div>
+        </div>
+      ` : ''}
+      <div style="display:flex;gap:8px;border-top:1px solid #e2e8f0;padding-top:16px;">
+        <button class="btn btn-primary btn-sm" id="action-edit-btn" style="flex:1;">✏️ Modifier</button>
+        <button class="btn btn-secondary btn-sm" id="action-toggle-btn" style="flex:1;">${action.statut === 'Fait' ? '↩️ Remettre à faire' : '✅ Marquer fait'}</button>
+        <button class="btn btn-danger btn-sm" id="action-delete-btn">🗑️ Supprimer</button>
+      </div>
+    `;
+
+    const { close } = UI.modal('Détail de l\'action', bodyHtml, { width: 560 });
+
+    setTimeout(() => {
+      document.getElementById('action-edit-btn')?.addEventListener('click', () => {
+        close();
+        showEditActionModal(action);
+      });
+      document.getElementById('action-toggle-btn')?.addEventListener('click', async () => {
+        const newStatut = action.statut === 'Fait' ? 'À faire' : 'Fait';
+        await Store.update('actions', actionId, { statut: newStatut });
+        UI.toast('Statut mis à jour');
+        close();
+        setTimeout(() => location.reload(), 500);
+      });
+      document.getElementById('action-delete-btn')?.addEventListener('click', () => {
+        close();
+        UI.modal('Confirmer la suppression', `<p style="color:#dc2626;">Supprimer l'action « ${UI.escHtml(action.action)} » ?</p>`, {
+          saveLabel: 'Supprimer',
+          onSave: async () => {
+            await Store.remove('actions', actionId);
+            UI.toast('Action supprimée');
+            setTimeout(() => location.reload(), 500);
+          }
+        });
+      });
+    }, 50);
+  }
+
+  // Edit action modal (full form)
+  function showEditActionModal(a) {
+    const allMissions = Store.get('missions');
+    const tplOpts = typeof TEMPLATES !== 'undefined' ? Object.entries(TEMPLATES).map(([k, t]) => `<option value="${k}">${t.icon} ${t.title}</option>`).join('') : '';
+
+    UI.modal('Modifier l\'action', `
+      <div class="form-group"><label>Action</label><input type="text" id="ea-action" value="${UI.escHtml(a.action || '')}" /></div>
+      <div class="form-row">
+        <div class="form-group"><label>Type</label><select id="ea-type">${['Prise de contact','Qualification candidat','Présentation candidat','Suivi candidat','Prise de référence','Suivi intégration','Prospection','Autre'].map(s=>`<option value="${s}" ${a.type_action===s?'selected':''}>${s}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Canal</label><select id="ea-canal">${['LinkedIn','Appel','Email','Visio','Physique','SMS','Autre'].map(s=>`<option value="${s}" ${a.canal===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Statut</label><select id="ea-statut"><option value="À faire" ${(a.statut==='À faire'||a.statut==='A faire')?'selected':''}>À faire</option><option value="En cours" ${a.statut==='En cours'?'selected':''}>En cours</option><option value="Fait" ${a.statut==='Fait'?'selected':''}>Fait</option><option value="Annulé" ${a.statut==='Annulé'?'selected':''}>Annulé</option></select></div>
+        <div class="form-group"><label>Date</label><input type="date" id="ea-date" value="${a.date_action || ''}" /></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Mission</label><select id="ea-mission"><option value="">— Aucune —</option>${allMissions.map(m=>`<option value="${m.id}" ${a.mission_id===m.id?'selected':''}>${UI.escHtml(m.nom||m.ref)}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Réponse</label><select id="ea-reponse"><option value="false" ${!a.reponse?'selected':''}>Non</option><option value="true" ${a.reponse?'selected':''}>Oui</option></select></div>
+      </div>
+      ${tplOpts ? `<div class="form-group" style="background:#FFFDF0;border:1px solid #FEE566;border-radius:8px;padding:12px;"><label style="color:#c9a000;">📋 Trame</label><select id="ea-template"><option value="">—</option>${tplOpts}</select><div id="ea-tpl-preview" style="display:none;max-height:150px;overflow-y:auto;font-size:0.8125rem;background:#fff;border-radius:6px;padding:8px;border:1px solid #e2e8f0;margin-top:8px;"></div></div>` : ''}
+      <div class="form-group"><label>Message / Notes</label><textarea id="ea-notes" style="min-height:120px;">${UI.escHtml(a.message_notes || '')}</textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Next step</label><input type="text" id="ea-next" value="${UI.escHtml(a.next_step || '')}" /></div>
+        <div class="form-group"><label>Relance</label><input type="date" id="ea-relance" value="${a.date_relance || ''}" /></div>
+      </div>
+    `, {
+      width: 640,
+      onSave: async (overlay) => {
+        await Store.update('actions', a.id, {
+          action: overlay.querySelector('#ea-action').value.trim(),
+          type_action: overlay.querySelector('#ea-type').value,
+          canal: overlay.querySelector('#ea-canal').value,
+          statut: overlay.querySelector('#ea-statut').value,
+          date_action: overlay.querySelector('#ea-date').value,
+          mission_id: overlay.querySelector('#ea-mission').value || null,
+          reponse: overlay.querySelector('#ea-reponse').value === 'true',
+          message_notes: overlay.querySelector('#ea-notes').value.trim(),
+          next_step: overlay.querySelector('#ea-next').value.trim(),
+          date_relance: overlay.querySelector('#ea-relance').value || null,
+        });
+        UI.toast('Action mise à jour');
+        setTimeout(() => location.reload(), 500);
+      }
+    });
+    // Template inject for edit
+    setTimeout(() => {
+      const sel = document.getElementById('ea-template');
+      const prev = document.getElementById('ea-tpl-preview');
+      if (sel && prev) sel.addEventListener('change', () => {
+        const k = sel.value;
+        if (k && TEMPLATES[k]) {
+          prev.style.display = 'block';
+          prev.innerHTML = renderTemplate(k) + '<button class="btn btn-primary btn-sm" id="ea-tpl-inject" style="margin-top:6px;width:100%;">Insérer</button>';
+          document.getElementById('ea-tpl-inject').addEventListener('click', (e) => {
+            e.preventDefault();
+            const n = document.getElementById('ea-notes');
+            n.value = n.value + (n.value ? '\n\n' : '') + renderTemplateText(k);
+            prev.innerHTML = '<div style="color:#16a34a;text-align:center;padding:6px;">✓ Insérée</div>';
+            setTimeout(() => { prev.style.display = 'none'; sel.value = ''; }, 1200);
+          });
+        } else prev.style.display = 'none';
+      });
+    }, 100);
   }
 
   function renderReferences() {
@@ -296,7 +446,9 @@
           </div>
         ` : ''}
 
-        <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;">
+        <div id="entreprises-cibles" style="margin-top:16px;padding-top:16px;border-top:1px solid #e2e8f0;"></div>
+
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid #e2e8f0;">
           <div style="font-size:0.75rem;color:#94a3b8;">
             Créé le ${UI.formatDate(candidat.created_at)}<br/>
             Modifié le ${UI.formatDate(candidat.updated_at)}
@@ -340,6 +492,10 @@
   // New action for this candidat
   window.newAction = function() {
     const missions = Store.get('missions');
+    const templateOptions = typeof TEMPLATES !== 'undefined' ? Object.entries(TEMPLATES).map(([key, tpl]) =>
+      `<option value="${key}">${tpl.icon} ${tpl.title}</option>`
+    ).join('') : '';
+
     UI.modal('Nouvelle action', `
       <div class="form-group">
         <label>Action</label>
@@ -349,40 +505,59 @@
         <div class="form-group">
           <label>Type</label>
           <select id="a-type">
-            <option value="Prise de contact">Prise de contact</option>
-            <option value="Qualification candidat">Qualification candidat</option>
-            <option value="Suivi">Suivi</option>
+            ${['Prise de contact','Qualification candidat','Présentation candidat','Suivi candidat','Prise de référence','Suivi intégration','Prospection','Autre'].map(s => `<option value="${s}">${s}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
           <label>Canal</label>
           <select id="a-canal">
-            <option value="LinkedIn">LinkedIn</option>
-            <option value="Appel">Appel</option>
-            <option value="Email">Email</option>
+            ${['LinkedIn','Appel','Email','Visio','Physique','SMS','Autre'].map(s => `<option value="${s}">${s}</option>`).join('')}
           </select>
         </div>
       </div>
       <div class="form-row">
         <div class="form-group">
+          <label>Statut</label>
+          <select id="a-statut">
+            <option value="À faire">À faire</option>
+            <option value="Fait" selected>Fait</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label>Date</label>
           <input type="date" id="a-date" value="${new Date().toISOString().split('T')[0]}" />
         </div>
-        <div class="form-group">
-          <label>Mission liée</label>
-          <select id="a-mission">
-            <option value="">— Aucune —</option>
-            ${missions.map(m => `<option value="${m.id}">${UI.escHtml(m.nom || m.ref)}</option>`).join('')}
-          </select>
-        </div>
       </div>
+      <div class="form-group">
+        <label>Mission liée</label>
+        <select id="a-mission">
+          <option value="">— Aucune —</option>
+          ${missions.map(m => `<option value="${m.id}">${UI.escHtml(m.nom || m.ref)}</option>`).join('')}
+        </select>
+      </div>
+      ${templateOptions ? `
+      <div class="form-group" style="background:#FFFDF0;border:1px solid #FEE566;border-radius:8px;padding:12px;">
+        <label style="color:#c9a000;">📋 Utiliser une trame</label>
+        <select id="a-template" style="margin-bottom:8px;">
+          <option value="">— Choisir un template —</option>
+          ${templateOptions}
+        </select>
+        <div id="a-template-preview" style="display:none;max-height:200px;overflow-y:auto;font-size:0.8125rem;color:#475569;background:#fff;border-radius:6px;padding:10px;border:1px solid #e2e8f0;"></div>
+      </div>
+      ` : ''}
       <div class="form-group">
         <label>Message / Notes</label>
-        <textarea id="a-notes"></textarea>
+        <textarea id="a-notes" style="min-height:120px;"></textarea>
       </div>
-      <div class="form-group">
-        <label>Next step</label>
-        <input type="text" id="a-next" />
+      <div class="form-row">
+        <div class="form-group">
+          <label>Next step</label>
+          <input type="text" id="a-next" />
+        </div>
+        <div class="form-group">
+          <label>Date relance</label>
+          <input type="date" id="a-relance" />
+        </div>
       </div>
     `, {
       onSave: async (overlay) => {
@@ -391,7 +566,7 @@
           action: overlay.querySelector('#a-action').value.trim(),
           type_action: overlay.querySelector('#a-type').value,
           canal: overlay.querySelector('#a-canal').value,
-          statut: 'Fait',
+          statut: overlay.querySelector('#a-statut').value,
           phase: 'Qualification',
           date_action: overlay.querySelector('#a-date').value,
           candidat_id: id,
@@ -400,17 +575,46 @@
           entreprise_id: null,
           message_notes: overlay.querySelector('#a-notes').value.trim(),
           next_step: overlay.querySelector('#a-next').value.trim(),
+          date_relance: overlay.querySelector('#a-relance') ? overlay.querySelector('#a-relance').value || null : null,
           reponse: false,
+          priorite: null,
           finalite: '',
           objectif: '',
           moment_suivi: '',
-          date_relance: '',
         };
         await Store.add('actions', action);
         UI.toast('Action créée');
         setTimeout(() => location.reload(), 500);
       }
     });
+
+    // Template selector handler
+    setTimeout(() => {
+      const tplSelect = document.getElementById('a-template');
+      const tplPreview = document.getElementById('a-template-preview');
+      if (tplSelect && tplPreview) {
+        tplSelect.addEventListener('change', () => {
+          const key = tplSelect.value;
+          if (key && typeof TEMPLATES !== 'undefined' && TEMPLATES[key]) {
+            tplPreview.style.display = 'block';
+            tplPreview.innerHTML = renderTemplate(key) +
+              '<button class="btn btn-primary btn-sm" id="tpl-inject" style="margin-top:8px;width:100%;">Insérer dans les notes</button>';
+            document.getElementById('tpl-inject').addEventListener('click', (e) => {
+              e.preventDefault();
+              const notesArea = document.getElementById('a-notes');
+              const text = renderTemplateText(key);
+              const current = notesArea.value;
+              notesArea.value = current + (current ? '\n\n' : '') + text;
+              notesArea.style.minHeight = '300px';
+              tplPreview.innerHTML = '<div style="color:#16a34a;font-weight:600;text-align:center;padding:8px;">✓ Trame insérée</div>';
+              setTimeout(() => { tplPreview.style.display = 'none'; tplSelect.value = ''; }, 1500);
+            });
+          } else {
+            tplPreview.style.display = 'none';
+          }
+        });
+      }
+    }, 100);
   };
 
   // Edit modal (reuse candidats.js logic)
@@ -506,5 +710,217 @@
         setTimeout(() => location.reload(), 500);
       }
     });
+  }
+
+  // ============================================================
+  // PRÉSENTATIONS — suivi des envois de CV aux entreprises
+  // ============================================================
+  function renderPresentations() {
+    const presentations = candidat.presentations || [];
+    const entreprises = Store.get('entreprises');
+
+    document.getElementById('tab-presentations').innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <h2>Présentations aux entreprises (${presentations.length})</h2>
+          <button class="btn btn-sm btn-primary" id="btn-add-presentation">+ Présentation</button>
+        </div>
+        <div class="card-body">
+          <div id="presentations-list"></div>
+        </div>
+      </div>
+    `;
+
+    const container = document.getElementById('presentations-list');
+    if (presentations.length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>Aucune présentation enregistrée</p></div>';
+    } else {
+      container.innerHTML = `
+        <div class="data-table-wrapper"><table class="data-table"><thead><tr>
+          <th>Entreprise</th><th>Date d'envoi</th><th>Anonymisé</th><th>Statut retour</th><th>Notes</th><th></th>
+        </tr></thead><tbody>
+        ${presentations.map((p, idx) => {
+          const ent = p.entreprise_id ? Store.resolve('entreprises', p.entreprise_id) : null;
+          return `<tr>
+            <td><strong>${ent ? UI.entityLink('entreprises', ent.id, ent.displayName) : UI.escHtml(p.entreprise_nom || '—')}</strong></td>
+            <td>${UI.formatDate(p.date_envoi)}</td>
+            <td>${p.anonymise ? '<span style="color:#c9a000;font-weight:600;">Oui</span>' : 'Non'}</td>
+            <td>${UI.badge(p.statut_retour || 'En attente')}</td>
+            <td style="font-size:0.75rem;color:#64748b;max-width:200px;overflow:hidden;text-overflow:ellipsis;">${UI.escHtml(p.notes || '')}</td>
+            <td><button class="btn btn-sm btn-danger" data-pres-delete="${idx}">✕</button></td>
+          </tr>`;
+        }).join('')}
+        </tbody></table></div>
+      `;
+
+      // Delete handlers
+      container.querySelectorAll('[data-pres-delete]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const idx = parseInt(btn.dataset.presDelete);
+          const updated = [...presentations];
+          updated.splice(idx, 1);
+          await Store.update('candidats', id, { presentations: updated });
+          UI.toast('Présentation supprimée');
+          setTimeout(() => location.reload(), 500);
+        });
+      });
+    }
+
+    // Add presentation button
+    document.getElementById('btn-add-presentation').addEventListener('click', () => {
+      UI.modal('Nouvelle présentation', `
+        <div class="form-group">
+          <label>Entreprise</label>
+          <input type="text" id="pres-entreprise-search" placeholder="Tapez pour rechercher..." />
+          <input type="hidden" id="pres-entreprise-id" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Date d'envoi</label>
+            <input type="date" id="pres-date" value="${new Date().toISOString().split('T')[0]}" />
+          </div>
+          <div class="form-group">
+            <label>Anonymisé ?</label>
+            <select id="pres-anonymise">
+              <option value="true">Oui — profil anonymisé</option>
+              <option value="false">Non — nom complet</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Statut retour</label>
+          <select id="pres-statut">
+            <option value="En attente">En attente</option>
+            <option value="Intéressé">Intéressé</option>
+            <option value="Entretien planifié">Entretien planifié</option>
+            <option value="Refusé">Refusé</option>
+            <option value="Offre">Offre</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="pres-notes" placeholder="Contact, contexte..."></textarea>
+        </div>
+      `, {
+        onSave: async (overlay) => {
+          const entId = overlay.querySelector('#pres-entreprise-id').value;
+          const entSearch = overlay.querySelector('#pres-entreprise-search').value.trim();
+          const pres = {
+            entreprise_id: entId || null,
+            entreprise_nom: entSearch,
+            date_envoi: overlay.querySelector('#pres-date').value,
+            anonymise: overlay.querySelector('#pres-anonymise').value === 'true',
+            statut_retour: overlay.querySelector('#pres-statut').value,
+            notes: overlay.querySelector('#pres-notes').value.trim(),
+          };
+          const updated = [...(candidat.presentations || []), pres];
+          await Store.update('candidats', id, { presentations: updated });
+          UI.toast('Présentation ajoutée');
+          setTimeout(() => location.reload(), 500);
+        }
+      });
+      // Init autocomplete for entreprise
+      UI.entrepriseAutocomplete('pres-entreprise-search', 'pres-entreprise-id');
+    });
+  }
+
+  // ============================================================
+  // ENTREPRISES CIBLÉES — souhait candidat + ciblage recruteur
+  // ============================================================
+  function renderEntreprisesCibles() {
+    const container = document.getElementById('entreprises-cibles');
+    if (!container) return;
+
+    const cibles = candidat.entreprises_cibles || [];
+    const entreprises = Store.get('entreprises');
+
+    let html = `
+      <div style="font-size:0.75rem;font-weight:600;color:#64748b;text-transform:uppercase;margin-bottom:8px;">Entreprises ciblées</div>
+      <div id="cibles-list" style="margin-bottom:8px;">
+    `;
+
+    if (cibles.length === 0) {
+      html += '<div style="font-size:0.75rem;color:#94a3b8;font-style:italic;margin-bottom:8px;">Aucune entreprise ciblée</div>';
+    } else {
+      cibles.forEach((c, idx) => {
+        const ent = c.entreprise_id ? Store.resolve('entreprises', c.entreprise_id) : null;
+        const label = ent ? ent.displayName : c.entreprise_nom;
+        const icon = c.source === 'candidat' ? '💬' : '🎯';
+        const sourceLabel = c.source === 'candidat' ? 'Souhait candidat' : 'Ciblage recruteur';
+        html += `
+          <div class="cible-item" data-cible-idx="${idx}" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:4px;cursor:pointer;transition:all 0.15s;"
+            onmouseenter="this.style.borderColor='#dc2626';this.querySelector('.cible-x').style.display='inline'"
+            onmouseleave="this.style.borderColor='#e2e8f0';this.querySelector('.cible-x').style.display='none'">
+            <span title="${sourceLabel}">${icon}</span>
+            <div style="flex:1;min-width:0;">
+              ${ent ? `<a href="entreprise.html?id=${ent.id}" class="entity-link" style="font-size:0.8125rem;" onclick="event.stopPropagation()">${UI.escHtml(label)}</a>` : `<span style="font-size:0.8125rem;">${UI.escHtml(label)}</span>`}
+              <div style="font-size:0.6875rem;color:#94a3b8;">${sourceLabel}</div>
+            </div>
+            <span class="cible-x" style="display:none;color:#dc2626;font-weight:700;cursor:pointer;font-size:1rem;" title="Retirer">✕</span>
+          </div>
+        `;
+      });
+    }
+
+    html += `</div>
+      <div style="display:flex;gap:4px;">
+        <button class="btn btn-sm btn-secondary" id="btn-add-cible-candidat" style="flex:1;font-size:0.6875rem;">💬 Souhait</button>
+        <button class="btn btn-sm btn-secondary" id="btn-add-cible-recruteur" style="flex:1;font-size:0.6875rem;">🎯 Ciblage</button>
+      </div>
+    `;
+
+    container.innerHTML = html;
+
+    // Click on item to remove
+    container.querySelectorAll('.cible-item').forEach(item => {
+      item.addEventListener('click', async (e) => {
+        if (e.target.closest('a')) return; // don't intercept link
+        const idx = parseInt(item.dataset.cibleIdx);
+        const updated = [...cibles];
+        updated.splice(idx, 1);
+        await Store.update('candidats', id, { entreprises_cibles: updated });
+        UI.toast('Entreprise retirée');
+        renderEntreprisesCibles(); // re-render in place
+      });
+    });
+
+    // Add cible buttons
+    function showAddCibleModal(source) {
+      const sourceLabel = source === 'candidat' ? 'Souhait candidat' : 'Ciblage recruteur';
+      UI.modal(`Ajouter une entreprise (${sourceLabel})`, `
+        <div class="form-group">
+          <label>Entreprise</label>
+          <input type="text" id="cible-ent-search" placeholder="Tapez pour rechercher ou créer..." />
+          <input type="hidden" id="cible-ent-id" />
+        </div>
+      `, {
+        saveLabel: 'Ajouter',
+        onSave: async (overlay) => {
+          const entId = overlay.querySelector('#cible-ent-id').value;
+          const entNom = overlay.querySelector('#cible-ent-search').value.trim();
+          if (!entNom) return;
+          // Check not already in list
+          const alreadyExists = cibles.some(c =>
+            (c.entreprise_id && c.entreprise_id === entId) ||
+            (!c.entreprise_id && c.entreprise_nom === entNom)
+          );
+          if (alreadyExists) {
+            UI.toast('Déjà dans la liste', 'error');
+            return;
+          }
+          const newCible = { entreprise_id: entId || null, entreprise_nom: entNom, source };
+          const updated = [...cibles, newCible];
+          await Store.update('candidats', id, { entreprises_cibles: updated });
+          candidat.entreprises_cibles = updated; // update local ref
+          UI.toast('Entreprise ajoutée');
+          renderEntreprisesCibles();
+        }
+      });
+      UI.entrepriseAutocomplete('cible-ent-search', 'cible-ent-id');
+    }
+
+    document.getElementById('btn-add-cible-candidat')?.addEventListener('click', () => showAddCibleModal('candidat'));
+    document.getElementById('btn-add-cible-recruteur')?.addEventListener('click', () => showAddCibleModal('recruteur'));
   }
 })();
