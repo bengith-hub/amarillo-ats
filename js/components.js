@@ -266,7 +266,7 @@ const UI = (() => {
               <div class="timeline-date">${formatDate(a.date_action)}</div>
               <div class="timeline-title">${escHtml(a.action || '')}</div>
               ${a.message_notes ? `<div class="timeline-text">${escHtml(a.message_notes).substring(0, 150)}</div>` : ''}
-              ${a.next_step ? `<div class="timeline-text" style="color:#d97706;">→ ${escHtml(a.next_step)}</div>` : ''}
+              ${a.next_step ? `<div class="timeline-text" style="color:#c9a000;">→ ${escHtml(a.next_step)}</div>` : ''}
             </div>
             <div>${badge(a.statut)}</div>
           </div>
@@ -433,7 +433,7 @@ const UI = (() => {
 
         // Add "Créer cette entreprise" option
         const createItem = document.createElement('div');
-        createItem.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.8125rem;color:#d97706;font-weight:600;';
+        createItem.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.8125rem;color:#c9a000;font-weight:600;';
         createItem.textContent = `+ Créer "${input.value}"`;
         createItem.addEventListener('mousedown', async (ev) => {
           ev.preventDefault();

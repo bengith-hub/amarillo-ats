@@ -176,9 +176,15 @@
           <input type="tel" id="f-telephone" value="${UI.escHtml(c.telephone || '')}" />
         </div>
       </div>
-      <div class="form-group">
-        <label>LinkedIn</label>
-        <input type="url" id="f-linkedin" value="${UI.escHtml(c.linkedin || '')}" />
+      <div class="form-row">
+        <div class="form-group">
+          <label>LinkedIn</label>
+          <input type="url" id="f-linkedin" value="${UI.escHtml(c.linkedin || '')}" />
+        </div>
+        <div class="form-group">
+          <label>Code Profiling Amarillo™</label>
+          <input type="text" id="f-profile-code" value="${UI.escHtml(c.profile_code || '')}" placeholder="AMA-XXXX" />
+        </div>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -245,6 +251,7 @@
           email: overlay.querySelector('#f-email').value.trim(),
           telephone: overlay.querySelector('#f-telephone').value.trim(),
           linkedin: overlay.querySelector('#f-linkedin').value.trim(),
+          profile_code: overlay.querySelector('#f-profile-code').value.trim(),
           salaire_fixe_actuel: parseInt(overlay.querySelector('#f-salaire-fixe').value) || 0,
           variable_actuel: parseInt(overlay.querySelector('#f-variable').value) || 0,
           salaire_fixe_souhaite: parseInt(overlay.querySelector('#f-salaire-souhaite').value) || 0,
@@ -265,6 +272,7 @@
           UI.toast('Candidat mis à jour');
         } else {
           data.id = API.generateId('cand');
+          data.profile_code = data.profile_code || '';
           data.missions_ids = [];
           data.decideur_connu_ids = [];
           data.candidats_lies_ids = [];

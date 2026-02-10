@@ -41,6 +41,7 @@
         <div style="display:flex;gap:8px;align-items:center;">
           ${UI.badge(candidat.statut)}
           ${UI.badge(candidat.niveau)}
+          <button class="btn btn-secondary btn-sm" id="btn-templates">📋 Trames</button>
           <button class="btn btn-secondary btn-sm" id="btn-edit-candidat">Modifier</button>
         </div>
       </div>
@@ -48,6 +49,10 @@
 
     document.getElementById('btn-edit-candidat').addEventListener('click', () => {
       showEditModal();
+    });
+
+    document.getElementById('btn-templates').addEventListener('click', () => {
+      showTemplatesModal({ candidatId: id });
     });
   }
 
@@ -283,10 +288,11 @@
           </div>
         ` : ''}
 
-        ${candidat.linkedin ? `
+        ${candidat.linkedin || candidat.profile_code ? `
           <div style="margin-bottom:16px;">
             <div style="font-size:0.75rem;font-weight:600;color:#64748b;text-transform:uppercase;margin-bottom:4px;">Liens externes</div>
-            <a href="${UI.escHtml(candidat.linkedin)}" target="_blank" class="entity-link">LinkedIn</a>
+            ${candidat.linkedin ? `<a href="${UI.escHtml(candidat.linkedin)}" target="_blank" class="entity-link">LinkedIn</a><br/>` : ''}
+            ${candidat.profile_code ? `<a href="https://amarillo-dsi-profile.netlify.app/?session=${UI.escHtml(candidat.profile_code)}" target="_blank" class="entity-link" style="display:inline-flex;align-items:center;gap:4px;margin-top:4px;"><svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>Profiling Amarillo™ (${UI.escHtml(candidat.profile_code)})</a>` : ''}
           </div>
         ` : ''}
 
@@ -446,7 +452,10 @@
         <div class="form-group"><label>Email</label><input type="email" id="f-email" value="${UI.escHtml(c.email || '')}" /></div>
         <div class="form-group"><label>Téléphone</label><input type="tel" id="f-telephone" value="${UI.escHtml(c.telephone || '')}" /></div>
       </div>
-      <div class="form-group"><label>LinkedIn</label><input type="url" id="f-linkedin" value="${UI.escHtml(c.linkedin || '')}" /></div>
+      <div class="form-row">
+        <div class="form-group"><label>LinkedIn</label><input type="url" id="f-linkedin" value="${UI.escHtml(c.linkedin || '')}" /></div>
+        <div class="form-group"><label>Code Profiling Amarillo™</label><input type="text" id="f-profile-code" value="${UI.escHtml(c.profile_code || '')}" placeholder="AMA-XXXX" /></div>
+      </div>
       <div class="form-row">
         <div class="form-group"><label>Fixe actuel (€)</label><input type="number" id="f-salaire-fixe" value="${c.salaire_fixe_actuel||''}" /></div>
         <div class="form-group"><label>Variable actuel (€)</label><input type="number" id="f-variable" value="${c.variable_actuel||''}" /></div>
@@ -481,6 +490,7 @@
           email: overlay.querySelector('#f-email').value.trim(),
           telephone: overlay.querySelector('#f-telephone').value.trim(),
           linkedin: overlay.querySelector('#f-linkedin').value.trim(),
+          profile_code: overlay.querySelector('#f-profile-code').value.trim(),
           salaire_fixe_actuel: parseInt(overlay.querySelector('#f-salaire-fixe').value) || 0,
           variable_actuel: parseInt(overlay.querySelector('#f-variable').value) || 0,
           salaire_fixe_souhaite: parseInt(overlay.querySelector('#f-salaire-souhaite').value) || 0,
