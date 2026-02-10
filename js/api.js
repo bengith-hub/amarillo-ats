@@ -1,7 +1,7 @@
 // Amarillo ATS — JSONBin API Layer
 
 const API = (() => {
-  // JSONBin config — user must set these
+  // Load config from config.js (hardcoded) or fallback to localStorage
   let config = {
     apiKey: '',
     bins: {
@@ -19,6 +19,12 @@ const API = (() => {
   const BASE_URL = 'https://api.jsonbin.io/v3/b';
 
   function loadConfig() {
+    // Priority 1: hardcoded config from config.js
+    if (typeof ATS_CONFIG !== 'undefined' && ATS_CONFIG.apiKey) {
+      config = { ...config, ...ATS_CONFIG };
+      return true;
+    }
+    // Priority 2: localStorage (legacy fallback)
     const saved = localStorage.getItem('ats_config');
     if (saved) {
       config = JSON.parse(saved);

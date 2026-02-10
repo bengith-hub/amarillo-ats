@@ -7,10 +7,11 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="css/style.css" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 </head>
 <body>
   <nav class="sidebar">
-    <div class="sidebar-logo">Amarillo ATS</div>
+    <div class="sidebar-logo"><div class="sidebar-logo-icon">A</div>Amarillo ATS</div>
     <div class="sidebar-nav">
       <a href="index.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>Dashboard</a>
       <a href="candidats.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Candidats</a>
@@ -24,13 +25,14 @@
   </nav>
 
   <div class="main-content">
-    <header class="topbar">
+    <header class="topbar" data-entity="missions">
       <a href="missions.html" style="color:#64748b;text-decoration:none;font-size:0.8125rem;">← Retour aux missions</a>
       <div class="search-global"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg><input type="text" placeholder="Rechercher..." /><div class="search-results-dropdown"></div></div>
     </header>
     <div class="page-content" id="mission-content"></div>
   </div>
 
+  <script src="js/config.js"></script>
   <script src="js/api.js"></script>
   <script src="js/store.js"></script>
   <script src="js/components.js"></script>
@@ -74,6 +76,8 @@
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           ${UI.badge(m.statut)} ${UI.badge(m.niveau)}
+          <button class="btn btn-secondary btn-sm" id="btn-edit-mission">Modifier</button>
+          <button class="btn btn-primary btn-sm" id="btn-add-candidat-mission">+ Candidat</button>
         </div>
       </div>
 
@@ -149,6 +153,107 @@
     `;
 
     UI.timeline('mission-timeline', actions);
+
+    // Edit mission
+    const STAGES = ['Ciblage décideurs','Cadrage','Proposition','Mission lancée','Shortlist','Entretiens client','Offre','Placé','Suivi intégration','Clôturée'];
+
+    document.getElementById('btn-edit-mission').addEventListener('click', () => {
+      const bodyHtml = `
+        <div class="form-row">
+          <div class="form-group"><label>Nom</label><input type="text" id="m-nom" value="${UI.escHtml(m.nom||'')}" /></div>
+          <div class="form-group"><label>Réf</label><input type="text" id="m-ref" value="${UI.escHtml(m.ref||'')}" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Statut</label><select id="m-statut">${STAGES.map(s=>'<option value="'+s+'" '+(m.statut===s?'selected':'')+'>'+s+'</option>').join('')}</select></div>
+          <div class="form-group"><label>Niveau</label><select id="m-niveau"><option value="Middle" ${m.niveau==='Middle'?'selected':''}>Middle</option><option value="Top" ${m.niveau==='Top'?'selected':''}>Top</option></select></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Taux honoraires (%)</label><input type="number" id="m-taux" value="${m.taux_honoraires||18}" /></div>
+          <div class="form-group"><label>Fee estimée (€)</label><input type="number" id="m-fee" value="${m.fee_estimee||''}" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Date démarrage</label><input type="date" id="m-date" value="${m.date_demarrage||''}" /></div>
+          <div class="form-group"><label>Durée exclusivité (sem)</label><input type="number" id="m-exclu" value="${m.duree_exclusivite_sem||6}" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Exclusivité</label><select id="m-exclu-type"><option value="Formelle" ${m.exclusivite==='Formelle'?'selected':''}>Formelle</option><option value="De fait" ${m.exclusivite==='De fait'?'selected':''}>De fait</option></select></div>
+          <div class="form-group"><label>Garantie</label><select id="m-garantie"><option value="3 mois" ${m.garantie==='3 mois'?'selected':''}>3 mois</option><option value="6 mois" ${m.garantie==='6 mois'?'selected':''}>6 mois</option></select></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Probabilité (%)</label><input type="number" id="m-proba" value="${m.probabilite||''}" min="0" max="100" /></div>
+          <div class="form-group"><label>Priorité</label><select id="m-priorite">${['Haute','Moyenne','Basse'].map(s=>'<option value="'+s+'" '+(m.priorite===s?'selected':'')+'>'+s+'</option>').join('')}</select></div>
+        </div>
+        <div class="form-group"><label>Notes</label><textarea id="m-notes">${UI.escHtml(m.notes||'')}</textarea></div>
+      `;
+      UI.modal('Modifier la mission', bodyHtml, {
+        width: 600,
+        onSave: async (overlay) => {
+          await Store.update('missions', id, {
+            nom: overlay.querySelector('#m-nom').value.trim(),
+            ref: overlay.querySelector('#m-ref').value.trim(),
+            statut: overlay.querySelector('#m-statut').value,
+            niveau: overlay.querySelector('#m-niveau').value,
+            taux_honoraires: parseFloat(overlay.querySelector('#m-taux').value)||18,
+            fee_estimee: parseFloat(overlay.querySelector('#m-fee').value)||0,
+            date_demarrage: overlay.querySelector('#m-date').value||null,
+            duree_exclusivite_sem: parseInt(overlay.querySelector('#m-exclu').value)||6,
+            exclusivite: overlay.querySelector('#m-exclu-type').value,
+            garantie: overlay.querySelector('#m-garantie').value,
+            probabilite: parseInt(overlay.querySelector('#m-proba').value)||0,
+            priorite: overlay.querySelector('#m-priorite').value,
+            notes: overlay.querySelector('#m-notes').value.trim(),
+          });
+          UI.toast('Mission mise à jour');
+          setTimeout(() => location.reload(), 500);
+        }
+      });
+    });
+
+    // Add candidat to mission
+    document.getElementById('btn-add-candidat-mission').addEventListener('click', () => {
+      const allCandidats = Store.get('candidats');
+      const alreadyIn = m.candidats_ids || [];
+      const available = allCandidats.filter(c => !alreadyIn.includes(c.id));
+
+      UI.modal('Ajouter un candidat à la mission', `
+        <div class="form-group">
+          <label>Sélectionner un candidat</label>
+          <input type="text" id="search-cand" placeholder="Rechercher par nom..." style="margin-bottom:8px;" />
+          <select id="sel-cand" size="8" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:8px;">
+            ${available.map(c => '<option value="'+c.id+'">'+UI.escHtml((c.prenom||'')+' '+(c.nom||'')+' — '+(c.poste_actuel||''))+'</option>').join('')}
+          </select>
+        </div>
+      `, {
+        onSave: async (overlay) => {
+          const candId = overlay.querySelector('#sel-cand').value;
+          if (!candId) return;
+          const newIds = [...(m.candidats_ids||[]), candId];
+          await Store.update('missions', id, { candidats_ids: newIds });
+          // Also update candidat's missions_ids
+          const cand = Store.findById('candidats', candId);
+          if (cand) {
+            const mIds = [...(cand.missions_ids||[]), id];
+            await Store.update('candidats', candId, { missions_ids: mIds });
+          }
+          UI.toast('Candidat ajouté à la mission');
+          setTimeout(() => location.reload(), 500);
+        }
+      });
+
+      // Search filter for candidat list
+      setTimeout(() => {
+        const searchInput = document.getElementById('search-cand');
+        const select = document.getElementById('sel-cand');
+        if (searchInput && select) {
+          const allOptions = [...select.options];
+          searchInput.addEventListener('input', () => {
+            const q = searchInput.value.toLowerCase();
+            select.innerHTML = '';
+            allOptions.filter(o => o.text.toLowerCase().includes(q)).forEach(o => select.add(o.cloneNode(true)));
+          });
+        }
+      }, 100);
+    });
   })();
   </script>
 </body>

@@ -134,10 +134,8 @@
       <div class="form-row">
         <div class="form-group">
           <label>Entreprise actuelle</label>
-          <select id="f-entreprise">
-            <option value="">— Aucune —</option>
-            ${entreprises.map(e => `<option value="${e.id}" ${c.entreprise_actuelle_id === e.id ? 'selected' : ''}>${UI.escHtml(e.nom)}</option>`).join('')}
-          </select>
+          <input type="text" id="f-entreprise-search" value="${c.entreprise_actuelle_id ? (Store.resolve('entreprises', c.entreprise_actuelle_id)?.displayName || '') : ''}" placeholder="Tapez pour rechercher..." />
+          <input type="hidden" id="f-entreprise" value="${c.entreprise_actuelle_id || ''}" />
         </div>
         <div class="form-group">
           <label>Niveau</label>
@@ -297,6 +295,9 @@
         setTimeout(() => location.reload(), 500);
       }
     });
+
+    // Init autocomplete after modal renders
+    UI.entrepriseAutocomplete('f-entreprise-search', 'f-entreprise');
   }
 
   // Expose for edit from detail page

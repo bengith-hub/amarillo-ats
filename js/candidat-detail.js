@@ -260,6 +260,8 @@
     document.getElementById('candidat-sidebar').innerHTML = `
       <div class="card-header"><h2>Liens rapides</h2></div>
       <div class="card-body">
+        <div id="candidat-decideur-link"></div>
+
         ${entreprise ? `
           <div style="margin-bottom:16px;">
             <div style="font-size:0.75rem;font-weight:600;color:#64748b;text-transform:uppercase;margin-bottom:4px;">Entreprise actuelle</div>
@@ -296,6 +298,9 @@
         </div>
       </div>
     `;
+
+    // Init double casquette candidat/décideur
+    UI.candidatDecideurLink('candidat-decideur-link', id);
   }
 
   // Helper
