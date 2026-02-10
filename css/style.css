@@ -258,16 +258,18 @@ body {
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
-  background: #fff;
-}
-
-/* Sticky headers only on list pages (not inside detail tabs) */
-.page-content > .card .data-table th,
-.page-content > .data-table-wrapper .data-table th {
   position: sticky;
   top: 56px;
+  background: #fff;
   z-index: 10;
   box-shadow: 0 1px 0 #e2e8f0;
+}
+
+/* Disable sticky headers inside detail page tabs */
+.tab-content .data-table th,
+.detail-main .data-table th {
+  position: static;
+  box-shadow: none;
 }
 
 .data-table th:hover { color: #1e293b; }
