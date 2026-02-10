@@ -37,6 +37,25 @@ const UI = (() => {
     // Niveau
     'Middle': 'badge-middle',
     'Top': 'badge-top',
+    // Entreprise statuts
+    'À cibler': 'badge-a-cibler',
+    'Ciblé': 'badge-cible',
+    'Contactée': 'badge-contacte',
+    'Contacté': 'badge-contacte',
+    'En discussion': 'badge-en-discussion',
+    'Cliente': 'badge-cliente',
+    'Prospection en cours': 'badge-prospect',
+    'Client': 'badge-cliente',
+    'Ancien client': 'badge-inactive',
+    'Écarté': 'badge-annule',
+    'Inactive': 'badge-inactive',
+    // Décideur relation
+    'En relation': 'badge-en-relation',
+    'Champion': 'badge-champion',
+    // Décideur roles
+    'Décideur': 'badge-decideur',
+    'Influenceur': 'badge-influenceur',
+    'Prescripteur': 'badge-prescripteur',
   };
 
   function badge(text) {
@@ -572,12 +591,246 @@ const UI = (() => {
     }
   }
 
+  // ============================================================
+  // INLINE EDIT — click-to-edit fields with auto-save (Notion-like)
+  // ============================================================
+  function inlineEdit(containerId, { entity, recordId, fields }) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const record = Store.findById(entity, recordId);
+    if (!record) return;
+
+    function renderFields() {
+      container.innerHTML = fields.map(f => {
+        const value = record[f.key];
+        const display = f.render ? f.render(value, record) : escHtml(value || '');
+        return `
+          <div class="inline-field" data-field="${f.key}" data-type="${f.type || 'text'}">
+            <div class="inline-field-label">${f.label}</div>
+            <div class="inline-field-value" data-field-key="${f.key}" title="Cliquer pour modifier">${display || '<span class="inline-field-empty">—</span>'}</div>
+          </div>
+        `;
+      }).join('');
+
+      // Bind click handlers
+      container.querySelectorAll('.inline-field-value').forEach(el => {
+        el.addEventListener('click', (e) => {
+          if (e.target.closest('a')) return;
+          const fieldKey = el.dataset.fieldKey;
+          const fieldDef = fields.find(f => f.key === fieldKey);
+          if (!fieldDef) return;
+          startEditing(el, fieldDef);
+        });
+      });
+    }
+
+    async function saveField(fieldKey, value) {
+      record[fieldKey] = value;
+      await Store.update(entity, recordId, { [fieldKey]: value });
+      toast('Sauvegardé');
+    }
+
+    function startEditing(el, fieldDef) {
+      if (el.classList.contains('editing')) return;
+      el.classList.add('editing');
+      const currentValue = record[fieldDef.key] || '';
+
+      if (fieldDef.type === 'select' && fieldDef.options) {
+        const select = document.createElement('select');
+        select.className = 'inline-edit-input';
+        if (!fieldDef.required) {
+          const emptyOpt = document.createElement('option');
+          emptyOpt.value = '';
+          emptyOpt.textContent = '—';
+          select.appendChild(emptyOpt);
+        }
+        fieldDef.options.forEach(opt => {
+          const option = document.createElement('option');
+          option.value = opt;
+          option.textContent = opt;
+          if (opt === currentValue) option.selected = true;
+          select.appendChild(option);
+        });
+        el.innerHTML = '';
+        el.appendChild(select);
+        select.focus();
+
+        select.addEventListener('change', async () => {
+          await saveField(fieldDef.key, select.value);
+          el.classList.remove('editing');
+          renderFields();
+        });
+        select.addEventListener('blur', () => {
+          el.classList.remove('editing');
+          renderFields();
+        });
+      } else if (fieldDef.type === 'textarea') {
+        const textarea = document.createElement('textarea');
+        textarea.className = 'inline-edit-input';
+        textarea.value = currentValue;
+        textarea.style.minHeight = '80px';
+        el.innerHTML = '';
+        el.appendChild(textarea);
+        textarea.focus();
+
+        textarea.addEventListener('blur', async () => {
+          const val = textarea.value.trim();
+          if (val !== currentValue) {
+            await saveField(fieldDef.key, val);
+          }
+          el.classList.remove('editing');
+          renderFields();
+        });
+      } else if (fieldDef.type === 'number') {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.className = 'inline-edit-input';
+        input.value = currentValue;
+        el.innerHTML = '';
+        el.appendChild(input);
+        input.focus();
+        input.select();
+
+        const finish = async () => {
+          const val = parseInt(input.value) || 0;
+          if (val !== currentValue) {
+            await saveField(fieldDef.key, val);
+          }
+          el.classList.remove('editing');
+          renderFields();
+        };
+        input.addEventListener('blur', finish);
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') { el.classList.remove('editing'); renderFields(); } });
+      } else if (fieldDef.type === 'date') {
+        const input = document.createElement('input');
+        input.type = 'date';
+        input.className = 'inline-edit-input';
+        input.value = currentValue;
+        el.innerHTML = '';
+        el.appendChild(input);
+        input.focus();
+
+        const finish = async () => {
+          const val = input.value || null;
+          if (val !== currentValue) {
+            await saveField(fieldDef.key, val);
+          }
+          el.classList.remove('editing');
+          renderFields();
+        };
+        input.addEventListener('blur', finish);
+        input.addEventListener('change', finish);
+      } else if (fieldDef.type === 'boolean') {
+        // Toggle immediately
+        const newVal = !record[fieldDef.key];
+        saveField(fieldDef.key, newVal).then(() => {
+          el.classList.remove('editing');
+          renderFields();
+        });
+      } else {
+        // Default: text input
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'inline-edit-input';
+        input.value = currentValue;
+        el.innerHTML = '';
+        el.appendChild(input);
+        input.focus();
+        input.select();
+
+        const finish = async () => {
+          const val = input.value.trim();
+          if (val !== currentValue) {
+            await saveField(fieldDef.key, val);
+          }
+          el.classList.remove('editing');
+          renderFields();
+        };
+        input.addEventListener('blur', finish);
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') { el.classList.remove('editing'); renderFields(); } });
+      }
+    }
+
+    renderFields();
+    return { refresh: renderFields };
+  }
+
+  // ============================================================
+  // STATUS DROPDOWN — clickable badge that opens status picker
+  // ============================================================
+  function statusBadge(currentStatus, options, { entity, recordId, fieldName = 'statut', onUpdate } = {}) {
+    const id = 'sb-' + Math.random().toString(36).substr(2, 6);
+    // Return HTML string; bind events after DOM insert
+    const html = `<span class="badge ${BADGE_MAP[currentStatus] || ''} status-clickable" id="${id}" data-status="${escHtml(currentStatus || '')}" title="Cliquer pour changer le statut">${escHtml(currentStatus || '—')}</span>`;
+
+    // Deferred binding
+    setTimeout(() => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showStatusPicker(el, currentStatus, options, async (newStatus) => {
+          if (newStatus !== currentStatus) {
+            await Store.update(entity, recordId, { [fieldName]: newStatus });
+            el.className = `badge ${BADGE_MAP[newStatus] || ''} status-clickable`;
+            el.textContent = newStatus;
+            el.dataset.status = newStatus;
+            toast('Statut mis à jour');
+            if (onUpdate) onUpdate(newStatus);
+          }
+        });
+      });
+    }, 50);
+
+    return html;
+  }
+
+  function showStatusPicker(anchor, currentStatus, options, onSelect) {
+    // Remove existing picker
+    document.querySelectorAll('.status-picker').forEach(p => p.remove());
+
+    const picker = document.createElement('div');
+    picker.className = 'status-picker';
+
+    options.forEach(opt => {
+      const item = document.createElement('div');
+      item.className = 'status-picker-item' + (opt === currentStatus ? ' active' : '');
+      item.innerHTML = `<span class="badge ${BADGE_MAP[opt] || ''}">${escHtml(opt)}</span>`;
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onSelect(opt);
+        picker.remove();
+      });
+      picker.appendChild(item);
+    });
+
+    // Position relative to anchor
+    const rect = anchor.getBoundingClientRect();
+    picker.style.position = 'fixed';
+    picker.style.top = (rect.bottom + 4) + 'px';
+    picker.style.left = rect.left + 'px';
+    picker.style.zIndex = '300';
+    document.body.appendChild(picker);
+
+    // Close on click outside
+    const closePicker = (e) => {
+      if (!picker.contains(e.target) && e.target !== anchor) {
+        picker.remove();
+        document.removeEventListener('click', closePicker);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closePicker), 10);
+  }
+
   return {
     badge, entityLink, resolveLink,
     dataTable, filterBar, modal, toast,
     initTabs, timeline, showConfigModal,
     initGlobalSearch, entrepriseAutocomplete,
     candidatDecideurLink,
+    inlineEdit, statusBadge, showStatusPicker,
     escHtml, formatDate, formatCurrency, getParam
   };
 })();

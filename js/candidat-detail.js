@@ -28,23 +28,30 @@
   renderSidebar();
   renderEntreprisesCibles();
 
+  const CANDIDAT_STATUTS = ['To call', 'Approché', 'En qualification', 'Shortlisté', 'Présenté', 'Placé', 'Off market', 'Pas prioritaire'];
+  const CANDIDAT_NIVEAUX = ['Junior', 'Middle', 'Top'];
+
   function renderHeader() {
     const entreprise = candidat.entreprise_actuelle_id ? Store.resolve('entreprises', candidat.entreprise_actuelle_id) : null;
 
     document.getElementById('candidat-header').innerHTML = `
       <div class="detail-header">
-        <div>
-          <h1>${UI.escHtml((candidat.prenom || '') + ' ' + (candidat.nom || ''))}</h1>
-          <div class="subtitle">
-            ${UI.escHtml(candidat.poste_actuel || '')}
-            ${entreprise ? ` chez ${UI.entityLink('entreprises', entreprise.id, entreprise.displayName)}` : ''}
+        <div style="display:flex;align-items:center;">
+          <div class="detail-avatar candidat">${(candidat.prenom || '?')[0]}</div>
+          <div>
+            <h1>${UI.escHtml((candidat.prenom || '') + ' ' + (candidat.nom || ''))}</h1>
+            <div class="subtitle">
+              ${UI.escHtml(candidat.poste_actuel || '')}
+              ${entreprise ? ` chez ${UI.entityLink('entreprises', entreprise.id, entreprise.displayName)}` : ''}
+            </div>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
-          ${UI.badge(candidat.statut)}
-          ${UI.badge(candidat.niveau)}
+          ${UI.statusBadge(candidat.statut || 'To call', CANDIDAT_STATUTS, { entity: 'candidats', recordId: id, fieldName: 'statut', onUpdate: (s) => { candidat.statut = s; } })}
+          ${UI.statusBadge(candidat.niveau || 'Middle', CANDIDAT_NIVEAUX, { entity: 'candidats', recordId: id, fieldName: 'niveau', onUpdate: (s) => { candidat.niveau = s; } })}
           <button class="btn btn-secondary btn-sm" id="btn-templates">📋 Trames</button>
           <button class="btn btn-secondary btn-sm" id="btn-edit-candidat">Modifier</button>
+          <span class="autosave-indicator saved"><span class="sync-dot"></span> Auto-save</span>
         </div>
       </div>
     `;
@@ -127,65 +134,89 @@
         </div>
       </div>
 
-      ${candidat.notes ? `
       <div class="card">
-        <div class="card-header"><h2>Notes</h2></div>
-        <div class="card-body">
-          <p style="white-space:pre-wrap;font-size:0.875rem;color:#334155;">${UI.escHtml(candidat.notes)}</p>
+        <div class="card-header">
+          <h2>Notes</h2>
+          <span class="edit-hint">cliquer pour modifier</span>
         </div>
+        <div class="card-body" id="profil-notes"></div>
       </div>
-      ` : ''}
     `;
+
+    UI.inlineEdit('profil-notes', {
+      entity: 'candidats', recordId: id,
+      fields: [
+        { key: 'notes', label: 'Notes', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' }
+      ]
+    });
   }
 
   function renderEntretien() {
     document.getElementById('tab-entretien').innerHTML = `
-      <div class="card">
+      <div class="card" data-accent="gold">
         <div class="card-header">
           <h2>Synthèse 30 secondes</h2>
-          <button class="btn btn-sm btn-secondary" onclick="editField('synthese_30s', 'Synthèse 30 secondes')">Modifier</button>
+          <span class="edit-hint">cliquer pour modifier</span>
         </div>
-        <div class="card-body">
-          <p style="white-space:pre-wrap;font-size:0.875rem;">${UI.escHtml(candidat.synthese_30s) || '<span style="color:#94a3b8;font-style:italic;">Non renseigné</span>'}</p>
-        </div>
+        <div class="card-body" id="entretien-synthese"></div>
       </div>
 
-      <div class="card">
+      <div class="card" data-accent="blue">
         <div class="card-header">
           <h2>Parcours cible</h2>
-          <button class="btn btn-sm btn-secondary" onclick="editField('parcours_cible', 'Parcours cible')">Modifier</button>
+          <span class="edit-hint">cliquer pour modifier</span>
         </div>
-        <div class="card-body">
-          <p style="white-space:pre-wrap;font-size:0.875rem;">${UI.escHtml(candidat.parcours_cible) || '<span style="color:#94a3b8;font-style:italic;">Non renseigné</span>'}</p>
-        </div>
+        <div class="card-body" id="entretien-parcours"></div>
       </div>
 
-      <div class="card">
+      <div class="card" data-accent="green">
         <div class="card-header">
           <h2>Motivation & Drivers</h2>
-          <button class="btn btn-sm btn-secondary" onclick="editField('motivation_drivers', 'Motivation & Drivers')">Modifier</button>
+          <span class="edit-hint">cliquer pour modifier</span>
         </div>
-        <div class="card-body">
-          ${field('Motivation changement', candidat.motivation_changement)}
-          <p style="white-space:pre-wrap;font-size:0.875rem;margin-top:8px;">${UI.escHtml(candidat.motivation_drivers) || '<span style="color:#94a3b8;font-style:italic;">Non renseigné</span>'}</p>
-        </div>
+        <div class="card-body" id="entretien-motivation"></div>
       </div>
 
-      <div class="card">
+      <div class="card" data-accent="purple">
         <div class="card-header">
           <h2>Lecture recruteur</h2>
-          <button class="btn btn-sm btn-secondary" onclick="editField('lecture_recruteur', 'Lecture recruteur')">Modifier</button>
+          <span class="edit-hint">cliquer pour modifier</span>
         </div>
-        <div class="card-body">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
-            ${field('Fit poste', candidat.fit_poste)}
-            ${field('Fit culture', candidat.fit_culture)}
-            ${field('Risques', candidat.risques)}
-          </div>
-          <p style="white-space:pre-wrap;font-size:0.875rem;">${UI.escHtml(candidat.lecture_recruteur) || '<span style="color:#94a3b8;font-style:italic;">Non renseigné</span>'}</p>
-        </div>
+        <div class="card-body" id="entretien-lecture"></div>
       </div>
     `;
+
+    UI.inlineEdit('entretien-synthese', {
+      entity: 'candidats', recordId: id,
+      fields: [
+        { key: 'synthese_30s', label: 'Synthèse', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' }
+      ]
+    });
+
+    UI.inlineEdit('entretien-parcours', {
+      entity: 'candidats', recordId: id,
+      fields: [
+        { key: 'parcours_cible', label: 'Parcours cible', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' }
+      ]
+    });
+
+    UI.inlineEdit('entretien-motivation', {
+      entity: 'candidats', recordId: id,
+      fields: [
+        { key: 'motivation_changement', label: 'Motivation changement', type: 'text' },
+        { key: 'motivation_drivers', label: 'Drivers', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' }
+      ]
+    });
+
+    UI.inlineEdit('entretien-lecture', {
+      entity: 'candidats', recordId: id,
+      fields: [
+        { key: 'fit_poste', label: 'Fit poste', type: 'text' },
+        { key: 'fit_culture', label: 'Fit culture', type: 'text' },
+        { key: 'risques', label: 'Risques', type: 'text' },
+        { key: 'lecture_recruteur', label: 'Lecture recruteur', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' }
+      ]
+    });
   }
 
   function renderMissions() {
@@ -242,7 +273,7 @@
         { key: 'canal', label: 'Canal', render: r => UI.badge(r.canal) },
         { key: 'date_action', label: 'Date', render: r => UI.formatDate(r.date_action) },
         { key: 'next_step', label: 'Next step', render: r => r.next_step ? `<span style="font-size:0.75rem;color:#c9a000;">→ ${UI.escHtml(r.next_step)}</span>` : '' },
-        { key: 'statut', label: 'Statut', render: r => UI.badge(r.statut) },
+        { key: 'statut', label: 'Statut', render: r => UI.statusBadge(r.statut || 'À faire', ['À faire', 'En cours', 'Fait', 'Annulé'], { entity: 'actions', recordId: r.id, fieldName: 'statut', onUpdate: () => renderActions() }) },
       ],
       data: actions,
       onRowClick: (actionId) => showActionDetail(actionId),

@@ -147,7 +147,7 @@
         }},
         { key: 'next_step', label: 'Next step', render: r => r.next_step ? `<span style="font-size:0.75rem;color:#c9a000;">→ ${UI.escHtml(r.next_step)}</span>` : '' },
         { key: 'relance', label: 'Relance', render: r => r.date_relance ? `<span style="font-size:0.75rem;${r.date_relance <= todayStr ? 'color:#dc2626;font-weight:600;' : 'color:#64748b;'}">${UI.formatDate(r.date_relance)}</span>` : '' },
-        { key: 'statut', label: 'Statut', render: r => UI.badge(r.statut) },
+        { key: 'statut', label: 'Statut', render: r => UI.statusBadge(r.statut || 'À faire', ['À faire', 'En cours', 'Fait', 'Annulé'], { entity: 'actions', recordId: r.id, fieldName: 'statut', onUpdate: () => { setTimeout(() => location.reload(), 400); } }) },
       ],
       data: sorted,
       onRowClick: (id) => editAction(id),
