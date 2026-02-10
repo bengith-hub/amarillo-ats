@@ -37,31 +37,37 @@
   <script src="js/store.js"></script>
   <script src="js/components.js"></script>
   <script>
-  (async function() {
-    if (!API.isConfigured()) { UI.showConfigModal(); return; }
-    const id = UI.getParam('id');
-    if (!id) { window.location.href = 'entreprises.html'; return; }
-    await Store.loadAll();
-    UI.initGlobalSearch();
+  let currentEntreprise = null;
+  const entId = new URLSearchParams(window.location.search).get('id');
 
-    const e = Store.findById('entreprises', id);
+  function renderEntreprisePage() {
+    const e = Store.findById('entreprises', entId);
     if (!e) { document.getElementById('entreprise-content').innerHTML = '<div class="empty-state"><p>Entreprise introuvable</p></div>'; return; }
-
+    currentEntreprise = e;
     document.title = `${e.nom} — Amarillo ATS`;
 
-    const decideurs = Store.filter('decideurs', d => d.entreprise_id === id);
-    const candidats = Store.filter('candidats', c => c.entreprise_actuelle_id === id);
-    const actions = Store.filter('actions', a => a.entreprise_id === id);
+    const decideurs = Store.filter('decideurs', d => d.entreprise_id === entId);
+    const candidats = Store.filter('candidats', c => c.entreprise_actuelle_id === entId);
+    const missions = Store.filter('missions', m => {
+      const dec = Store.filter('decideurs', d => d.entreprise_id === entId);
+      const decIds = dec.map(d => d.id);
+      return (m.decideurs_ids || []).some(did => decIds.includes(did));
+    });
+    const actions = Store.filter('actions', a => a.entreprise_id === entId);
 
     document.getElementById('entreprise-content').innerHTML = `
       <div class="detail-header">
-        <div>
-          <h1>${UI.escHtml(e.nom)}</h1>
-          <div class="subtitle">${UI.escHtml(e.secteur || '')} • ${UI.escHtml(e.taille || '')} • ${UI.escHtml(e.localisation || '')}</div>
+        <div style="display:flex;align-items:center;">
+          <div class="detail-avatar entreprise">${(e.nom || '?')[0]}</div>
+          <div>
+            <h1>${UI.escHtml(e.nom)}</h1>
+            <div class="subtitle">${UI.escHtml(e.secteur || '')} • ${UI.escHtml(e.taille || '')} • ${UI.escHtml(e.localisation || '')}</div>
+          </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
-          ${UI.badge(e.icp_fit ? 'Haute' : 'Moyenne')}
-          <span style="font-size:0.8125rem;color:#64748b;">${UI.escHtml(e.statut || '')}</span>
+          ${UI.badge(e.statut || '')}
+          ${UI.badge(e.priorite || '')}
+          <button class="btn btn-primary btn-sm" onclick="showEditEntrepriseModal()">Modifier</button>
         </div>
       </div>
 
@@ -71,7 +77,13 @@
             <div class="card-header"><h2>Informations</h2></div>
             <div class="card-body">
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Secteur</div><div>${UI.escHtml(e.secteur || '—')}</div></div>
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Taille</div><div>${UI.escHtml(e.taille || '—')}</div></div>
                 <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">CA</div><div>${UI.escHtml(e.ca || '—')}</div></div>
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Localisation</div><div>${UI.escHtml(e.localisation || '—')}</div></div>
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Priorité</div><div>${UI.escHtml(e.priorite || '—')}</div></div>
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">ICP Fit</div><div>${e.icp_fit ? '✅ Oui' : '❌ Non'}</div></div>
+                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Statut</div><div>${UI.escHtml(e.statut || '—')}</div></div>
                 <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Source</div><div>${UI.escHtml(e.source || '—')}</div></div>
                 <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Site web</div><div>${e.site_web ? `<a href="${UI.escHtml(e.site_web)}" target="_blank" class="entity-link">${UI.escHtml(e.site_web)}</a>` : '—'}</div></div>
                 <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Téléphone</div><div>${UI.escHtml(e.telephone || '—')}</div></div>
@@ -82,16 +94,35 @@
           </div>
 
           <div class="card">
-            <div class="card-header"><h2>Décideurs (${decideurs.length})</h2></div>
+            <div class="card-header">
+              <h2>Décideurs (${decideurs.length})</h2>
+              <button class="btn btn-primary btn-sm" onclick="showAddDecideurModal()">+ Décideur</button>
+            </div>
             <div class="card-body">
-              ${decideurs.length === 0 ? '<div class="empty-state"><p>Aucun décideur</p></div>' :
+              ${decideurs.length === 0 ? '<div class="empty-state"><p>Aucun décideur rattaché</p></div>' :
                 decideurs.map(d => `
                   <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">
                     <div>
                       <a href="decideur.html?id=${d.id}" class="entity-link" style="font-weight:600;">${UI.escHtml((d.prenom||'')+' '+(d.nom||''))}</a>
                       <div style="font-size:0.75rem;color:#64748b;">${UI.escHtml(d.fonction || '')} • ${UI.escHtml(d.niveau_hierarchique || '')}</div>
                     </div>
-                    <div>${UI.badge(d.priorite_prospection)}</div>
+                    <div>${UI.badge(d.priorite_prospection || d.role_decision || '')}</div>
+                  </div>
+                `).join('')}
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h2>Missions liées (${missions.length})</h2></div>
+            <div class="card-body">
+              ${missions.length === 0 ? '<div class="empty-state"><p>Aucune mission</p></div>' :
+                missions.map(m => `
+                  <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+                    <div>
+                      <a href="mission.html?id=${m.id}" class="entity-link" style="font-weight:600;">${UI.escHtml(m.nom || m.ref || '')}</a>
+                      <div style="font-size:0.75rem;color:#64748b;">${UI.escHtml(m.ref || '')} • ${UI.formatDate(m.date_demarrage)}</div>
+                    </div>
+                    <div>${UI.badge(m.statut || '')}</div>
                   </div>
                 `).join('')}
             </div>
@@ -112,6 +143,22 @@
                 `).join('')}
             </div>
           </div>
+
+          <div class="card">
+            <div class="card-header"><h2>Actions (${actions.length})</h2></div>
+            <div class="card-body">
+              ${actions.length === 0 ? '<div class="empty-state"><p>Aucune action</p></div>' :
+                actions.slice(0, 10).map(a => `
+                  <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+                    <div>
+                      <div style="font-weight:600;font-size:0.8125rem;">${UI.escHtml(a.action || '')}</div>
+                      <div style="font-size:0.75rem;color:#64748b;">${UI.formatDate(a.date_action)} • ${UI.escHtml(a.canal || '')}</div>
+                    </div>
+                    <div>${UI.badge(a.statut || '')}</div>
+                  </div>
+                `).join('')}
+            </div>
+          </div>
         </div>
 
         <div class="detail-sidebar">
@@ -120,6 +167,8 @@
             <div class="card-body">
               <div style="font-size:0.75rem;color:#64748b;">Décideurs</div>
               <div style="font-size:1.25rem;font-weight:700;margin-bottom:12px;">${decideurs.length}</div>
+              <div style="font-size:0.75rem;color:#64748b;">Missions</div>
+              <div style="font-size:1.25rem;font-weight:700;margin-bottom:12px;">${missions.length}</div>
               <div style="font-size:0.75rem;color:#64748b;">Candidats identifiés</div>
               <div style="font-size:1.25rem;font-weight:700;margin-bottom:12px;">${candidats.length}</div>
               <div style="font-size:0.75rem;color:#64748b;">Actions</div>
@@ -133,6 +182,162 @@
         </div>
       </div>
     `;
+  }
+
+  function showEditEntrepriseModal() {
+    const e = currentEntreprise;
+    if (!e) return;
+
+    const body = `
+      <div class="form-row">
+        <div class="form-group"><label>Nom</label><input type="text" id="ee-nom" value="${UI.escHtml(e.nom || '')}"></div>
+        <div class="form-group"><label>Secteur</label><input type="text" id="ee-secteur" value="${UI.escHtml(e.secteur || '')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Taille</label>
+          <select id="ee-taille">
+            <option value="">—</option>
+            ${['1-10','11-50','51-200','201-500','501-1000','1000+'].map(t => `<option value="${t}" ${e.taille===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label>CA</label><input type="text" id="ee-ca" value="${UI.escHtml(e.ca || '')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Localisation</label><input type="text" id="ee-localisation" value="${UI.escHtml(e.localisation || '')}"></div>
+        <div class="form-group"><label>Téléphone</label><input type="text" id="ee-telephone" value="${UI.escHtml(e.telephone || '')}"></div>
+      </div>
+      <div class="form-group"><label>Site web</label><input type="text" id="ee-site_web" value="${UI.escHtml(e.site_web || '')}"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Priorité</label>
+          <select id="ee-priorite">
+            <option value="">—</option>
+            ${['1 - Veille','2 - Basse','3 - Moyenne','4 - Haute','5 - Coeur de cible'].map(p => `<option value="${p}" ${e.priorite===p?'selected':''}>${p}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label>Statut</label>
+          <select id="ee-statut">
+            <option value="">—</option>
+            ${['À cibler','Ciblé','Prospection en cours','Client','Ancien client','Écarté'].map(s => `<option value="${s}" ${e.statut===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>ICP Fit</label>
+          <select id="ee-icp_fit">
+            <option value="false" ${!e.icp_fit?'selected':''}>Non</option>
+            <option value="true" ${e.icp_fit?'selected':''}>Oui</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Source</label><input type="text" id="ee-source" value="${UI.escHtml(e.source || '')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Dernier contact</label><input type="date" id="ee-dernier_contact" value="${e.dernier_contact || ''}"></div>
+        <div class="form-group"><label>Prochaine relance</label><input type="date" id="ee-prochaine_relance" value="${e.prochaine_relance || ''}"></div>
+      </div>
+      <div class="form-group"><label>Angle d'approche</label><textarea id="ee-angle_approche">${UI.escHtml(e.angle_approche || '')}</textarea></div>
+      <div class="form-group"><label>Notes</label><textarea id="ee-notes">${UI.escHtml(e.notes || '')}</textarea></div>
+    `;
+
+    UI.modal('Modifier l\'entreprise', body, {
+      width: 700,
+      onSave: async () => {
+        const updates = {
+          nom: document.getElementById('ee-nom').value.trim(),
+          secteur: document.getElementById('ee-secteur').value.trim(),
+          taille: document.getElementById('ee-taille').value,
+          ca: document.getElementById('ee-ca').value.trim(),
+          localisation: document.getElementById('ee-localisation').value.trim(),
+          telephone: document.getElementById('ee-telephone').value.trim(),
+          site_web: document.getElementById('ee-site_web').value.trim(),
+          priorite: document.getElementById('ee-priorite').value,
+          statut: document.getElementById('ee-statut').value,
+          icp_fit: document.getElementById('ee-icp_fit').value === 'true',
+          source: document.getElementById('ee-source').value.trim(),
+          dernier_contact: document.getElementById('ee-dernier_contact').value || null,
+          prochaine_relance: document.getElementById('ee-prochaine_relance').value || null,
+          angle_approche: document.getElementById('ee-angle_approche').value.trim(),
+          notes: document.getElementById('ee-notes').value.trim(),
+        };
+        await Store.update('entreprises', entId, updates);
+        renderEntreprisePage();
+        UI.toast('Entreprise mise à jour');
+      }
+    });
+  }
+
+  function showAddDecideurModal() {
+    const body = `
+      <div class="form-row">
+        <div class="form-group"><label>Prénom</label><input type="text" id="nd-prenom"></div>
+        <div class="form-group"><label>Nom</label><input type="text" id="nd-nom"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Fonction</label><input type="text" id="nd-fonction"></div>
+        <div class="form-group"><label>Niveau hiérarchique</label>
+          <select id="nd-niveau">
+            <option value="">—</option>
+            ${['COMEX','Direction','N-1','N-2','Opérationnel'].map(n => `<option value="${n}">${n}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Rôle décision</label>
+          <select id="nd-role">
+            <option value="">—</option>
+            ${['Décideur','Influenceur','Prescripteur','Utilisateur'].map(r => `<option value="${r}">${r}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label>Priorité prospection</label>
+          <select id="nd-priorite">
+            <option value="">—</option>
+            ${['Haute','Moyenne','Basse'].map(p => `<option value="${p}">${p}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Email</label><input type="email" id="nd-email"></div>
+        <div class="form-group"><label>Téléphone</label><input type="text" id="nd-telephone"></div>
+      </div>
+      <div class="form-group"><label>LinkedIn</label><input type="text" id="nd-linkedin"></div>
+    `;
+
+    UI.modal('Ajouter un décideur', body, {
+      width: 640,
+      onSave: async () => {
+        const nom = document.getElementById('nd-nom').value.trim();
+        const prenom = document.getElementById('nd-prenom').value.trim();
+        if (!nom) { alert('Le nom est requis'); return; }
+
+        const decideur = {
+          id: 'dec_' + Date.now(),
+          prenom,
+          nom,
+          entreprise_id: entId,
+          fonction: document.getElementById('nd-fonction').value.trim(),
+          niveau_hierarchique: document.getElementById('nd-niveau').value,
+          role_decision: document.getElementById('nd-role').value,
+          priorite_prospection: document.getElementById('nd-priorite').value,
+          email: document.getElementById('nd-email').value.trim(),
+          telephone: document.getElementById('nd-telephone').value.trim(),
+          linkedin: document.getElementById('nd-linkedin').value.trim(),
+          localisation: currentEntreprise.localisation || '',
+          missions_ids: [],
+          dernier_contact: null,
+          prochaine_relance: null,
+        };
+        await Store.add('decideurs', decideur);
+        renderEntreprisePage();
+        UI.toast('Décideur ajouté');
+      }
+    });
+  }
+
+  (async function() {
+    if (!API.isConfigured()) { UI.showConfigModal(); return; }
+    if (!entId) { window.location.href = 'entreprises.html'; return; }
+    await Store.loadAll();
+    UI.initGlobalSearch();
+    renderEntreprisePage();
   })();
   </script>
 </body>

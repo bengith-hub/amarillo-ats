@@ -258,9 +258,14 @@ body {
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
+  background: #fff;
+}
+
+/* Sticky headers only on list pages (not inside detail tabs) */
+.page-content > .card .data-table th,
+.page-content > .data-table-wrapper .data-table th {
   position: sticky;
   top: 56px;
-  background: #fff;
   z-index: 10;
   box-shadow: 0 1px 0 #e2e8f0;
 }
