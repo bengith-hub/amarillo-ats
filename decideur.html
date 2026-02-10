@@ -36,6 +36,7 @@
   <script src="js/api.js"></script>
   <script src="js/store.js"></script>
   <script src="js/components.js"></script>
+  <script src="js/templates.js"></script>
   <script>
   (async function() {
     if (!API.isConfigured()) { UI.showConfigModal(); return; }
@@ -44,84 +45,218 @@
     await Store.loadAll();
     UI.initGlobalSearch();
 
-    const d = Store.findById('decideurs', id);
+    let d = Store.findById('decideurs', id);
     if (!d) { document.getElementById('decideur-content').innerHTML = '<div class="empty-state"><p>Décideur introuvable</p></div>'; return; }
 
     document.title = `${d.prenom||''} ${d.nom||''} — Amarillo ATS`;
 
-    const entreprise = d.entreprise_id ? Store.resolve('entreprises', d.entreprise_id) : null;
-    const missions = (d.missions_ids || []).map(mid => Store.findById('missions', mid)).filter(Boolean);
-    const actions = Store.filter('actions', a => a.decideur_id === id);
+    renderPage();
 
-    document.getElementById('decideur-content').innerHTML = `
-      <div class="detail-header">
-        <div>
-          <h1>${UI.escHtml((d.prenom||'')+' '+(d.nom||''))}</h1>
-          <div class="subtitle">
-            ${UI.escHtml(d.fonction || '')}
-            ${entreprise ? ` — ${UI.entityLink('entreprises', entreprise.id, entreprise.displayName)}` : ''}
+    function renderPage() {
+      d = Store.findById('decideurs', id);
+      const entreprise = d.entreprise_id ? Store.resolve('entreprises', d.entreprise_id) : null;
+      const missions = (d.missions_ids || []).map(mid => Store.findById('missions', mid)).filter(Boolean);
+      const actions = Store.filter('actions', a => a.decideur_id === id).sort((a, b) => (b.date_action || '').localeCompare(a.date_action || ''));
+
+      const STATUTS_RELATION = ['Contacté', 'En relation', 'Champion'];
+      const PRIORITES = ['Haute', 'Moyenne', 'Basse'];
+
+      document.getElementById('decideur-content').innerHTML = `
+        <div class="detail-header">
+          <div style="display:flex;align-items:center;">
+            <div class="detail-avatar decideur">${(d.prenom || '?')[0]}</div>
+            <div>
+              <h1 id="dec-name" style="cursor:pointer;" title="Cliquer pour modifier">${UI.escHtml((d.prenom||'')+' '+(d.nom||''))}</h1>
+              <div class="subtitle" id="dec-fonction" style="cursor:pointer;" title="Cliquer pour modifier">
+                ${UI.escHtml(d.fonction || 'Ajouter une fonction...')}
+                ${entreprise ? ` — ${UI.entityLink('entreprises', entreprise.id, entreprise.displayName)}` : ''}
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            ${UI.statusBadge(d.niveau_relation || 'Contacté', STATUTS_RELATION, { entity: 'decideurs', recordId: id, fieldName: 'niveau_relation', onUpdate: () => renderPage() })}
+            ${UI.statusBadge(d.priorite_prospection || 'Moyenne', PRIORITES, { entity: 'decideurs', recordId: id, fieldName: 'priorite_prospection', onUpdate: () => renderPage() })}
+            <span class="autosave-indicator saved"><span class="sync-dot"></span> Auto-save</span>
           </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          ${UI.badge(d.priorite_prospection)}
-          <span style="font-size:0.8125rem;color:#64748b;">${UI.escHtml(d.niveau_relation || '')}</span>
-        </div>
-      </div>
 
-      <div class="detail-grid">
-        <div class="detail-main">
-          <div class="card">
-            <div class="card-header"><h2>Informations</h2></div>
-            <div class="card-body">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Fonction macro</div><div>${UI.escHtml(d.fonction_macro||'—')}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Niveau hiérarchique</div><div>${UI.escHtml(d.niveau_hierarchique||'—')}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Rôle décision</div><div>${UI.escHtml(d.role_decision||'—')}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Périmètre</div><div>${UI.escHtml(d.perimetre||'—')}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Email</div><div>${d.email ? `<a href="mailto:${UI.escHtml(d.email)}" class="entity-link">${UI.escHtml(d.email)}</a>` : '—'}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Téléphone</div><div>${d.telephone ? `<a href="tel:${UI.escHtml(d.telephone)}" class="entity-link">${UI.escHtml(d.telephone)}</a>` : '—'}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">LinkedIn</div><div>${d.linkedin ? `<a href="${UI.escHtml(d.linkedin)}" target="_blank" class="entity-link">Profil LinkedIn</a>` : '—'}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Localisation</div><div>${UI.escHtml(d.localisation||'—')}</div></div>
+        <div class="detail-grid">
+          <div class="detail-main">
+            <div class="card" data-accent="purple">
+              <div class="card-header">
+                <h2>Informations</h2>
+                <span class="edit-hint">cliquer sur un champ pour modifier</span>
               </div>
-              ${d.notes_relation ? `<div style="margin-top:16px;"><div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:4px;">Notes relation</div><p style="font-size:0.875rem;white-space:pre-wrap;">${UI.escHtml(d.notes_relation)}</p></div>` : ''}
+              <div class="card-body">
+                <div class="inline-fields-grid" id="dec-info-fields"></div>
+              </div>
+            </div>
+
+            <div class="card" data-accent="blue">
+              <div class="card-header">
+                <h2>Contact</h2>
+                <span class="edit-hint">cliquer pour modifier</span>
+              </div>
+              <div class="card-body">
+                <div class="inline-fields-grid" id="dec-contact-fields"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h2>Notes relation</h2>
+                <span class="edit-hint">cliquer pour modifier</span>
+              </div>
+              <div class="card-body" id="dec-notes-fields"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h2>Missions liées (${missions.length})</h2>
+              </div>
+              <div class="card-body">
+                ${missions.length === 0 ? '<div class="empty-state"><p>Aucune mission</p></div>' :
+                  missions.map(m => `
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+                      <a href="mission.html?id=${m.id}" class="entity-link" style="font-weight:600;">${UI.escHtml(m.nom||m.ref||'')}</a>
+                      <div>${UI.badge(m.statut)} ${UI.badge(m.niveau)}</div>
+                    </div>
+                  `).join('')}
+              </div>
+            </div>
+
+            <div class="card" data-accent="red">
+              <div class="card-header">
+                <h2>Actions (${actions.length})</h2>
+                <button class="btn btn-sm btn-primary" id="btn-new-dec-action">+ Action</button>
+              </div>
+              <div class="card-body"><div id="decideur-timeline"></div></div>
             </div>
           </div>
 
-          <div class="card">
-            <div class="card-header"><h2>Missions liées (${missions.length})</h2></div>
-            <div class="card-body">
-              ${missions.length === 0 ? '<div class="empty-state"><p>Aucune mission</p></div>' :
-                missions.map(m => `
-                  <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">
-                    <a href="mission.html?id=${m.id}" class="entity-link" style="font-weight:600;">${UI.escHtml(m.nom||m.ref||'')}</a>
-                    <div>${UI.badge(m.statut)} ${UI.badge(m.niveau)}</div>
+          <div class="detail-sidebar">
+            <div class="card">
+              <div class="card-header"><h2>Liens</h2></div>
+              <div class="card-body">
+                ${entreprise ? `<div style="margin-bottom:12px;"><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Entreprise</div>${UI.entityLink('entreprises', entreprise.id, entreprise.displayName)}</div>` : ''}
+                <div id="dec-dates-fields" style="margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;"></div>
+                <div style="margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;">
+                  <div style="font-size:0.75rem;color:#94a3b8;">
+                    Créé le ${UI.formatDate(d.created_at)}<br/>
+                    Modifié le ${UI.formatDate(d.updated_at)}
                   </div>
-                `).join('')}
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-header"><h2>Historique actions (${actions.length})</h2></div>
-            <div class="card-body"><div id="decideur-timeline"></div></div>
-          </div>
-        </div>
-
-        <div class="detail-sidebar">
-          <div class="card">
-            <div class="card-header"><h2>Liens</h2></div>
-            <div class="card-body">
-              ${entreprise ? `<div style="margin-bottom:12px;"><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Entreprise</div>${UI.entityLink('entreprises', entreprise.id, entreprise.displayName)}</div>` : ''}
-              <div style="margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:0.75rem;color:#94a3b8;">
-                Dernier contact : ${UI.formatDate(d.dernier_contact)}<br/>
-                Prochaine relance : ${UI.formatDate(d.prochaine_relance)}
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    `;
+      `;
 
-    UI.timeline('decideur-timeline', actions);
+      // Inline editable fields — Info
+      UI.inlineEdit('dec-info-fields', {
+        entity: 'decideurs', recordId: id,
+        fields: [
+          { key: 'fonction', label: 'Fonction', type: 'text' },
+          { key: 'fonction_macro', label: 'Fonction macro', type: 'text' },
+          { key: 'niveau_hierarchique', label: 'Niveau hiérarchique', type: 'select', options: ['COMEX', 'Direction', 'N-1', 'N-2', 'Opérationnel'] },
+          { key: 'role_decision', label: 'Rôle décision', type: 'select', options: ['Décideur', 'Influenceur', 'Prescripteur', 'Utilisateur'] },
+          { key: 'perimetre', label: 'Périmètre', type: 'text' },
+          { key: 'localisation', label: 'Localisation', type: 'text' },
+        ]
+      });
+
+      // Inline editable fields — Contact
+      UI.inlineEdit('dec-contact-fields', {
+        entity: 'decideurs', recordId: id,
+        fields: [
+          { key: 'email', label: 'Email', type: 'text', render: (v) => v ? `<a href="mailto:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
+          { key: 'telephone', label: 'Téléphone', type: 'text', render: (v) => v ? `<a href="tel:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
+          { key: 'linkedin', label: 'LinkedIn', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(v)}" target="_blank" class="entity-link">Profil LinkedIn</a>` : '' },
+        ]
+      });
+
+      // Inline editable — Notes
+      UI.inlineEdit('dec-notes-fields', {
+        entity: 'decideurs', recordId: id,
+        fields: [
+          { key: 'notes_relation', label: 'Notes', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
+        ]
+      });
+
+      // Inline editable — Dates in sidebar
+      UI.inlineEdit('dec-dates-fields', {
+        entity: 'decideurs', recordId: id,
+        fields: [
+          { key: 'dernier_contact', label: 'Dernier contact', type: 'date', render: (v) => UI.formatDate(v) },
+          { key: 'prochaine_relance', label: 'Prochaine relance', type: 'date', render: (v) => UI.formatDate(v) },
+        ]
+      });
+
+      // Inline editing for name
+      document.getElementById('dec-name')?.addEventListener('click', () => {
+        UI.modal('Modifier le nom', `
+          <div class="form-row">
+            <div class="form-group"><label>Prénom</label><input type="text" id="dn-prenom" value="${UI.escHtml(d.prenom || '')}" /></div>
+            <div class="form-group"><label>Nom</label><input type="text" id="dn-nom" value="${UI.escHtml(d.nom || '')}" /></div>
+          </div>
+        `, {
+          onSave: async (overlay) => {
+            await Store.update('decideurs', id, {
+              prenom: overlay.querySelector('#dn-prenom').value.trim(),
+              nom: overlay.querySelector('#dn-nom').value.trim(),
+            });
+            UI.toast('Nom mis à jour');
+            renderPage();
+          }
+        });
+      });
+
+      // New action button
+      document.getElementById('btn-new-dec-action')?.addEventListener('click', () => {
+        const missions = Store.get('missions');
+        UI.modal('Nouvelle action', `
+          <div class="form-group"><label>Action</label><input type="text" id="da-action" placeholder="Ex: Appel de prospection..." /></div>
+          <div class="form-row">
+            <div class="form-group"><label>Type</label><select id="da-type">${['Prise de contact','Prospection','Relance décideur','Cadrage mission','Négociation','Organisation d\'échange','Autre'].map(s => `<option value="${s}">${s}</option>`).join('')}</select></div>
+            <div class="form-group"><label>Canal</label><select id="da-canal">${['LinkedIn','Appel','Email','Visio','Physique','SMS','Autre'].map(s => `<option value="${s}">${s}</option>`).join('')}</select></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Statut</label><select id="da-statut"><option value="À faire">À faire</option><option value="Fait" selected>Fait</option></select></div>
+            <div class="form-group"><label>Date</label><input type="date" id="da-date" value="${new Date().toISOString().split('T')[0]}" /></div>
+          </div>
+          <div class="form-group"><label>Mission liée</label><select id="da-mission"><option value="">— Aucune —</option>${missions.map(m => `<option value="${m.id}">${UI.escHtml(m.nom||m.ref)}</option>`).join('')}</select></div>
+          <div class="form-group"><label>Notes</label><textarea id="da-notes" style="min-height:80px;"></textarea></div>
+          <div class="form-row">
+            <div class="form-group"><label>Next step</label><input type="text" id="da-next" /></div>
+            <div class="form-group"><label>Relance</label><input type="date" id="da-relance" /></div>
+          </div>
+        `, {
+          onSave: async (overlay) => {
+            const action = {
+              id: API.generateId('act'),
+              action: overlay.querySelector('#da-action').value.trim(),
+              type_action: overlay.querySelector('#da-type').value,
+              canal: overlay.querySelector('#da-canal').value,
+              statut: overlay.querySelector('#da-statut').value,
+              date_action: overlay.querySelector('#da-date').value,
+              decideur_id: id,
+              entreprise_id: d.entreprise_id || null,
+              candidat_id: null,
+              mission_id: overlay.querySelector('#da-mission').value || null,
+              message_notes: overlay.querySelector('#da-notes').value.trim(),
+              next_step: overlay.querySelector('#da-next').value.trim(),
+              date_relance: overlay.querySelector('#da-relance').value || null,
+              reponse: false, priorite: null, phase: '', finalite: '', objectif: '', moment_suivi: '',
+            };
+            await Store.add('actions', action);
+            UI.toast('Action créée');
+            renderPage();
+          }
+        });
+      });
+
+      UI.timeline('decideur-timeline', actions);
+    }
   })();
   </script>
 </body>

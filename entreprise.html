@@ -40,6 +40,9 @@
   let currentEntreprise = null;
   const entId = new URLSearchParams(window.location.search).get('id');
 
+  const ENT_STATUTS = ['À cibler', 'Ciblé', 'Prospection en cours', 'Client', 'Ancien client', 'Écarté'];
+  const ENT_PRIORITES = ['1 - Veille', '2 - Basse', '3 - Moyenne', '4 - Haute', '5 - Coeur de cible'];
+
   function renderEntreprisePage() {
     const e = Store.findById('entreprises', entId);
     if (!e) { document.getElementById('entreprise-content').innerHTML = '<div class="empty-state"><p>Entreprise introuvable</p></div>'; return; }
@@ -65,32 +68,31 @@
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
-          ${UI.badge(e.statut || '')}
-          ${UI.badge(e.priorite || '')}
+          ${UI.statusBadge(e.statut || 'À cibler', ENT_STATUTS, { entity: 'entreprises', recordId: entId, fieldName: 'statut', onUpdate: () => renderEntreprisePage() })}
+          ${UI.statusBadge(e.priorite || '3 - Moyenne', ENT_PRIORITES, { entity: 'entreprises', recordId: entId, fieldName: 'priorite', onUpdate: () => renderEntreprisePage() })}
           <button class="btn btn-primary btn-sm" onclick="showEditEntrepriseModal()">Modifier</button>
+          <span class="autosave-indicator saved"><span class="sync-dot"></span> Auto-save</span>
         </div>
       </div>
 
       <div class="detail-grid">
         <div class="detail-main">
-          <div class="card">
-            <div class="card-header"><h2>Informations</h2></div>
-            <div class="card-body">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Secteur</div><div>${UI.escHtml(e.secteur || '—')}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Taille</div><div>${UI.escHtml(e.taille || '—')}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">CA</div><div>${UI.escHtml(e.ca || '—')}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Localisation</div><div>${UI.escHtml(e.localisation || '—')}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Priorité</div><div>${UI.escHtml(e.priorite || '—')}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">ICP Fit</div><div>${e.icp_fit ? '✅ Oui' : '❌ Non'}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Statut</div><div>${UI.escHtml(e.statut || '—')}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Source</div><div>${UI.escHtml(e.source || '—')}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Site web</div><div>${e.site_web ? `<a href="${UI.escHtml(e.site_web)}" target="_blank" class="entity-link">${UI.escHtml(e.site_web)}</a>` : '—'}</div></div>
-                <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Téléphone</div><div>${UI.escHtml(e.telephone || '—')}</div></div>
-              </div>
-              ${e.angle_approche ? `<div style="margin-top:16px;"><div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:4px;">Angle d'approche</div><p style="font-size:0.875rem;white-space:pre-wrap;">${UI.escHtml(e.angle_approche)}</p></div>` : ''}
-              ${e.notes ? `<div style="margin-top:16px;"><div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:4px;">Notes</div><p style="font-size:0.875rem;white-space:pre-wrap;">${UI.escHtml(e.notes)}</p></div>` : ''}
+          <div class="card" data-accent="green">
+            <div class="card-header">
+              <h2>Informations</h2>
+              <span class="edit-hint">cliquer sur un champ pour modifier</span>
             </div>
+            <div class="card-body">
+              <div class="inline-fields-grid" id="ent-info-fields"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2>Stratégie & Notes</h2>
+              <span class="edit-hint">cliquer pour modifier</span>
+            </div>
+            <div class="card-body" id="ent-notes-fields"></div>
           </div>
 
           <div class="card">
@@ -173,15 +175,45 @@
               <div style="font-size:1.25rem;font-weight:700;margin-bottom:12px;">${candidats.length}</div>
               <div style="font-size:0.75rem;color:#64748b;">Actions</div>
               <div style="font-size:1.25rem;font-weight:700;margin-bottom:12px;">${actions.length}</div>
-              <div style="margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:0.75rem;color:#94a3b8;">
-                Dernier contact : ${UI.formatDate(e.dernier_contact)}<br/>
-                Prochaine relance : ${UI.formatDate(e.prochaine_relance)}
-              </div>
+              <div id="ent-dates-fields" style="margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;"></div>
             </div>
           </div>
         </div>
       </div>
     `;
+
+    // Inline editable fields — Info
+    UI.inlineEdit('ent-info-fields', {
+      entity: 'entreprises', recordId: entId,
+      fields: [
+        { key: 'secteur', label: 'Secteur', type: 'text' },
+        { key: 'taille', label: 'Taille', type: 'select', options: ['1-10', '11-50', '51-200', '201-500', '501-1000', '1000+'] },
+        { key: 'ca', label: 'CA', type: 'text' },
+        { key: 'localisation', label: 'Localisation', type: 'text' },
+        { key: 'telephone', label: 'Téléphone', type: 'text' },
+        { key: 'site_web', label: 'Site web', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(v)}" target="_blank" class="entity-link">${UI.escHtml(v)}</a>` : '' },
+        { key: 'icp_fit', label: 'ICP Fit', type: 'boolean', render: (v) => v ? '✅ Oui' : '❌ Non' },
+        { key: 'source', label: 'Source', type: 'text' },
+      ]
+    });
+
+    // Inline editable — Notes & Strategy
+    UI.inlineEdit('ent-notes-fields', {
+      entity: 'entreprises', recordId: entId,
+      fields: [
+        { key: 'angle_approche', label: "Angle d'approche", type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
+        { key: 'notes', label: 'Notes', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
+      ]
+    });
+
+    // Inline editable — Dates
+    UI.inlineEdit('ent-dates-fields', {
+      entity: 'entreprises', recordId: entId,
+      fields: [
+        { key: 'dernier_contact', label: 'Dernier contact', type: 'date', render: (v) => UI.formatDate(v) },
+        { key: 'prochaine_relance', label: 'Prochaine relance', type: 'date', render: (v) => UI.formatDate(v) },
+      ]
+    });
   }
 
   function showEditEntrepriseModal() {
