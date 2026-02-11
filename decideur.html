@@ -78,6 +78,7 @@
           <div style="display:flex;gap:8px;align-items:center;">
             ${UI.statusBadge(d.niveau_relation || 'Contacté', STATUTS_RELATION, { entity: 'decideurs', recordId: id, fieldName: 'niveau_relation', onUpdate: () => renderPage() })}
             ${UI.statusBadge(d.priorite_prospection || 'Moyenne', PRIORITES, { entity: 'decideurs', recordId: id, fieldName: 'priorite_prospection', onUpdate: () => renderPage() })}
+            <button class="btn btn-danger btn-sm" id="btn-delete-decideur" title="Supprimer ce décideur">🗑️</button>
             <span class="autosave-indicator saved"><span class="sync-dot"></span> Auto-save</span>
           </div>
         </div>
@@ -153,6 +154,20 @@
           </div>
         </div>
       `;
+
+      document.getElementById('btn-delete-decideur')?.addEventListener('click', () => {
+        UI.modal('Supprimer le décideur', `
+          <p style="color:#dc2626;font-weight:600;">Supprimer <strong>${UI.escHtml((d.prenom || '') + ' ' + (d.nom || ''))}</strong> ?</p>
+          <p style="font-size:0.875rem;color:#64748b;margin-top:8px;">Cette action est irréversible.</p>
+        `, {
+          saveLabel: 'Supprimer',
+          onSave: async () => {
+            await Store.remove('decideurs', id);
+            UI.toast('Décideur supprimé');
+            setTimeout(() => window.location.href = 'decideurs.html', 500);
+          }
+        });
+      });
 
       // Inline editable fields — Info
       UI.inlineEdit('dec-info-fields', {

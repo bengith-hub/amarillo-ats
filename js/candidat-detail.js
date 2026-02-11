@@ -50,6 +50,7 @@
           ${UI.statusBadge(candidat.statut || 'To call', CANDIDAT_STATUTS, { entity: 'candidats', recordId: id, fieldName: 'statut', onUpdate: (s) => { candidat.statut = s; } })}
           ${UI.statusBadge(candidat.niveau || 'Middle', CANDIDAT_NIVEAUX, { entity: 'candidats', recordId: id, fieldName: 'niveau', onUpdate: (s) => { candidat.niveau = s; } })}
           <button class="btn btn-secondary btn-sm" id="btn-templates">📋 Trames</button>
+          <button class="btn btn-danger btn-sm" id="btn-delete-candidat" title="Supprimer ce candidat">🗑️</button>
           <span class="autosave-indicator saved"><span class="sync-dot"></span> Auto-save</span>
         </div>
       </div>
@@ -57,6 +58,20 @@
 
     document.getElementById('btn-templates').addEventListener('click', () => {
       showTemplatesModal({ candidatId: id });
+    });
+
+    document.getElementById('btn-delete-candidat').addEventListener('click', () => {
+      UI.modal('Supprimer le candidat', `
+        <p style="color:#dc2626;font-weight:600;">Supprimer <strong>${UI.escHtml((candidat.prenom || '') + ' ' + (candidat.nom || ''))}</strong> ?</p>
+        <p style="font-size:0.875rem;color:#64748b;margin-top:8px;">Cette action est irréversible. Toutes les données du candidat seront perdues.</p>
+      `, {
+        saveLabel: 'Supprimer',
+        onSave: async () => {
+          await Store.remove('candidats', id);
+          UI.toast('Candidat supprimé');
+          setTimeout(() => window.location.href = 'candidats.html', 500);
+        }
+      });
     });
 
     // Click on name to edit

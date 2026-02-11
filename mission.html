@@ -79,6 +79,7 @@
           ${UI.badge(m.statut)} ${UI.badge(m.niveau)}
           <span class="autosave-indicator saved"><span class="sync-dot"></span> Auto-save</span>
           <button class="btn btn-primary btn-sm" id="btn-add-candidat-mission">+ Candidat</button>
+          <button class="btn btn-danger btn-sm" id="btn-delete-mission" title="Supprimer cette mission">🗑️</button>
         </div>
       </div>
 
@@ -174,6 +175,20 @@
           });
           UI.toast('Nom mis à jour');
           setTimeout(() => location.reload(), 300);
+        }
+      });
+    });
+
+    document.getElementById('btn-delete-mission')?.addEventListener('click', () => {
+      UI.modal('Supprimer la mission', `
+        <p style="color:#dc2626;font-weight:600;">Supprimer <strong>${UI.escHtml(m.nom || m.ref || '')}</strong> ?</p>
+        <p style="font-size:0.875rem;color:#64748b;margin-top:8px;">Cette action est irréversible.</p>
+      `, {
+        saveLabel: 'Supprimer',
+        onSave: async () => {
+          await Store.remove('missions', id);
+          UI.toast('Mission supprimée');
+          setTimeout(() => window.location.href = 'missions.html', 500);
         }
       });
     });
