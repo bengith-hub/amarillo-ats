@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amarillo ATS — Import Notion</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="sidebar-logo"><div class="sidebar-logo-icon">A</div>Amarillo ATS</div>
+    <div class="sidebar-nav">
+      <a href="index.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>Dashboard</a>
+      <a href="import-notion.html" class="active"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>Import Notion</a>
+    </div>
+  </nav>
+
+  <div class="main-content">
+    <header class="topbar" data-entity="dashboard">
+      <h1 class="topbar-title">Import des données Notion</h1>
+    </header>
+
+    <div class="page-content">
+      <div style="max-width:800px;">
+        <div class="card" style="border-left:3px solid #10b981;">
+          <div class="card-header"><h2>1. Entreprises</h2></div>
+          <div class="card-body">
+            <p style="font-size:0.8125rem;color:#64748b;margin-bottom:12px;">
+              Chargez le fichier <code>Entreprises ..._all.csv</code> exporté depuis Notion.
+            </p>
+            <input type="file" id="file-entreprises" accept=".csv" />
+            <div id="preview-entreprises" style="margin-top:12px;"></div>
+          </div>
+        </div>
+
+        <div class="card" style="border-left:3px solid #8b5cf6;">
+          <div class="card-header"><h2>2. Décideurs</h2></div>
+          <div class="card-body">
+            <p style="font-size:0.8125rem;color:#64748b;margin-bottom:12px;">
+              Chargez le fichier <code>Décideurs Clients ..._all.csv</code> exporté depuis Notion.
+              Les liens vers les entreprises seront automatiquement résolus.
+            </p>
+            <input type="file" id="file-decideurs" accept=".csv" />
+            <div id="preview-decideurs" style="margin-top:12px;"></div>
+          </div>
+        </div>
+
+        <div class="card" style="border-left:3px solid #3b82f6;">
+          <div class="card-header"><h2>3. Candidats</h2></div>
+          <div class="card-body">
+            <p style="font-size:0.8125rem;color:#64748b;margin-bottom:12px;">
+              Chargez le fichier <code>Candidats ..._all.csv</code> exporté depuis Notion.
+            </p>
+            <input type="file" id="file-candidats" accept=".csv" />
+            <div id="preview-candidats" style="margin-top:12px;"></div>
+          </div>
+        </div>
+
+        <div style="margin-top:24px;display:flex;gap:12px;align-items:center;">
+          <label style="font-size:0.8125rem;display:flex;align-items:center;gap:6px;">
+            <input type="checkbox" id="chk-merge" checked />
+            Fusionner avec données existantes (ne pas écraser les doublons)
+          </label>
+        </div>
+
+        <div style="margin-top:16px;display:flex;gap:12px;">
+          <button class="btn btn-primary" id="btn-import" disabled>Importer dans JSONBin</button>
+          <button class="btn btn-secondary" id="btn-dry-run">Aperçu (dry run)</button>
+        </div>
+
+        <div id="import-log" style="margin-top:24px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/components.js"></script>
+  <script src="js/referentiels.js"></script>
+  <script>
+  (function() {
+    // ============================================================
+    // CSV PARSER
+    // ============================================================
+    function parseCSV(text) {
+      const lines = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (ch === '"') {
+          if (inQuotes && text[i + 1] === '"') { current += '"'; i++; }
+          else inQuotes = !inQuotes;
+        } else if (ch === ',' && !inQuotes) {
+          lines.push(current);
+          current = '';
+        } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+          if (ch === '\r' && text[i + 1] === '\n') i++;
+          lines.push(current);
+          current = '';
+          // end of row
+          if (lines.length > 0) yield_row(lines);
+          lines.length = 0;
+        } else {
+          current += ch;
+        }
+      }
+      if (current || lines.length > 0) { lines.push(current); yield_row(lines); }
+
+      function yield_row(cols) { rows.push([...cols]); }
+      // Actually, let me rewrite properly
+    }
+
+    // Simpler approach: full parse
+    function parseCSVFull(text) {
+      const rows = [];
+      let row = [];
+      let cell = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (ch === '"') {
+          if (inQuotes && text[i + 1] === '"') { cell += '"'; i++; }
+          else inQuotes = !inQuotes;
+        } else if (ch === ',' && !inQuotes) {
+          row.push(cell); cell = '';
+        } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+          if (ch === '\r' && text[i + 1] === '\n') i++;
+          row.push(cell); cell = '';
+          if (row.some(c => c.trim())) rows.push(row);
+          row = [];
+        } else {
+          cell += ch;
+        }
+      }
+      if (cell || row.length > 0) { row.push(cell); if (row.some(c => c.trim())) rows.push(row); }
+      return rows;
+    }
+
+    function csvToObjects(text) {
+      const rows = parseCSVFull(text);
+      if (rows.length < 2) return [];
+      // Remove BOM
+      let headers = rows[0].map(h => h.replace(/^\uFEFF/, '').trim());
+      return rows.slice(1).map(row => {
+        const obj = {};
+        headers.forEach((h, i) => { obj[h] = (row[i] || '').trim(); });
+        return obj;
+      });
+    }
+
+    // ============================================================
+    // MAPPERS — Notion CSV → ATS format
+    // ============================================================
+    function extractNotionName(val) {
+      // "GOZOKI (https://www.notion.so/...)" → "GOZOKI"
+      if (!val) return '';
+      const m = val.match(/^(.+?)\s*\(https?:\/\/www\.notion\.so\//);
+      return m ? m[1].trim() : val.trim();
+    }
+
+    function cleanPriority(val) {
+      // "🔴 Haute" → "Haute", "🟠 Moyenne" → "Moyenne"
+      if (!val) return '';
+      return val.replace(/^[\u{1F534}\u{1F7E0}\u{1F7E2}\u{1F7E1}\u{2B55}\u{1F535}]\s*/u, '').trim();
+    }
+
+    function mapEntreprise(row) {
+      return {
+        id: API.generateId('ent'),
+        nom: row['Nom'] || '',
+        secteur: row['Secteur'] || '',
+        taille: row['Taille'] || '',
+        ca: row['CA'] || '',
+        localisation: row['Localisation Principale'] || '',
+        priorite: row['Priorité'] || '',
+        statut: (row['Statut'] || '').replace('A cibler', 'À cibler') || '',
+        icp_fit: (row['ICP fit'] || '').toLowerCase() === 'oui' || (row['ICP fit'] || '').toLowerCase() === 'yes',
+        site_web: row['Site web'] || '',
+        telephone: row['Téléphone'] || '',
+        angle_approche: row["Ange d'approche"] || row["Angle d'approche"] || '',
+        source: row['Source'] || '',
+        notes: row['Notes'] || '',
+        dernier_contact: row['Dernier contact'] ? parseNotionDate(row['Dernier contact']) : null,
+        prochaine_relance: row['Prochaine relance'] ? parseNotionDate(row['Prochaine relance']) : null,
+      };
+    }
+
+    function mapDecideur(row, entrepriseMap) {
+      const prenomNom = row['Prénom + Nom'] || '';
+      const parts = prenomNom.split(' ');
+      const prenom = parts[0] || '';
+      const nom = parts.slice(1).join(' ') || '';
+
+      const entName = extractNotionName(row['Entreprise'] || '');
+      const entreprise_id = entrepriseMap[entName.toLowerCase()] || '';
+
+      // Profil candidat link
+      const candidatName = extractNotionName(row['Profil candidat'] || '');
+
+      return {
+        id: API.generateId('dec'),
+        prenom,
+        nom,
+        entreprise_id,
+        _entreprise_name: entName,
+        fonction: row['Fonction'] || '',
+        fonction_macro: row['Fonction macro'] || '',
+        niveau_hierarchique: row['Niveau hiérarchique'] || '',
+        role_decision: row['Rôle dans la décision'] || '',
+        perimetre: row['Périmètre'] || 'France',
+        priorite_prospection: cleanPriority(row['Priorité prospection'] || ''),
+        niveau_relation: row['Niveau de relation'] || '',
+        email: row['Email'] || '',
+        telephone: row['Téléphone'] || '',
+        linkedin: row['Linkedin'] || '',
+        localisation: row['Localisation'] || '',
+        notes_relation: row['Notes relation'] || '',
+        manager_direct_id: null,
+        missions_ids: [],
+        profil_candidat_id: null,
+        _candidat_name: candidatName,
+        a_relancer: (row['A relancer?'] || '').toLowerCase() === 'yes',
+        dernier_contact: row['Dernier contact'] ? parseNotionDate(row['Dernier contact']) : null,
+        prochaine_relance: row['Prochaine relance'] ? parseNotionDate(row['Prochaine relance']) : null,
+      };
+    }
+
+    function mapCandidat(row) {
+      return {
+        id: API.generateId('can'),
+        prenom: row['Prénom'] || '',
+        nom: row['Nom'] || '',
+        email: row['Email'] || '',
+        telephone: row['Téléphone'] || '',
+        linkedin: row['Linkedin'] || '',
+        localisation: row['Localisation'] || '',
+        poste_actuel: row['Poste actuel'] || row['Titre actuel'] || '',
+        statut: row['Statut'] || '',
+        source: row['Source'] || '',
+        notes: row['Notes'] || '',
+        niveau: row['Niveau'] || '',
+        diplome: row['Diplôme'] || '',
+        entreprise_actuelle: row['Entreprise actuelle'] || '',
+      };
+    }
+
+    function parseNotionDate(str) {
+      if (!str) return null;
+      try {
+        const d = new Date(str);
+        if (isNaN(d.getTime())) return null;
+        return d.toISOString().split('T')[0];
+      } catch { return null; }
+    }
+
+    // ============================================================
+    // STATE
+    // ============================================================
+    let parsedEntreprises = [];
+    let parsedDecideurs = [];
+    let parsedCandidats = [];
+    let entrepriseNameMap = {}; // lowercase name → id
+
+    // ============================================================
+    // FILE HANDLERS
+    // ============================================================
+    document.getElementById('file-entreprises').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const objs = csvToObjects(ev.target.result);
+        parsedEntreprises = objs.map(mapEntreprise).filter(e => e.nom);
+        // Build name map
+        entrepriseNameMap = {};
+        parsedEntreprises.forEach(e => { entrepriseNameMap[e.nom.toLowerCase()] = e.id; });
+        document.getElementById('preview-entreprises').innerHTML =
+          `<span style="color:#10b981;font-weight:600;">${parsedEntreprises.length} entreprises</span> trouvées.`;
+        updateImportBtn();
+      };
+      reader.readAsText(file, 'utf-8');
+    });
+
+    document.getElementById('file-decideurs').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const objs = csvToObjects(ev.target.result);
+        parsedDecideurs = objs.map(row => mapDecideur(row, entrepriseNameMap)).filter(d => d.prenom || d.nom);
+        const linked = parsedDecideurs.filter(d => d.entreprise_id).length;
+        const unlinked = parsedDecideurs.filter(d => !d.entreprise_id && d._entreprise_name).length;
+        document.getElementById('preview-decideurs').innerHTML =
+          `<span style="color:#8b5cf6;font-weight:600;">${parsedDecideurs.length} décideurs</span> trouvés. ` +
+          `<span style="color:#10b981;">${linked} liés</span> à une entreprise` +
+          (unlinked > 0 ? `, <span style="color:#c9a000;">${unlinked} non liés</span> (entreprise non trouvée — importez les entreprises d'abord)` : '') + '.';
+        updateImportBtn();
+      };
+      reader.readAsText(file, 'utf-8');
+    });
+
+    document.getElementById('file-candidats').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const objs = csvToObjects(ev.target.result);
+        parsedCandidats = objs.map(mapCandidat).filter(c => c.prenom || c.nom);
+        document.getElementById('preview-candidats').innerHTML =
+          `<span style="color:#3b82f6;font-weight:600;">${parsedCandidats.length} candidats</span> trouvés.`;
+        updateImportBtn();
+      };
+      reader.readAsText(file, 'utf-8');
+    });
+
+    function updateImportBtn() {
+      const total = parsedEntreprises.length + parsedDecideurs.length + parsedCandidats.length;
+      document.getElementById('btn-import').disabled = total === 0;
+    }
+
+    // ============================================================
+    // DRY RUN
+    // ============================================================
+    document.getElementById('btn-dry-run').addEventListener('click', () => {
+      const log = document.getElementById('import-log');
+      let html = '<div class="card"><div class="card-header"><h2>Aperçu de l\'import</h2></div><div class="card-body">';
+
+      if (parsedEntreprises.length > 0) {
+        html += `<h3 style="margin-bottom:8px;font-weight:600;">Entreprises (${parsedEntreprises.length})</h3>`;
+        html += '<div style="max-height:300px;overflow-y:auto;margin-bottom:16px;">';
+        html += '<table class="data-table"><thead><tr><th>Nom</th><th>Secteur</th><th>Localisation</th><th>Statut</th><th>Taille</th></tr></thead><tbody>';
+        parsedEntreprises.forEach(e => {
+          html += `<tr><td>${UI.escHtml(e.nom)}</td><td>${UI.escHtml(e.secteur)}</td><td>${UI.escHtml(e.localisation)}</td><td>${UI.badge(e.statut)}</td><td>${UI.escHtml(e.taille)}</td></tr>`;
+        });
+        html += '</tbody></table></div>';
+      }
+
+      if (parsedDecideurs.length > 0) {
+        html += `<h3 style="margin-bottom:8px;font-weight:600;">Décideurs (${parsedDecideurs.length})</h3>`;
+        html += '<div style="max-height:300px;overflow-y:auto;margin-bottom:16px;">';
+        html += '<table class="data-table"><thead><tr><th>Nom</th><th>Entreprise</th><th>Fonction</th><th>Rôle</th><th>Lié?</th></tr></thead><tbody>';
+        parsedDecideurs.forEach(d => {
+          const linked = d.entreprise_id ? '✅' : '⚠️';
+          html += `<tr><td>${UI.escHtml(d.prenom)} ${UI.escHtml(d.nom)}</td><td>${UI.escHtml(d._entreprise_name)}</td><td>${UI.escHtml(d.fonction)}</td><td>${UI.badge(d.role_decision)}</td><td>${linked}</td></tr>`;
+        });
+        html += '</tbody></table></div>';
+      }
+
+      if (parsedCandidats.length > 0) {
+        html += `<h3 style="margin-bottom:8px;font-weight:600;">Candidats (${parsedCandidats.length})</h3>`;
+        html += '<div style="max-height:300px;overflow-y:auto;">';
+        html += '<table class="data-table"><thead><tr><th>Nom</th><th>Poste</th><th>Statut</th></tr></thead><tbody>';
+        parsedCandidats.forEach(c => {
+          html += `<tr><td>${UI.escHtml(c.prenom)} ${UI.escHtml(c.nom)}</td><td>${UI.escHtml(c.poste_actuel)}</td><td>${UI.badge(c.statut)}</td></tr>`;
+        });
+        html += '</tbody></table></div>';
+      }
+
+      html += '</div></div>';
+      log.innerHTML = html;
+    });
+
+    // ============================================================
+    // IMPORT
+    // ============================================================
+    document.getElementById('btn-import').addEventListener('click', async () => {
+      if (!API.isConfigured()) { UI.showConfigModal(); return; }
+
+      const log = document.getElementById('import-log');
+      const merge = document.getElementById('chk-merge').checked;
+      let logLines = [];
+      function addLog(msg, type) {
+        logLines.push(`<div style="padding:4px 0;font-size:0.8125rem;color:${type === 'ok' ? '#16a34a' : type === 'warn' ? '#c9a000' : type === 'err' ? '#dc2626' : '#64748b'};">${msg}</div>`);
+        log.innerHTML = `<div class="card"><div class="card-body">${logLines.join('')}</div></div>`;
+      }
+
+      document.getElementById('btn-import').disabled = true;
+      addLog('Démarrage de l\'import...', 'info');
+
+      try {
+        // Load existing data
+        await Store.loadAll();
+
+        // --- ENTREPRISES ---
+        if (parsedEntreprises.length > 0) {
+          addLog(`Import de ${parsedEntreprises.length} entreprises...`, 'info');
+          const existing = Store.get('entreprises');
+          const existingNames = new Set(existing.map(e => (e.nom || '').toLowerCase()));
+          let added = 0, skipped = 0;
+
+          for (const ent of parsedEntreprises) {
+            if (merge && existingNames.has(ent.nom.toLowerCase())) {
+              // Update entrepriseNameMap with existing ID
+              const existingEnt = existing.find(e => (e.nom || '').toLowerCase() === ent.nom.toLowerCase());
+              if (existingEnt) entrepriseNameMap[ent.nom.toLowerCase()] = existingEnt.id;
+              skipped++;
+              continue;
+            }
+            existing.push(ent);
+            added++;
+          }
+
+          await API.updateBin('entreprises', existing);
+          // Update local cache
+          Store.get('entreprises'); // ensure loaded
+          addLog(`Entreprises : ${added} ajoutées, ${skipped} existantes ignorées`, 'ok');
+        }
+
+        // Re-link décideurs to entreprises (including existing ones)
+        if (parsedDecideurs.length > 0) {
+          const allEnt = Store.get('entreprises').length > 0 ? Store.get('entreprises') : parsedEntreprises;
+          // rebuild map with all entreprises
+          const fullEntMap = {};
+          (Store.get('entreprises').length > 0 ? Store.get('entreprises') : []).forEach(e => {
+            fullEntMap[(e.nom || '').toLowerCase()] = e.id;
+          });
+          parsedEntreprises.forEach(e => {
+            if (!fullEntMap[e.nom.toLowerCase()]) fullEntMap[e.nom.toLowerCase()] = e.id;
+          });
+
+          // re-resolve
+          parsedDecideurs.forEach(d => {
+            if (!d.entreprise_id && d._entreprise_name) {
+              d.entreprise_id = fullEntMap[d._entreprise_name.toLowerCase()] || '';
+            }
+          });
+
+          addLog(`Import de ${parsedDecideurs.length} décideurs...`, 'info');
+          const existingDec = Store.get('decideurs');
+          const existingDecNames = new Set(existingDec.map(d => `${(d.prenom||'').toLowerCase()} ${(d.nom||'').toLowerCase()}`));
+          let addedD = 0, skippedD = 0;
+
+          for (const dec of parsedDecideurs) {
+            const key = `${dec.prenom.toLowerCase()} ${dec.nom.toLowerCase()}`;
+            if (merge && existingDecNames.has(key)) { skippedD++; continue; }
+            // Clean internal fields
+            const clean = { ...dec };
+            delete clean._entreprise_name;
+            delete clean._candidat_name;
+            existingDec.push(clean);
+            addedD++;
+          }
+
+          await API.updateBin('decideurs', existingDec);
+          addLog(`Décideurs : ${addedD} ajoutés, ${skippedD} existants ignorés`, 'ok');
+
+          const linked = parsedDecideurs.filter(d => d.entreprise_id).length;
+          addLog(`Liaisons décideur→entreprise : ${linked}/${parsedDecideurs.length} résolues`, linked === parsedDecideurs.length ? 'ok' : 'warn');
+        }
+
+        // --- CANDIDATS ---
+        if (parsedCandidats.length > 0) {
+          addLog(`Import de ${parsedCandidats.length} candidats...`, 'info');
+          const existingCan = Store.get('candidats');
+          const existingCanNames = new Set(existingCan.map(c => `${(c.prenom||'').toLowerCase()} ${(c.nom||'').toLowerCase()}`));
+          let addedC = 0, skippedC = 0;
+
+          for (const can of parsedCandidats) {
+            const key = `${can.prenom.toLowerCase()} ${can.nom.toLowerCase()}`;
+            if (merge && existingCanNames.has(key)) { skippedC++; continue; }
+            existingCan.push(can);
+            addedC++;
+          }
+
+          await API.updateBin('candidats', existingCan);
+          addLog(`Candidats : ${addedC} ajoutés, ${skippedC} existants ignorés`, 'ok');
+        }
+
+        // Force refresh cache
+        await Store.refreshAll();
+        addLog('Import terminé ! Le cache a été rafraîchi.', 'ok');
+        addLog('<a href="index.html" style="color:#2563eb;text-decoration:underline;">Retour au Dashboard</a>', 'info');
+
+      } catch (e) {
+        addLog(`Erreur : ${e.message}`, 'err');
+        console.error(e);
+      }
+
+      document.getElementById('btn-import').disabled = false;
+    });
+
+  })();
+  </script>
+</body>
+</html>

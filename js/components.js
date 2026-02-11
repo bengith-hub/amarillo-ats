@@ -58,10 +58,19 @@ const UI = (() => {
     'Prescripteur': 'badge-prescripteur',
   };
 
+  // Generate a consistent color for values not in BADGE_MAP
+  function autoBadgeStyle(text) {
+    let hash = 0;
+    for (let i = 0; i < text.length; i++) hash = text.charCodeAt(i) + ((hash << 5) - hash);
+    const hue = ((hash % 360) + 360) % 360;
+    return `background:hsl(${hue},55%,92%);color:hsl(${hue},60%,35%)`;
+  }
+
   function badge(text) {
     if (!text) return '';
     const cls = BADGE_MAP[text] || '';
-    return `<span class="badge ${cls}">${escHtml(text)}</span>`;
+    if (cls) return `<span class="badge ${cls}">${escHtml(text)}</span>`;
+    return `<span class="badge" style="${autoBadgeStyle(text)}">${escHtml(text)}</span>`;
   }
 
   function entityLink(entity, id, label) {
@@ -763,7 +772,9 @@ const UI = (() => {
   function statusBadge(currentStatus, options, { entity, recordId, fieldName = 'statut', onUpdate } = {}) {
     const id = 'sb-' + Math.random().toString(36).substr(2, 6);
     // Return HTML string; bind events after DOM insert
-    const html = `<span class="badge ${BADGE_MAP[currentStatus] || ''} status-clickable" id="${id}" data-status="${escHtml(currentStatus || '')}" title="Cliquer pour changer le statut">${escHtml(currentStatus || '—')}</span>`;
+    const statusCls = BADGE_MAP[currentStatus] || '';
+    const statusStyle = statusCls ? '' : ` style="${autoBadgeStyle(currentStatus || '')}"`;
+    const html = `<span class="badge ${statusCls} status-clickable" id="${id}" data-status="${escHtml(currentStatus || '')}"${statusStyle} title="Cliquer pour changer le statut">${escHtml(currentStatus || '—')}</span>`;
 
     // Deferred binding
     setTimeout(() => {
@@ -774,7 +785,9 @@ const UI = (() => {
         showStatusPicker(el, currentStatus, options, async (newStatus) => {
           if (newStatus !== currentStatus) {
             await Store.update(entity, recordId, { [fieldName]: newStatus });
-            el.className = `badge ${BADGE_MAP[newStatus] || ''} status-clickable`;
+            const newCls = BADGE_MAP[newStatus] || '';
+            el.className = `badge ${newCls} status-clickable`;
+            el.style.cssText = newCls ? '' : autoBadgeStyle(newStatus);
             el.textContent = newStatus;
             el.dataset.status = newStatus;
             toast('Statut mis à jour');
@@ -797,7 +810,10 @@ const UI = (() => {
     options.forEach(opt => {
       const item = document.createElement('div');
       item.className = 'status-picker-item' + (opt === currentStatus ? ' active' : '');
-      item.innerHTML = `<span class="badge ${BADGE_MAP[opt] || ''}">${escHtml(opt)}</span>`;
+      const optCls = BADGE_MAP[opt] || '';
+      item.innerHTML = optCls
+        ? `<span class="badge ${optCls}">${escHtml(opt)}</span>`
+        : `<span class="badge" style="${autoBadgeStyle(opt)}">${escHtml(opt)}</span>`;
       item.addEventListener('mousedown', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -826,7 +842,7 @@ const UI = (() => {
   }
 
   return {
-    badge, entityLink, resolveLink,
+    badge, autoBadgeStyle, entityLink, resolveLink,
     dataTable, filterBar, modal, toast,
     initTabs, timeline, showConfigModal,
     initGlobalSearch, entrepriseAutocomplete,

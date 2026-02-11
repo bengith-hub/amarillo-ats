@@ -86,7 +86,7 @@
                         ${values.map((val, idx) => `
                           <div class="ref-value-item" data-idx="${idx}" draggable="true">
                             <span class="ref-value-handle" title="Glisser pour réordonner">⠿</span>
-                            <span class="ref-value-text">${UI.escHtml(val)}</span>
+                            <span class="ref-value-text">${UI.badge(val)}</span>
                             <button class="ref-value-delete" data-key="${item.key}" data-val="${UI.escHtml(val)}" title="Supprimer">✕</button>
                           </div>
                         `).join('')}
