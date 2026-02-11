@@ -3,3 +3,9 @@ data/jsonbin-config.json
 data/upload-to-jsonbin.js
 data/*.json
 js/migration.js
+
+# Dossiers extraits des exports Notion (données source)
+__MACOSX/
+Entreprises/
+Candidats/
+De*cideurs*/
