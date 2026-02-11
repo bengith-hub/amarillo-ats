@@ -594,7 +594,7 @@ const UI = (() => {
   // ============================================================
   // INLINE EDIT — click-to-edit fields with auto-save (Notion-like)
   // ============================================================
-  function inlineEdit(containerId, { entity, recordId, fields }) {
+  function inlineEdit(containerId, { entity, recordId, fields, onAfterSave }) {
     const container = document.getElementById(containerId);
     if (!container) return;
 
@@ -629,6 +629,7 @@ const UI = (() => {
       record[fieldKey] = value;
       await Store.update(entity, recordId, { [fieldKey]: value });
       toast('Sauvegardé');
+      if (onAfterSave) onAfterSave(fieldKey, value);
     }
 
     function startEditing(el, fieldDef) {

@@ -16,12 +16,12 @@
       {
         key: 'statut',
         label: 'Tous les statuts',
-        options: ['To call', 'Approché', 'En qualification', 'Shortlisté', 'Présenté', 'Placé', 'Off market', 'Pas prioritaire']
+        options: Referentiels.get('candidat_statuts')
       },
       {
         key: 'niveau',
         label: 'Tous les niveaux',
-        options: ['Junior', 'Middle', 'Top']
+        options: Referentiels.get('candidat_niveaux')
       },
       {
         key: 'localisation',
@@ -141,9 +141,7 @@
           <label>Niveau</label>
           <select id="f-niveau">
             <option value="">—</option>
-            <option value="Junior" ${c.niveau === 'Junior' ? 'selected' : ''}>Junior</option>
-            <option value="Middle" ${c.niveau === 'Middle' ? 'selected' : ''}>Middle</option>
-            <option value="Top" ${c.niveau === 'Top' ? 'selected' : ''}>Top</option>
+            ${Referentiels.get('candidat_niveaux').map(s=>`<option value="${s}" ${c.niveau===s?'selected':''}>${s}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -151,14 +149,7 @@
         <div class="form-group">
           <label>Statut</label>
           <select id="f-statut">
-            <option value="To call" ${c.statut === 'To call' ? 'selected' : ''}>To call</option>
-            <option value="Approché" ${c.statut === 'Approché' ? 'selected' : ''}>Approché</option>
-            <option value="En qualification" ${c.statut === 'En qualification' ? 'selected' : ''}>En qualification</option>
-            <option value="Shortlisté" ${c.statut === 'Shortlisté' ? 'selected' : ''}>Shortlisté</option>
-            <option value="Présenté" ${c.statut === 'Présenté' ? 'selected' : ''}>Présenté</option>
-            <option value="Placé" ${c.statut === 'Placé' ? 'selected' : ''}>Placé</option>
-            <option value="Off market" ${c.statut === 'Off market' ? 'selected' : ''}>Off market</option>
-            <option value="Pas prioritaire" ${c.statut === 'Pas prioritaire' ? 'selected' : ''}>Pas prioritaire</option>
+            ${Referentiels.get('candidat_statuts').map(s=>`<option value="${s}" ${c.statut===s?'selected':''}>${s}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
@@ -215,9 +206,7 @@
           <label>Diplôme</label>
           <select id="f-diplome">
             <option value="">—</option>
-            <option value="Bac+2 / Bac+3" ${c.diplome === 'Bac+2 / Bac+3' ? 'selected' : ''}>Bac+2 / Bac+3</option>
-            <option value="Bac+4" ${c.diplome === 'Bac+4' ? 'selected' : ''}>Bac+4</option>
-            <option value="Bac+5" ${c.diplome === 'Bac+5' ? 'selected' : ''}>Bac+5</option>
+            ${Referentiels.get('candidat_diplomes').map(s=>`<option value="${s}" ${c.diplome===s?'selected':''}>${s}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -225,9 +214,7 @@
         <label>Origine</label>
         <select id="f-origine">
           <option value="">—</option>
-          <option value="Approche directe" ${c.origine === 'Approche directe' ? 'selected' : ''}>Approche directe</option>
-          <option value="Recommandation" ${c.origine === 'Recommandation' ? 'selected' : ''}>Recommandation</option>
-          <option value="Candidature" ${c.origine === 'Candidature' ? 'selected' : ''}>Candidature</option>
+          ${Referentiels.get('candidat_sources').map(s=>`<option value="${s}" ${c.origine===s?'selected':''}>${s}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">

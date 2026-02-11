@@ -20,6 +20,7 @@
       <a href="decideurs.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Décideurs</a>
       <a href="actions.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>Actions</a>
       <a href="facturation.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Facturation</a>
+      <a href="referentiels.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>Référentiels</a>
     </div>
     <div style="padding:12px 20px;border-top:1px solid #334155;"><button onclick="UI.showConfigModal()" class="btn btn-secondary" style="width:100%;justify-content:center;font-size:0.75rem;">Configuration</button></div>
   </nav>
@@ -36,12 +37,13 @@
   <script src="js/api.js"></script>
   <script src="js/store.js"></script>
   <script src="js/components.js"></script>
+  <script src="js/referentiels.js"></script>
   <script>
   let currentEntreprise = null;
   const entId = new URLSearchParams(window.location.search).get('id');
 
-  const ENT_STATUTS = ['À cibler', 'Ciblé', 'Prospection en cours', 'Client', 'Ancien client', 'Écarté'];
-  const ENT_PRIORITES = ['1 - Veille', '2 - Basse', '3 - Moyenne', '4 - Haute', '5 - Coeur de cible'];
+  const ENT_STATUTS = Referentiels.get('entreprise_statuts');
+  const ENT_PRIORITES = Referentiels.get('entreprise_priorites');
 
   function renderEntreprisePage() {
     const e = Store.findById('entreprises', entId);
@@ -187,7 +189,7 @@
       entity: 'entreprises', recordId: entId,
       fields: [
         { key: 'secteur', label: 'Secteur', type: 'text' },
-        { key: 'taille', label: 'Taille', type: 'select', options: ['1-10', '11-50', '51-200', '201-500', '501-1000', '1000+'] },
+        { key: 'taille', label: 'Taille', type: 'select', options: Referentiels.get('entreprise_tailles') },
         { key: 'ca', label: 'CA', type: 'text' },
         { key: 'localisation', label: 'Localisation', type: 'text' },
         { key: 'telephone', label: 'Téléphone', type: 'text' },
@@ -229,7 +231,7 @@
         <div class="form-group"><label>Taille</label>
           <select id="ee-taille">
             <option value="">—</option>
-            ${['1-10','11-50','51-200','201-500','501-1000','1000+'].map(t => `<option value="${t}" ${e.taille===t?'selected':''}>${t}</option>`).join('')}
+            ${Referentiels.get('entreprise_tailles').map(t => `<option value="${t}" ${e.taille===t?'selected':''}>${t}</option>`).join('')}
           </select>
         </div>
         <div class="form-group"><label>CA</label><input type="text" id="ee-ca" value="${UI.escHtml(e.ca || '')}"></div>
@@ -243,13 +245,13 @@
         <div class="form-group"><label>Priorité</label>
           <select id="ee-priorite">
             <option value="">—</option>
-            ${['1 - Veille','2 - Basse','3 - Moyenne','4 - Haute','5 - Coeur de cible'].map(p => `<option value="${p}" ${e.priorite===p?'selected':''}>${p}</option>`).join('')}
+            ${Referentiels.get('entreprise_priorites').map(p => `<option value="${p}" ${e.priorite===p?'selected':''}>${p}</option>`).join('')}
           </select>
         </div>
         <div class="form-group"><label>Statut</label>
           <select id="ee-statut">
             <option value="">—</option>
-            ${['À cibler','Ciblé','Prospection en cours','Client','Ancien client','Écarté'].map(s => `<option value="${s}" ${e.statut===s?'selected':''}>${s}</option>`).join('')}
+            ${Referentiels.get('entreprise_statuts').map(s => `<option value="${s}" ${e.statut===s?'selected':''}>${s}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -308,7 +310,7 @@
         <div class="form-group"><label>Niveau hiérarchique</label>
           <select id="nd-niveau">
             <option value="">—</option>
-            ${['COMEX','Direction','N-1','N-2','Opérationnel'].map(n => `<option value="${n}">${n}</option>`).join('')}
+            ${Referentiels.get('decideur_niveaux_hierarchiques').map(n => `<option value="${n}">${n}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -316,13 +318,13 @@
         <div class="form-group"><label>Rôle décision</label>
           <select id="nd-role">
             <option value="">—</option>
-            ${['Décideur','Influenceur','Prescripteur','Utilisateur'].map(r => `<option value="${r}">${r}</option>`).join('')}
+            ${Referentiels.get('decideur_roles_decision').map(r => `<option value="${r}">${r}</option>`).join('')}
           </select>
         </div>
         <div class="form-group"><label>Priorité prospection</label>
           <select id="nd-priorite">
             <option value="">—</option>
-            ${['Haute','Moyenne','Basse'].map(p => `<option value="${p}">${p}</option>`).join('')}
+            ${Referentiels.get('decideur_priorites_prospection').map(p => `<option value="${p}">${p}</option>`).join('')}
           </select>
         </div>
       </div>

@@ -10,10 +10,10 @@
   UI.filterBar('decideurs-filters', {
     searchPlaceholder: 'Rechercher un décideur...',
     filters: [
-      { key: 'fonction_macro', label: 'Toutes fonctions', options: ['Direction générale', 'Ressources humaines'] },
-      { key: 'niveau_hierarchique', label: 'Tous niveaux', options: ['COMEX', 'N-1'] },
-      { key: 'niveau_relation', label: 'Tous niveaux relation', options: ['Inconnu', 'Contacté', 'Échange en cours'] },
-      { key: 'priorite_prospection', label: 'Toutes priorités', options: ['Haute', 'Moyenne'] }
+      { key: 'fonction_macro', label: 'Toutes fonctions', options: Referentiels.get('decideur_fonctions_macro') },
+      { key: 'niveau_hierarchique', label: 'Tous niveaux', options: Referentiels.get('decideur_niveaux_hierarchiques') },
+      { key: 'niveau_relation', label: 'Tous niveaux relation', options: Referentiels.get('decideur_niveaux_relation') },
+      { key: 'priorite_prospection', label: 'Toutes priorités', options: Referentiels.get('decideur_priorites_prospection') }
     ],
     onFilter: ({ search, filters }) => {
       let filtered = allDecideurs;
@@ -72,23 +72,23 @@
       </div>
       <div class="form-row">
         <div class="form-group"><label>Fonction macro</label>
-          <select id="d-macro"><option value="">—</option>${['Direction générale','Ressources humaines'].map(s=>`<option value="${s}" ${d.fonction_macro===s?'selected':''}>${s}</option>`).join('')}</select>
+          <select id="d-macro"><option value="">—</option>${Referentiels.get('decideur_fonctions_macro').map(s=>`<option value="${s}" ${d.fonction_macro===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
         <div class="form-group"><label>Niveau hiérarchique</label>
-          <select id="d-niveau"><option value="">—</option>${['COMEX','N-1'].map(s=>`<option value="${s}" ${d.niveau_hierarchique===s?'selected':''}>${s}</option>`).join('')}</select>
+          <select id="d-niveau"><option value="">—</option>${Referentiels.get('decideur_niveaux_hierarchiques').map(s=>`<option value="${s}" ${d.niveau_hierarchique===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>Rôle dans la décision</label>
-          <select id="d-role"><option value="">—</option>${['Décideur','Co-décideur','Influenceur','Prescripteur'].map(s=>`<option value="${s}" ${d.role_decision===s?'selected':''}>${s}</option>`).join('')}</select>
+          <select id="d-role"><option value="">—</option>${Referentiels.get('decideur_roles_decision').map(s=>`<option value="${s}" ${d.role_decision===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
         <div class="form-group"><label>Priorité prospection</label>
-          <select id="d-prio"><option value="">—</option>${['Haute','Moyenne'].map(s=>`<option value="${s}" ${d.priorite_prospection===s?'selected':''}>${s}</option>`).join('')}</select>
+          <select id="d-prio"><option value="">—</option>${Referentiels.get('decideur_priorites_prospection').map(s=>`<option value="${s}" ${d.priorite_prospection===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>Niveau de relation</label>
-          <select id="d-relation"><option value="">—</option>${['Inconnu','Contacté','Échange en cours'].map(s=>`<option value="${s}" ${d.niveau_relation===s?'selected':''}>${s}</option>`).join('')}</select>
+          <select id="d-relation"><option value="">—</option>${Referentiels.get('decideur_niveaux_relation').map(s=>`<option value="${s}" ${d.niveau_relation===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
         <div class="form-group"><label>Périmètre</label>
           <select id="d-perimetre"><option value="">—</option>${['France','Europe','International'].map(s=>`<option value="${s}" ${d.perimetre===s?'selected':''}>${s}</option>`).join('')}</select>

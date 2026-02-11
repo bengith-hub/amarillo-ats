@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amarillo ATS — Référentiels</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="sidebar-logo"><div class="sidebar-logo-icon">A</div>Amarillo ATS</div>
+    <div class="sidebar-nav">
+      <a href="index.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>Dashboard</a>
+      <a href="candidats.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Candidats</a>
+      <a href="missions.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>Missions</a>
+      <a href="entreprises.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>Entreprises</a>
+      <a href="decideurs.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Décideurs</a>
+      <a href="actions.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>Actions</a>
+      <a href="facturation.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Facturation</a>
+      <a href="referentiels.html" class="active"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>Référentiels</a>
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid #334155;"><button onclick="UI.showConfigModal()" class="btn btn-secondary" style="width:100%;justify-content:center;font-size:0.75rem;">Configuration API</button></div>
+  </nav>
+
+  <div class="main-content">
+    <header class="topbar" data-entity="dashboard">
+      <h1 class="topbar-title">Référentiels & Configuration</h1>
+      <div class="search-global"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg><input type="text" placeholder="Rechercher..." /><div class="search-results-dropdown"></div></div>
+      <button class="btn btn-danger btn-sm" id="btn-reset-all">Réinitialiser tout</button>
+    </header>
+
+    <div class="page-content">
+      <div style="margin-bottom:24px;">
+        <p style="font-size:0.875rem;color:#64748b;">
+          Configurez ici toutes les listes de valeurs utilisées dans l'ATS : statuts, types, secteurs, sources, etc.
+          Les modifications sont sauvegardées automatiquement. Chaque valeur ajoutée sera disponible dans les filtres et formulaires.
+        </p>
+      </div>
+
+      <div id="ref-categories"></div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/components.js"></script>
+  <script src="js/referentiels.js"></script>
+  <script>
+  (async function() {
+    if (!API.isConfigured()) { UI.showConfigModal(); return; }
+    await Store.loadAll();
+    UI.initGlobalSearch();
+
+    const categories = Referentiels.getCategories();
+    const container = document.getElementById('ref-categories');
+
+    // Render category tabs + content
+    let activeCategory = categories[0].id;
+
+    function render() {
+      container.innerHTML = `
+        <div class="ref-tabs">
+          ${categories.map(cat => `
+            <button class="ref-tab ${cat.id === activeCategory ? 'active' : ''}" data-cat="${cat.id}" style="${cat.id === activeCategory ? `border-color:${cat.color};color:${cat.color};` : ''}">
+              <span>${cat.icon}</span> ${cat.label}
+            </button>
+          `).join('')}
+        </div>
+        <div class="ref-content">
+          ${categories.filter(cat => cat.id === activeCategory).map(cat => `
+            <div class="ref-items-grid">
+              ${cat.items.map(item => {
+                const values = Referentiels.get(item.key);
+                return `
+                  <div class="card ref-list-card" style="border-left:3px solid ${cat.color};">
+                    <div class="card-header">
+                      <h2>${item.label}</h2>
+                      <span style="font-size:0.6875rem;color:#94a3b8;">${values.length} valeurs</span>
+                    </div>
+                    <div class="card-body">
+                      <div class="ref-values-list" data-key="${item.key}">
+                        ${values.map((val, idx) => `
+                          <div class="ref-value-item" data-idx="${idx}" draggable="true">
+                            <span class="ref-value-handle" title="Glisser pour réordonner">⠿</span>
+                            <span class="ref-value-text">${UI.escHtml(val)}</span>
+                            <button class="ref-value-delete" data-key="${item.key}" data-val="${UI.escHtml(val)}" title="Supprimer">✕</button>
+                          </div>
+                        `).join('')}
+                      </div>
+                      <div class="ref-add-form" style="margin-top:8px;display:flex;gap:6px;">
+                        <input type="text" class="ref-add-input" data-key="${item.key}" placeholder="Ajouter une valeur..." style="flex:1;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:0.8125rem;" />
+                        <button class="btn btn-primary btn-sm ref-add-btn" data-key="${item.key}">+</button>
+                      </div>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      // Bind tab clicks
+      container.querySelectorAll('.ref-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          activeCategory = tab.dataset.cat;
+          render();
+        });
+      });
+
+      // Bind delete buttons
+      container.querySelectorAll('.ref-value-delete').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const key = btn.dataset.key;
+          const val = btn.dataset.val;
+          Referentiels.removeValue(key, val);
+          UI.toast(`"${val}" supprimé`);
+          render();
+        });
+      });
+
+      // Bind add buttons and Enter key
+      container.querySelectorAll('.ref-add-btn').forEach(btn => {
+        btn.addEventListener('click', () => addValue(btn.dataset.key));
+      });
+      container.querySelectorAll('.ref-add-input').forEach(input => {
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            addValue(input.dataset.key);
+          }
+        });
+      });
+
+      // Bind inline editing (click on value text to edit)
+      container.querySelectorAll('.ref-value-text').forEach(span => {
+        span.addEventListener('dblclick', () => {
+          const item = span.closest('.ref-value-item');
+          const listEl = item.closest('.ref-values-list');
+          const key = listEl.dataset.key;
+          const idx = parseInt(item.dataset.idx);
+          const values = Referentiels.get(key);
+          const oldVal = values[idx];
+
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.value = oldVal;
+          input.className = 'ref-edit-input';
+          input.style.cssText = 'width:100%;padding:2px 6px;border:1px solid var(--primary);border-radius:4px;font-size:0.8125rem;outline:none;';
+          span.replaceWith(input);
+          input.focus();
+          input.select();
+
+          const finish = () => {
+            const newVal = input.value.trim();
+            if (newVal && newVal !== oldVal) {
+              values[idx] = newVal;
+              Referentiels.set(key, values);
+              UI.toast(`"${oldVal}" → "${newVal}"`);
+            }
+            render();
+          };
+          input.addEventListener('blur', finish);
+          input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') input.blur();
+            if (e.key === 'Escape') render();
+          });
+        });
+      });
+
+      // Drag & drop reordering
+      container.querySelectorAll('.ref-values-list').forEach(list => {
+        let dragIdx = null;
+        list.querySelectorAll('.ref-value-item').forEach(item => {
+          item.addEventListener('dragstart', (e) => {
+            dragIdx = parseInt(item.dataset.idx);
+            item.style.opacity = '0.4';
+            e.dataTransfer.effectAllowed = 'move';
+          });
+          item.addEventListener('dragend', () => {
+            item.style.opacity = '1';
+          });
+          item.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            item.style.borderTop = '2px solid var(--primary)';
+          });
+          item.addEventListener('dragleave', () => {
+            item.style.borderTop = '';
+          });
+          item.addEventListener('drop', (e) => {
+            e.preventDefault();
+            item.style.borderTop = '';
+            const toIdx = parseInt(item.dataset.idx);
+            if (dragIdx !== null && dragIdx !== toIdx) {
+              Referentiels.reorder(list.dataset.key, dragIdx, toIdx);
+              UI.toast('Ordre mis à jour');
+              render();
+            }
+          });
+        });
+      });
+    }
+
+    function addValue(key) {
+      const input = container.querySelector(`.ref-add-input[data-key="${key}"]`);
+      if (!input) return;
+      const val = input.value.trim();
+      if (!val) return;
+
+      const existing = Referentiels.get(key);
+      if (existing.includes(val)) {
+        UI.toast('Valeur déjà existante', 'error');
+        return;
+      }
+
+      Referentiels.addValue(key, val);
+      UI.toast(`"${val}" ajouté`);
+      render();
+    }
+
+    render();
+
+    // Reset all button
+    document.getElementById('btn-reset-all').addEventListener('click', () => {
+      UI.modal('Réinitialiser les référentiels', `
+        <p style="color:#dc2626;font-weight:600;margin-bottom:12px;">Attention : cette action va remettre tous les référentiels à leurs valeurs par défaut.</p>
+        <p style="font-size:0.875rem;color:#64748b;">Toutes vos personnalisations (ajouts, suppressions, réorganisations) seront perdues.</p>
+      `, {
+        saveLabel: 'Réinitialiser',
+        onSave: () => {
+          Referentiels.resetAll();
+          UI.toast('Référentiels réinitialisés');
+          render();
+        }
+      });
+    });
+  })();
+  </script>
+
+  <style>
+    .ref-tabs {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    .ref-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border: 2px solid transparent;
+      background: #fff;
+      border-radius: 8px;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .ref-tab:hover { background: #f8fafc; color: #1e293b; }
+    .ref-tab.active { background: #fff; font-weight: 600; border-bottom-width: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+
+    .ref-items-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+    }
+
+    .ref-list-card { margin-bottom: 0; }
+
+    .ref-values-list { }
+
+    .ref-value-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      transition: background 0.1s;
+      border-bottom: 1px solid #f8fafc;
+    }
+    .ref-value-item:hover { background: #f8fafc; }
+    .ref-value-item:last-child { border-bottom: none; }
+
+    .ref-value-handle {
+      color: #cbd5e1;
+      cursor: grab;
+      font-size: 0.75rem;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .ref-value-handle:active { cursor: grabbing; }
+
+    .ref-value-text {
+      flex: 1;
+      font-size: 0.8125rem;
+      color: #1e293b;
+      cursor: default;
+    }
+    .ref-value-text:hover { cursor: text; }
+
+    .ref-value-delete {
+      background: none;
+      border: none;
+      color: #cbd5e1;
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 2px 4px;
+      border-radius: 4px;
+      transition: all 0.1s;
+      opacity: 0;
+      flex-shrink: 0;
+    }
+    .ref-value-item:hover .ref-value-delete { opacity: 1; }
+    .ref-value-delete:hover { color: #dc2626; background: #fee2e2; }
+  </style>
+</body>
+</html>
