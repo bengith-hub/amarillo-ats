@@ -76,17 +76,15 @@
       <input type="text" class="filter-search" placeholder="Rechercher une action, next step..." />
       <select class="filter-select" data-filter="type_action">
         <option value="">Tous les types</option>
-        ${['Prise de contact','Qualification candidat','Présentation candidat','Suivi candidat','Prise de référence','Suivi intégration','Prospection','Relance décideur','Cadrage mission','Négociation','Organisation d\'échange','Facturation','Autre'].map(s => `<option value="${s}">${s}</option>`).join('')}
+        ${Referentiels.get('action_types').map(s => `<option value="${s}">${s}</option>`).join('')}
       </select>
       <select class="filter-select" data-filter="canal">
         <option value="">Tous les canaux</option>
-        ${['LinkedIn','Appel','Email','Visio','Physique','SMS','Autre'].map(s => `<option value="${s}">${s}</option>`).join('')}
+        ${Referentiels.get('action_canaux').map(s => `<option value="${s}">${s}</option>`).join('')}
       </select>
       <select class="filter-select" data-filter="priorite">
         <option value="">Toutes priorités</option>
-        <option value="Haute">🔴 Haute</option>
-        <option value="Moyenne">🟡 Moyenne</option>
-        <option value="Basse">🟢 Basse</option>
+        ${Referentiels.get('action_priorites').map(s => `<option value="${s}">${s}</option>`).join('')}
       </select>
     </div>
   `;
@@ -180,13 +178,13 @@
         <div class="form-group">
           <label>Type d'action</label>
           <select id="a-type">
-            ${['Prise de contact','Qualification candidat','Présentation candidat','Suivi candidat','Prise de référence','Suivi intégration','Prospection','Relance décideur','Cadrage mission','Négociation','Organisation d\'échange','Facturation','Autre'].map(s => `<option value="${s}" ${a.type_action===s?'selected':''}>${s}</option>`).join('')}
+            ${Referentiels.get('action_types').map(s => `<option value="${s}" ${a.type_action===s?'selected':''}>${s}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
           <label>Canal</label>
           <select id="a-canal">
-            ${['LinkedIn','Appel','Email','Visio','Physique','SMS','Autre'].map(s => `<option value="${s}" ${a.canal===s?'selected':''}>${s}</option>`).join('')}
+            ${Referentiels.get('action_canaux').map(s => `<option value="${s}" ${a.canal===s?'selected':''}>${s}</option>`).join('')}
           </select>
         </div>
       </div>

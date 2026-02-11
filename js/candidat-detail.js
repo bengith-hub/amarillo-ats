@@ -18,6 +18,9 @@
 
   document.title = `${candidat.prenom || ''} ${candidat.nom || ''} — Amarillo ATS`;
 
+  const CANDIDAT_STATUTS = Referentiels.get('candidat_statuts');
+  const CANDIDAT_NIVEAUX = Referentiels.get('candidat_niveaux');
+
   renderHeader();
   renderProfil();
   renderEntretien();
@@ -27,9 +30,6 @@
   renderReferences();
   renderSidebar();
   renderEntreprisesCibles();
-
-  const CANDIDAT_STATUTS = ['To call', 'Approché', 'En qualification', 'Shortlisté', 'Présenté', 'Placé', 'Off market', 'Pas prioritaire'];
-  const CANDIDAT_NIVEAUX = ['Junior', 'Middle', 'Top'];
 
   function renderHeader() {
     const entreprise = candidat.entreprise_actuelle_id ? Store.resolve('entreprises', candidat.entreprise_actuelle_id) : null;
@@ -65,12 +65,24 @@
     });
   }
 
+  function computeDuration(dateStr) {
+    if (!dateStr) return null;
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const totalMonths = Math.floor(diff / (30.44 * 24 * 60 * 60 * 1000));
+    const years = Math.floor(totalMonths / 12);
+    const months = totalMonths % 12;
+    if (years > 0 && months > 0) return `${years} an${years > 1 ? 's' : ''} ${months} mois`;
+    if (years > 0) return `${years} an${years > 1 ? 's' : ''}`;
+    if (months > 0) return `${months} mois`;
+    return '< 1 mois';
+  }
+
   function renderProfil() {
     const pkg = (candidat.salaire_fixe_actuel || 0) + (candidat.variable_actuel || 0);
     const pkgSouhaite = (candidat.salaire_fixe_souhaite || 0) + (candidat.variable_souhaite || 0);
 
-    const yearsInRole = candidat.debut_poste_actuel ? Math.floor((Date.now() - new Date(candidat.debut_poste_actuel).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null;
-    const totalExp = candidat.debut_carriere ? Math.floor((Date.now() - new Date(candidat.debut_carriere).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null;
+    const durePoste = computeDuration(candidat.debut_poste_actuel);
+    const totalExp = computeDuration(candidat.debut_carriere);
 
     document.getElementById('tab-profil').innerHTML = `
       <div class="card">
@@ -85,8 +97,33 @@
             ${field('Ambassadeur', candidat.ambassadeur ? 'Oui' : 'Non')}
             ${field('Exposition au pouvoir', candidat.exposition_pouvoir)}
             ${field('Préavis', candidat.preavis)}
-            ${field("Ancienneté poste", yearsInRole !== null ? yearsInRole + ' ans' : '—')}
-            ${field("Expérience totale", totalExp !== null ? totalExp + ' ans' : '—')}
+          </div>
+        </div>
+      </div>
+
+      <div class="card" data-accent="cyan">
+        <div class="card-header">
+          <h2>Dates & Expérience</h2>
+          <span class="edit-hint">cliquer pour modifier</span>
+        </div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div id="profil-dates-fields"></div>
+            <div>
+              <div style="background:#f0f9ff;border-radius:8px;padding:16px;border:1px solid #bae6fd;">
+                <div style="font-size:0.75rem;font-weight:600;color:#0284c7;text-transform:uppercase;margin-bottom:8px;">Durées calculées</div>
+                <div style="display:flex;flex-direction:column;gap:12px;">
+                  <div>
+                    <div style="font-size:0.75rem;color:#64748b;">Ancienneté poste actuel</div>
+                    <div style="font-size:1.125rem;font-weight:700;color:#0284c7;" id="computed-duree-poste">${durePoste || '—'}</div>
+                  </div>
+                  <div>
+                    <div style="font-size:0.75rem;color:#64748b;">Expérience totale</div>
+                    <div style="font-size:1.125rem;font-weight:700;color:#0284c7;" id="computed-exp-totale">${totalExp || '—'}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -142,6 +179,26 @@
         <div class="card-body" id="profil-notes"></div>
       </div>
     `;
+
+    UI.inlineEdit('profil-dates-fields', {
+      entity: 'candidats', recordId: id,
+      fields: [
+        { key: 'debut_poste_actuel', label: 'Prise de poste actuel', type: 'date', render: (v) => {
+          if (!v) return '';
+          return `${UI.formatDate(v)}`;
+        }},
+        { key: 'debut_carriere', label: 'Début de carrière', type: 'date', render: (v) => {
+          if (!v) return '';
+          return `${UI.formatDate(v)}`;
+        }}
+      ],
+      onAfterSave: () => {
+        const dp = document.getElementById('computed-duree-poste');
+        const et = document.getElementById('computed-exp-totale');
+        if (dp) dp.textContent = computeDuration(candidat.debut_poste_actuel) || '—';
+        if (et) et.textContent = computeDuration(candidat.debut_carriere) || '—';
+      }
+    });
 
     UI.inlineEdit('profil-notes', {
       entity: 'candidats', recordId: id,
@@ -353,8 +410,8 @@
     UI.modal('Modifier l\'action', `
       <div class="form-group"><label>Action</label><input type="text" id="ea-action" value="${UI.escHtml(a.action || '')}" /></div>
       <div class="form-row">
-        <div class="form-group"><label>Type</label><select id="ea-type">${['Prise de contact','Qualification candidat','Présentation candidat','Suivi candidat','Prise de référence','Suivi intégration','Prospection','Autre'].map(s=>`<option value="${s}" ${a.type_action===s?'selected':''}>${s}</option>`).join('')}</select></div>
-        <div class="form-group"><label>Canal</label><select id="ea-canal">${['LinkedIn','Appel','Email','Visio','Physique','SMS','Autre'].map(s=>`<option value="${s}" ${a.canal===s?'selected':''}>${s}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Type</label><select id="ea-type">${Referentiels.get('action_types').map(s=>`<option value="${s}" ${a.type_action===s?'selected':''}>${s}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Canal</label><select id="ea-canal">${Referentiels.get('action_canaux').map(s=>`<option value="${s}" ${a.canal===s?'selected':''}>${s}</option>`).join('')}</select></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>Statut</label><select id="ea-statut"><option value="À faire" ${(a.statut==='À faire'||a.statut==='A faire')?'selected':''}>À faire</option><option value="En cours" ${a.statut==='En cours'?'selected':''}>En cours</option><option value="Fait" ${a.statut==='Fait'?'selected':''}>Fait</option><option value="Annulé" ${a.statut==='Annulé'?'selected':''}>Annulé</option></select></div>
@@ -536,13 +593,13 @@
         <div class="form-group">
           <label>Type</label>
           <select id="a-type">
-            ${['Prise de contact','Qualification candidat','Présentation candidat','Suivi candidat','Prise de référence','Suivi intégration','Prospection','Autre'].map(s => `<option value="${s}">${s}</option>`).join('')}
+            ${Referentiels.get('action_types').map(s => `<option value="${s}">${s}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
           <label>Canal</label>
           <select id="a-canal">
-            ${['LinkedIn','Appel','Email','Visio','Physique','SMS','Autre'].map(s => `<option value="${s}">${s}</option>`).join('')}
+            ${Referentiels.get('action_canaux').map(s => `<option value="${s}">${s}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -673,13 +730,13 @@
         <div class="form-group">
           <label>Statut</label>
           <select id="f-statut">
-            ${['To call','Approché','En qualification','Shortlisté','Présenté','Placé','Off market','Pas prioritaire'].map(s => `<option value="${s}" ${c.statut===s?'selected':''}>${s}</option>`).join('')}
+            ${Referentiels.get('candidat_statuts').map(s => `<option value="${s}" ${c.statut===s?'selected':''}>${s}</option>`).join('')}
           </select>
         </div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>Niveau</label>
-          <select id="f-niveau"><option value="">—</option>${['Junior','Middle','Top'].map(s=>`<option value="${s}" ${c.niveau===s?'selected':''}>${s}</option>`).join('')}</select>
+          <select id="f-niveau"><option value="">—</option>${Referentiels.get('candidat_niveaux').map(s=>`<option value="${s}" ${c.niveau===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
         <div class="form-group"><label>Localisation</label><input type="text" id="f-localisation" value="${UI.escHtml(c.localisation || '')}" /></div>
       </div>
@@ -702,8 +759,12 @@
       <div class="form-row">
         <div class="form-group"><label>Préavis</label><input type="text" id="f-preavis" value="${UI.escHtml(c.preavis || '')}" /></div>
         <div class="form-group"><label>Diplôme</label>
-          <select id="f-diplome"><option value="">—</option>${['Bac+2 / Bac+3','Bac+4','Bac+5'].map(s=>`<option value="${s}" ${c.diplome===s?'selected':''}>${s}</option>`).join('')}</select>
+          <select id="f-diplome"><option value="">—</option>${Referentiels.get('candidat_diplomes').map(s=>`<option value="${s}" ${c.diplome===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Prise de poste actuel</label><input type="date" id="f-debut-poste" value="${c.debut_poste_actuel || ''}" /></div>
+        <div class="form-group"><label>Début de carrière</label><input type="date" id="f-debut-carriere" value="${c.debut_carriere || ''}" /></div>
       </div>
       <div class="form-group"><label>Motivation changement</label><textarea id="f-motivation">${UI.escHtml(c.motivation_changement||'')}</textarea></div>
       <div class="form-group"><label>Télétravail</label><input type="text" id="f-teletravail" value="${UI.escHtml(c.teletravail||'')}" /></div>
@@ -732,6 +793,8 @@
           variable_souhaite: parseInt(overlay.querySelector('#f-variable-souhaite').value) || 0,
           preavis: overlay.querySelector('#f-preavis').value.trim(),
           diplome: overlay.querySelector('#f-diplome').value,
+          debut_poste_actuel: overlay.querySelector('#f-debut-poste').value || null,
+          debut_carriere: overlay.querySelector('#f-debut-carriere').value || null,
           motivation_changement: overlay.querySelector('#f-motivation').value.trim(),
           teletravail: overlay.querySelector('#f-teletravail').value.trim(),
           notes: overlay.querySelector('#f-notes').value.trim(),

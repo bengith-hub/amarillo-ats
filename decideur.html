@@ -20,6 +20,7 @@
       <a href="decideurs.html" class="active"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Décideurs</a>
       <a href="actions.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>Actions</a>
       <a href="facturation.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Facturation</a>
+      <a href="referentiels.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>Référentiels</a>
     </div>
     <div style="padding:12px 20px;border-top:1px solid #334155;"><button onclick="UI.showConfigModal()" class="btn btn-secondary" style="width:100%;justify-content:center;font-size:0.75rem;">Configuration</button></div>
   </nav>
@@ -36,6 +37,7 @@
   <script src="js/api.js"></script>
   <script src="js/store.js"></script>
   <script src="js/components.js"></script>
+  <script src="js/referentiels.js"></script>
   <script src="js/templates.js"></script>
   <script>
   (async function() {
@@ -58,8 +60,8 @@
       const missions = (d.missions_ids || []).map(mid => Store.findById('missions', mid)).filter(Boolean);
       const actions = Store.filter('actions', a => a.decideur_id === id).sort((a, b) => (b.date_action || '').localeCompare(a.date_action || ''));
 
-      const STATUTS_RELATION = ['Contacté', 'En relation', 'Champion'];
-      const PRIORITES = ['Haute', 'Moyenne', 'Basse'];
+      const STATUTS_RELATION = Referentiels.get('decideur_niveaux_relation');
+      const PRIORITES = Referentiels.get('decideur_priorites_prospection');
 
       document.getElementById('decideur-content').innerHTML = `
         <div class="detail-header">
@@ -158,8 +160,8 @@
         fields: [
           { key: 'fonction', label: 'Fonction', type: 'text' },
           { key: 'fonction_macro', label: 'Fonction macro', type: 'text' },
-          { key: 'niveau_hierarchique', label: 'Niveau hiérarchique', type: 'select', options: ['COMEX', 'Direction', 'N-1', 'N-2', 'Opérationnel'] },
-          { key: 'role_decision', label: 'Rôle décision', type: 'select', options: ['Décideur', 'Influenceur', 'Prescripteur', 'Utilisateur'] },
+          { key: 'niveau_hierarchique', label: 'Niveau hiérarchique', type: 'select', options: Referentiels.get('decideur_niveaux_hierarchiques') },
+          { key: 'role_decision', label: 'Rôle décision', type: 'select', options: Referentiels.get('decideur_roles_decision') },
           { key: 'perimetre', label: 'Périmètre', type: 'text' },
           { key: 'localisation', label: 'Localisation', type: 'text' },
         ]
@@ -217,8 +219,8 @@
         UI.modal('Nouvelle action', `
           <div class="form-group"><label>Action</label><input type="text" id="da-action" placeholder="Ex: Appel de prospection..." /></div>
           <div class="form-row">
-            <div class="form-group"><label>Type</label><select id="da-type">${['Prise de contact','Prospection','Relance décideur','Cadrage mission','Négociation','Organisation d\'échange','Autre'].map(s => `<option value="${s}">${s}</option>`).join('')}</select></div>
-            <div class="form-group"><label>Canal</label><select id="da-canal">${['LinkedIn','Appel','Email','Visio','Physique','SMS','Autre'].map(s => `<option value="${s}">${s}</option>`).join('')}</select></div>
+            <div class="form-group"><label>Type</label><select id="da-type">${Referentiels.get('action_types').map(s => `<option value="${s}">${s}</option>`).join('')}</select></div>
+            <div class="form-group"><label>Canal</label><select id="da-canal">${Referentiels.get('action_canaux').map(s => `<option value="${s}">${s}</option>`).join('')}</select></div>
           </div>
           <div class="form-row">
             <div class="form-group"><label>Statut</label><select id="da-statut"><option value="À faire">À faire</option><option value="Fait" selected>Fait</option></select></div>

@@ -10,10 +10,10 @@
   UI.filterBar('entreprises-filters', {
     searchPlaceholder: 'Rechercher une entreprise...',
     filters: [
-      { key: 'secteur', label: 'Tous secteurs', options: ['BTP', 'Retail', 'Industrie', 'Transports', 'Finance', 'SaaS / Tech'] },
-      { key: 'taille', label: 'Toutes tailles', options: ['51-200', '201-1000', '1000+'] },
-      { key: 'priorite', label: 'Toutes priorités', options: ['5 - Coeur de cible', '3 - Pertinent'] },
-      { key: 'statut', label: 'Tous statuts', options: ['À cibler', 'Contactée', 'En discussion', 'Cliente', 'Inactive'] }
+      { key: 'secteur', label: 'Tous secteurs', options: Referentiels.get('entreprise_secteurs') },
+      { key: 'taille', label: 'Toutes tailles', options: Referentiels.get('entreprise_tailles') },
+      { key: 'priorite', label: 'Toutes priorités', options: Referentiels.get('entreprise_priorites') },
+      { key: 'statut', label: 'Tous statuts', options: Referentiels.get('entreprise_statuts') }
     ],
     onFilter: ({ search, filters }) => {
       let filtered = allEntreprises;
@@ -61,24 +61,24 @@
       <div class="form-group"><label>Nom</label><input type="text" id="e-nom" value="${UI.escHtml(e.nom||'')}" /></div>
       <div class="form-row">
         <div class="form-group"><label>Secteur</label>
-          <select id="e-secteur"><option value="">—</option>${['BTP','Retail','Industrie','Transports','Finance','SaaS / Tech'].map(s=>`<option value="${s}" ${e.secteur===s?'selected':''}>${s}</option>`).join('')}</select>
+          <select id="e-secteur"><option value="">—</option>${Referentiels.get('entreprise_secteurs').map(s=>`<option value="${s}" ${e.secteur===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
         <div class="form-group"><label>Taille</label>
-          <select id="e-taille"><option value="">—</option>${['51-200','201-1000','1000+'].map(s=>`<option value="${s}" ${e.taille===s?'selected':''}>${s}</option>`).join('')}</select>
+          <select id="e-taille"><option value="">—</option>${Referentiels.get('entreprise_tailles').map(s=>`<option value="${s}" ${e.taille===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>CA</label>
-          <select id="e-ca"><option value="">—</option>${['20-50 M€','50-100 M€','250 M€+'].map(s=>`<option value="${s}" ${e.ca===s?'selected':''}>${s}</option>`).join('')}</select>
+          <select id="e-ca"><option value="">—</option>${['< 5 M€','5-20 M€','20-50 M€','50-100 M€','100-250 M€','250 M€+'].map(s=>`<option value="${s}" ${e.ca===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
         <div class="form-group"><label>Localisation</label><input type="text" id="e-loc" value="${UI.escHtml(e.localisation||'')}" /></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>Priorité</label>
-          <select id="e-prio"><option value="5 - Coeur de cible" ${e.priorite==='5 - Coeur de cible'?'selected':''}>5 - Coeur de cible</option><option value="3 - Pertinent" ${e.priorite==='3 - Pertinent'?'selected':''}>3 - Pertinent</option></select>
+          <select id="e-prio"><option value="">—</option>${Referentiels.get('entreprise_priorites').map(s=>`<option value="${s}" ${e.priorite===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
         <div class="form-group"><label>Statut</label>
-          <select id="e-statut">${['À cibler','Contactée','En discussion','Cliente','Inactive'].map(s=>`<option value="${s}" ${e.statut===s?'selected':''}>${s}</option>`).join('')}</select>
+          <select id="e-statut">${Referentiels.get('entreprise_statuts').map(s=>`<option value="${s}" ${e.statut===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
       </div>
       <div class="form-group"><label>Site web</label><input type="url" id="e-site" value="${UI.escHtml(e.site_web||'')}" /></div>
