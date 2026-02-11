@@ -461,7 +461,6 @@ const UI = (() => {
         if (q.length < 1) { hidden.value = ''; return; }
 
         const matches = entreprises.filter(e => (e.nom || '').toLowerCase().includes(q)).slice(0, 8);
-        if (matches.length === 0) return;
 
         dropdown = document.createElement('div');
         dropdown.style.cssText = 'position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:200;max-height:200px;overflow-y:auto;';
@@ -863,4 +862,34 @@ const UI = (() => {
     inlineEdit, statusBadge, showStatusPicker,
     escHtml, formatDate, formatMonthYear, formatCurrency, getParam
   };
+})();
+
+// Sidebar responsive toggle (hamburger menu)
+(function() {
+  const sidebar = document.querySelector('.sidebar');
+  if (!sidebar) return;
+
+  // Create hamburger button
+  const btn = document.createElement('button');
+  btn.className = 'sidebar-toggle';
+  btn.setAttribute('aria-label', 'Menu');
+  btn.innerHTML = '&#9776;';
+  document.body.appendChild(btn);
+
+  // Create overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'sidebar-overlay';
+  document.body.appendChild(overlay);
+
+  function toggle() {
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('open');
+  }
+  function close() {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('open');
+  }
+
+  btn.addEventListener('click', toggle);
+  overlay.addEventListener('click', close);
 })();
