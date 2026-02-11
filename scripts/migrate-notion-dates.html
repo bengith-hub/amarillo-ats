@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Migration Notion → ATS : Dates candidats</title>
+  <style>
+    body { font-family: 'Inter', sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; background: #f8fafc; }
+    h1 { color: #1e293b; }
+    .log { background: #1e293b; color: #e2e8f0; padding: 20px; border-radius: 12px; font-family: monospace; font-size: 13px; max-height: 600px; overflow-y: auto; white-space: pre-wrap; }
+    .success { color: #4ade80; }
+    .skip { color: #fbbf24; }
+    .error { color: #f87171; }
+    .info { color: #60a5fa; }
+    button { background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; cursor: pointer; margin: 10px 5px; }
+    button:hover { background: #2563eb; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    .summary { background: white; border: 1px solid #e2e8f0; padding: 20px; border-radius: 12px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Migration Notion → ATS</h1>
+  <p>Injection des dates <strong>Début poste actuel</strong> et <strong>Début de carrière</strong> depuis l'export Notion.</p>
+
+  <button id="btn-dry" onclick="run(true)">Dry run (aperçu)</button>
+  <button id="btn-run" onclick="run(false)">Exécuter la migration</button>
+
+  <div class="log" id="log"></div>
+  <div class="summary" id="summary" style="display:none;"></div>
+
+  <script src="../js/config.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/store.js"></script>
+  <script>
+    // Notion dates extracted from export
+    const NOTION_DATES = [
+      { name: "Alexandre DODIER", prenom: "Alexandre", nom: "DODIER", debut_poste_actuel: "2023-06-22", debut_carriere: "2001-01-22" },
+      { name: "Alexis ROCHE", prenom: "Alexis", nom: "ROCHE", debut_poste_actuel: "2018-12-18", debut_carriere: "2010-01-18" },
+      { name: "Anthony D.", prenom: "Anthony", nom: "D.", debut_poste_actuel: "2024-01-22", debut_carriere: "2003-01-22" },
+      { name: "Arnaud BARBET", prenom: "Arnaud", nom: "BARBET", debut_poste_actuel: "2025-09-22", debut_carriere: "2006-04-22" },
+      { name: "Arnaud PECAUD", prenom: "Arnaud", nom: "PECAUD", debut_poste_actuel: "2022-07-22", debut_carriere: "2007-01-22" },
+      { name: "Aurélie PEREZ", prenom: "Aurélie", nom: "PEREZ", debut_poste_actuel: "2024-04-18", debut_carriere: "2011-01-18" },
+      { name: "Benoit BEAUGEARD", prenom: "Benoit", nom: "BEAUGEARD", debut_poste_actuel: "2024-01-22", debut_carriere: "2006-07-22" },
+      { name: "Bertrand DESSEVRE", prenom: "Bertrand", nom: "DESSEVRE", debut_poste_actuel: "2023-10-22", debut_carriere: "1991-07-22" },
+      { name: "David REVERSEAU", prenom: "David", nom: "REVERSEAU", debut_poste_actuel: "2024-01-22", debut_carriere: "1999-01-22" },
+      { name: "Eric LEGOUBIN", prenom: "Eric", nom: "LEGOUBIN", debut_poste_actuel: "2023-01-22", debut_carriere: "1997-01-22" },
+      { name: "Etienne COUTENCEAU", prenom: "Etienne", nom: "COUTENCEAU", debut_poste_actuel: "2024-09-20", debut_carriere: "2021-04-20" },
+      { name: "Etienne HENRY", prenom: "Etienne", nom: "HENRY", debut_poste_actuel: "2021-06-09", debut_carriere: "1998-01-09" },
+      { name: "Fabien BLAIZEAU", prenom: "Fabien", nom: "BLAIZEAU", debut_poste_actuel: "2023-11-25", debut_carriere: "2006-01-25" },
+      { name: "Florian AUDOUIN", prenom: "Florian", nom: "AUDOUIN", debut_poste_actuel: "2024-01-22", debut_carriere: "2003-12-22" },
+      { name: "Franck TETEDOIE", prenom: "Franck", nom: "TETEDOIE", debut_poste_actuel: "2023-01-25", debut_carriere: "1992-01-25" },
+      { name: "Grégoire SANDRÉ", prenom: "Grégoire", nom: "SANDRÉ", debut_poste_actuel: "2021-03-20", debut_carriere: "1986-01-20" },
+      { name: "Guillaume CRAND", prenom: "Guillaume", nom: "CRAND", debut_poste_actuel: "2022-10-22", debut_carriere: "2011-01-22" },
+      { name: "Guillaume DENEUX", prenom: "Guillaume", nom: "DENEUX", debut_poste_actuel: "2021-09-20", debut_carriere: "2008-09-20" },
+      { name: "Guillaume PERRIN", prenom: "Guillaume", nom: "PERRIN", debut_poste_actuel: "2021-06-20", debut_carriere: null },
+      { name: "Hélène GAUTIER REILLE", prenom: "Hélène", nom: "GAUTIER REILLE", debut_poste_actuel: "2025-01-18", debut_carriere: "2016-04-18" },
+      { name: "Julien DOMINICI", prenom: "Julien", nom: "DOMINICI", debut_poste_actuel: "2023-12-22", debut_carriere: "2005-01-22" },
+      { name: "Laetitia BERTHET", prenom: "Laetitia", nom: "BERTHET", debut_poste_actuel: "2022-03-22", debut_carriere: "2004-01-22" },
+      { name: "Laurent GORCE", prenom: "Laurent", nom: "GORCE", debut_poste_actuel: "2022-06-22", debut_carriere: "2009-01-22" },
+      { name: "Laurent REUILLIER", prenom: "Laurent", nom: "REUILLIER", debut_poste_actuel: "2017-10-06", debut_carriere: "2023-07-06" },
+      { name: "Lucien DEFONTAINE", prenom: "Lucien", nom: "DEFONTAINE", debut_poste_actuel: "2021-07-09", debut_carriere: "2002-07-09" },
+      { name: "Ludovic BLOUIN", prenom: "Ludovic", nom: "BLOUIN", debut_poste_actuel: "2022-05-22", debut_carriere: "2004-01-22" },
+      { name: "Ludovic JACOB", prenom: "Ludovic", nom: "JACOB", debut_poste_actuel: "2022-10-25", debut_carriere: "1994-01-25" },
+      { name: "Martin BIDET", prenom: "Martin", nom: "BIDET", debut_poste_actuel: "2017-09-08", debut_carriere: "2011-04-08" },
+      { name: "Mathieu JUILLET", prenom: "Mathieu", nom: "JUILLET", debut_poste_actuel: "2020-10-18", debut_carriere: "2005-01-18" },
+      { name: "Matthias DUPONT", prenom: "Matthias", nom: "DUPONT", debut_poste_actuel: "2023-07-22", debut_carriere: "2006-04-22" },
+      { name: "Maxime PUREY", prenom: "Maxime", nom: "PUREY", debut_poste_actuel: "2023-09-01", debut_carriere: "2015-09-01" },
+      { name: "Mickael GAULTIER", prenom: "Mickael", nom: "GAULTIER", debut_poste_actuel: "2021-11-25", debut_carriere: "1999-06-25" },
+      { name: "Mickaël B", prenom: "Mickaël", nom: "B", debut_poste_actuel: "2023-09-22", debut_carriere: "2005-01-22" },
+      { name: "Nicolas C", prenom: "Nicolas", nom: "C", debut_poste_actuel: "2022-05-20", debut_carriere: "2006-01-20" },
+      { name: "Nicolas CHEVET", prenom: "Nicolas", nom: "CHEVET", debut_poste_actuel: "2022-10-25", debut_carriere: "1998-01-25" },
+      { name: "Nicolas VERLHAC", prenom: "Nicolas", nom: "VERLHAC", debut_poste_actuel: "2022-01-22", debut_carriere: "2015-01-22" },
+      { name: "Oleh T", prenom: "Oleh", nom: "T", debut_poste_actuel: "2023-08-18", debut_carriere: "2022-01-18" },
+      { name: "Patrice TEXIER", prenom: "Patrice", nom: "TEXIER", debut_poste_actuel: "2021-12-25", debut_carriere: "2000-06-25" },
+      { name: "Pierre S.", prenom: "Pierre", nom: "S.", debut_poste_actuel: "2022-04-18", debut_carriere: "2004-01-18" },
+      { name: "Pierre V.", prenom: "Pierre", nom: "V.", debut_poste_actuel: "2023-07-22", debut_carriere: "2008-01-22" },
+      { name: "Quentin ROSA", prenom: "Quentin", nom: "ROSA", debut_poste_actuel: "2023-12-22", debut_carriere: "2012-01-22" },
+      { name: "Regis-David ADJELMAN", prenom: "Regis-David", nom: "ADJELMAN", debut_poste_actuel: "2023-02-20", debut_carriere: "1997-08-20" },
+      { name: "Stanick SONRIER", prenom: "Stanick", nom: "SONRIER", debut_poste_actuel: "2023-12-22", debut_carriere: "2018-01-22" },
+      { name: "Thibault CHOLET", prenom: "Thibault", nom: "CHOLET", debut_poste_actuel: "2021-09-25", debut_carriere: "2019-01-25" },
+      { name: "Vincent PERROUIN", prenom: "Vincent", nom: "PERROUIN", debut_poste_actuel: "2022-03-22", debut_carriere: "2000-01-22" },
+      { name: "Vincent SCIFO", prenom: "Vincent", nom: "SCIFO", debut_poste_actuel: "2022-03-22", debut_carriere: "2019-01-22" },
+      { name: "Yan HUBERT", prenom: "Yan", nom: "HUBERT", debut_poste_actuel: "2022-07-25", debut_carriere: "1995-01-25" },
+      { name: "Yanis RIVET", prenom: "Yanis", nom: "RIVET", debut_poste_actuel: null, debut_carriere: "2023-09-01" },
+      { name: "Yaniss BESSAA", prenom: "Yaniss", nom: "BESSAA", debut_poste_actuel: "2024-02-20", debut_carriere: "2013-03-20" },
+      { name: "Yohann BOiSDRON", prenom: "Yohann", nom: "BOiSDRON", debut_poste_actuel: "2022-12-25", debut_carriere: "2000-01-25" },
+    ];
+
+    const logEl = document.getElementById('log');
+    function log(msg, cls = '') {
+      logEl.innerHTML += cls ? `<span class="${cls}">${msg}</span>\n` : msg + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function normalize(s) {
+      return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]/g, '').trim();
+    }
+
+    function matchCandidat(notionEntry, candidats) {
+      const nPrenom = normalize(notionEntry.prenom);
+      const nNom = normalize(notionEntry.nom);
+
+      // Exact match prenom + nom
+      let match = candidats.find(c =>
+        normalize(c.prenom) === nPrenom && normalize(c.nom) === nNom
+      );
+      if (match) return match;
+
+      // Partial: nom starts with (for "B", "C", "D." etc)
+      if (nNom.length <= 2) {
+        match = candidats.find(c =>
+          normalize(c.prenom) === nPrenom && normalize(c.nom).startsWith(nNom.replace('.', ''))
+        );
+        if (match) return match;
+      }
+
+      // Fuzzy: both names contain each other
+      match = candidats.find(c => {
+        const cp = normalize(c.prenom);
+        const cn = normalize(c.nom);
+        return (cp.includes(nPrenom) || nPrenom.includes(cp)) &&
+               (cn.includes(nNom) || nNom.includes(cn));
+      });
+      return match || null;
+    }
+
+    async function run(dryRun) {
+      document.getElementById('btn-dry').disabled = true;
+      document.getElementById('btn-run').disabled = true;
+      logEl.innerHTML = '';
+
+      log(dryRun ? '=== DRY RUN (aucune modification) ===' : '=== MIGRATION EN COURS ===', 'info');
+      log('');
+
+      try {
+        log('Chargement des candidats depuis JSONBin...', 'info');
+        await Store.loadAll();
+        const candidats = Store.get('candidats');
+        log(`${candidats.length} candidats trouvés dans l'ATS.\n`);
+
+        let updated = 0, skipped = 0, notFound = 0;
+
+        for (const notion of NOTION_DATES) {
+          const match = matchCandidat(notion, candidats);
+
+          if (!match) {
+            log(`  ✗ ${notion.name} → non trouvé dans l'ATS`, 'error');
+            notFound++;
+            continue;
+          }
+
+          const atsName = `${match.prenom} ${match.nom}`;
+          const changes = {};
+          let hasChanges = false;
+
+          if (notion.debut_poste_actuel && !match.debut_poste_actuel) {
+            changes.debut_poste_actuel = notion.debut_poste_actuel;
+            hasChanges = true;
+          }
+          if (notion.debut_carriere && !match.debut_carriere) {
+            changes.debut_carriere = notion.debut_carriere;
+            hasChanges = true;
+          }
+
+          if (!hasChanges) {
+            log(`  ○ ${atsName} → déjà renseigné, ignoré`, 'skip');
+            skipped++;
+            continue;
+          }
+
+          const details = [];
+          if (changes.debut_poste_actuel) details.push(`poste=${changes.debut_poste_actuel}`);
+          if (changes.debut_carriere) details.push(`carrière=${changes.debut_carriere}`);
+
+          if (dryRun) {
+            log(`  → ${atsName} ← ${details.join(', ')}`, 'success');
+          } else {
+            await Store.update('candidats', match.id, changes);
+            log(`  ✓ ${atsName} mis à jour : ${details.join(', ')}`, 'success');
+          }
+          updated++;
+        }
+
+        log('');
+        log('=== RÉSUMÉ ===', 'info');
+        log(`  ${updated} candidats ${dryRun ? 'à mettre à jour' : 'mis à jour'}`, 'success');
+        log(`  ${skipped} ignorés (déjà renseignés)`, 'skip');
+        log(`  ${notFound} non trouvés dans l'ATS`, notFound > 0 ? 'error' : '');
+
+        document.getElementById('summary').style.display = 'block';
+        document.getElementById('summary').innerHTML = `
+          <h3>${dryRun ? 'Aperçu' : 'Migration terminée'}</h3>
+          <p><strong style="color:#16a34a;">${updated}</strong> candidats ${dryRun ? 'seront mis à jour' : 'mis à jour'}</p>
+          <p><strong style="color:#ca8a04;">${skipped}</strong> ignorés (dates déjà présentes)</p>
+          <p><strong style="color:#dc2626;">${notFound}</strong> non trouvés</p>
+          ${dryRun ? '<p style="margin-top:12px;"><em>Cliquez "Exécuter la migration" pour appliquer les changements.</em></p>' : '<p style="color:#16a34a;font-weight:600;margin-top:12px;">Terminé ! Rechargez l\'ATS pour voir les dates.</p>'}
+        `;
+      } catch (e) {
+        log(`\nERREUR: ${e.message}`, 'error');
+      }
+
+      document.getElementById('btn-dry').disabled = false;
+      document.getElementById('btn-run').disabled = false;
+    }
+  </script>
+</body>
+</html>
