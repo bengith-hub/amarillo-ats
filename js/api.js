@@ -42,11 +42,36 @@ const API = (() => {
     return config.apiKey && Object.values(config.bins).some(b => b);
   }
 
+  // Retry-aware fetch: handles 429 rate limits with exponential backoff
+  async function fetchWithRetry(url, options, retries = 3) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await fetch(url, options);
+        if (res.status === 429 && attempt < retries) {
+          const delay = (attempt + 1) * 1500; // 1.5s, 3s, 4.5s
+          console.warn(`Rate limited, retrying in ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        return res;
+      } catch (e) {
+        // Network/CORS error — often caused by 429 without CORS headers
+        if (attempt < retries) {
+          const delay = (attempt + 1) * 2000;
+          console.warn(`Fetch failed (${e.message}), retrying in ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+
   async function fetchBin(entity) {
     const binId = config.bins[entity];
     if (!binId) throw new Error(`No bin configured for ${entity}`);
 
-    const res = await fetch(`${BASE_URL}/${binId}/latest`, {
+    const res = await fetchWithRetry(`${BASE_URL}/${binId}/latest`, {
       headers: { 'X-Master-Key': config.apiKey }
     });
 
@@ -59,7 +84,7 @@ const API = (() => {
     const binId = config.bins[entity];
     if (!binId) throw new Error(`No bin configured for ${entity}`);
 
-    const res = await fetch(`${BASE_URL}/${binId}`, {
+    const res = await fetchWithRetry(`${BASE_URL}/${binId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
