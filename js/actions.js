@@ -37,6 +37,32 @@
     done: { label: 'Fait', icon: '✅', filter: () => allActions.filter(a => a.statut === 'Fait') },
   };
 
+  // ---- Auto-create follow-up when action is marked "Fait" with a next_step ----
+  async function createFollowUp(action) {
+    if (!action || !action.next_step) return null;
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+    const followUp = {
+      id: API.generateId('act'),
+      action: action.next_step,
+      type_action: action.type_action || '',
+      canal: action.canal || '',
+      statut: 'À faire',
+      priorite: action.priorite || null,
+      date_action: action.date_relance || tomorrow,
+      date_relance: null,
+      candidat_id: action.candidat_id || null,
+      decideur_id: action.decideur_id || null,
+      mission_id: action.mission_id || null,
+      entreprise_id: action.entreprise_id || null,
+      reponse: false,
+      message_notes: `Suite de : ${action.action || ''}`,
+      next_step: '',
+      phase: '', finalite: '', objectif: '', moment_suivi: '',
+    };
+    await Store.add('actions', followUp);
+    return followUp;
+  }
+
   let currentView = 'todo'; // Default to "À faire" view
   let searchValue = '';
   let filterValues = {};
@@ -145,7 +171,13 @@
         }},
         { key: 'next_step', label: 'Next step', render: r => r.next_step ? `<span style="font-size:0.75rem;color:#c9a000;">→ ${UI.escHtml(r.next_step)}</span>` : '' },
         { key: 'relance', label: 'Relance', render: r => r.date_relance ? `<span style="font-size:0.75rem;${r.date_relance <= todayStr ? 'color:#dc2626;font-weight:600;' : 'color:#64748b;'}">${UI.formatDate(r.date_relance)}</span>` : '' },
-        { key: 'statut', label: 'Statut', render: r => UI.statusBadge(r.statut || 'À faire', ['À faire', 'En cours', 'Fait', 'Annulé'], { entity: 'actions', recordId: r.id, fieldName: 'statut', onUpdate: () => { setTimeout(() => location.reload(), 400); } }) },
+        { key: 'statut', label: 'Statut', render: r => UI.statusBadge(r.statut || 'À faire', ['À faire', 'En cours', 'Fait', 'Annulé'], { entity: 'actions', recordId: r.id, fieldName: 'statut', onUpdate: async (newStatus) => {
+          if (newStatus === 'Fait' && r.next_step) {
+            const fu = await createFollowUp(r);
+            if (fu) UI.toast(`Action suivante créée : ${fu.action}`);
+          }
+          setTimeout(() => location.reload(), 600);
+        } }) },
       ],
       data: sorted,
       onRowClick: (id) => editAction(id),
@@ -300,6 +332,12 @@
         if (isEdit) {
           await Store.update('actions', a.id, data);
           UI.toast('Action mise à jour');
+          // Auto-create follow-up if just marked Fait with a next_step
+          const wasPending = (a.statut === 'À faire' || a.statut === 'A faire' || a.statut === 'En cours');
+          if (data.statut === 'Fait' && wasPending && data.next_step) {
+            const fu = await createFollowUp({ ...a, ...data });
+            if (fu) UI.toast(`Action suivante créée : ${fu.action}`);
+          }
         } else {
           data.id = API.generateId('act');
           data.phase = '';
@@ -309,7 +347,7 @@
           await Store.add('actions', data);
           UI.toast('Action créée');
         }
-        setTimeout(() => location.reload(), 500);
+        setTimeout(() => location.reload(), 600);
       }
     });
 
