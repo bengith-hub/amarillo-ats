@@ -37,7 +37,6 @@
         { key: 'ca', label: 'CA' },
         { key: 'localisation', label: 'Localisation' },
         { key: 'priorite', label: 'Priorité', render: r => UI.badge(r.priorite === '5 - Coeur de cible' ? 'Haute' : 'Moyenne') },
-        { key: 'icp_fit', label: 'ICP', render: r => r.icp_fit ? '<span style="color:#16a34a;font-weight:600;">✓</span>' : '—' },
         { key: 'statut', label: 'Statut' },
         { key: 'decideurs', label: 'Décideurs', render: r => {
           const decs = Store.filter('decideurs', d => d.entreprise_id === r.id);
@@ -102,7 +101,6 @@
           telephone: overlay.querySelector('#e-tel').value.trim(),
           angle_approche: overlay.querySelector('#e-angle').value.trim(),
           notes: overlay.querySelector('#e-notes').value.trim(),
-          icp_fit: overlay.querySelector('#e-prio').value === '5 - Coeur de cible',
         };
         if (isEdit) {
           await Store.update('entreprises', e.id, data);
