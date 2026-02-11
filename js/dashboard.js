@@ -51,6 +51,7 @@
 
   renderKPIs();
   renderUrgentBlock();
+  renderNextSteps();
   renderTodoActions();
   renderRelances();
   renderPipelineCandidats();
@@ -121,6 +122,81 @@
       </div>
     `;
   }
+
+  // ========== Prochaines étapes orphelines ==========
+  function renderNextSteps() {
+    const card = document.getElementById('card-next-steps');
+    const container = document.getElementById('dashboard-next-steps');
+    if (!container || !card) return;
+
+    // Find "Fait" actions with a next_step that don't have a follow-up action created
+    const doneWithNext = actions.filter(a => isDone(a.statut) && a.next_step);
+
+    // Check if a follow-up already exists (action whose message_notes contains "Suite de")
+    // and whose action name matches the next_step
+    const pendingActions = actions.filter(a => isActive(a.statut));
+    const orphans = doneWithNext.filter(a => {
+      const ns = a.next_step.toLowerCase().trim();
+      return !pendingActions.some(p =>
+        (p.action || '').toLowerCase().trim() === ns
+      );
+    }).sort((a, b) => (b.date_action || '').localeCompare(a.date_action || ''));
+
+    if (orphans.length === 0) {
+      card.style.display = 'none';
+      return;
+    }
+
+    card.style.display = '';
+    container.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${orphans.slice(0, 8).map(a => {
+          const who = a.candidat_id ? (Store.resolve('candidats', a.candidat_id)?.displayName || '') :
+                      a.decideur_id ? (Store.resolve('decideurs', a.decideur_id)?.displayName || '') : '';
+          return `
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;">
+              <span style="font-size:1rem;">📌</span>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:0.8125rem;font-weight:600;color:#92400e;">→ ${UI.escHtml(a.next_step)}</div>
+                <div style="font-size:0.75rem;color:#64748b;">Suite de : ${UI.escHtml(a.action || '')}${who ? ' · ' + who : ''} · ${UI.formatDate(a.date_action)}</div>
+              </div>
+              <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); window.__createFollowUp && window.__createFollowUp('${a.id}')" style="white-space:nowrap;font-size:0.75rem;">
+                Créer l'action
+              </button>
+            </div>
+          `;
+        }).join('')}
+        ${orphans.length > 8 ? `<div style="text-align:center;font-size:0.75rem;color:#92400e;">+ ${orphans.length - 8} autres prochaines étapes</div>` : ''}
+      </div>
+    `;
+  }
+
+  // Global handler for creating follow-up from dashboard
+  window.__createFollowUp = async (actionId) => {
+    const action = Store.findById('actions', actionId);
+    if (!action || !action.next_step) return;
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+    const followUp = {
+      id: API.generateId('act'),
+      action: action.next_step,
+      type_action: action.type_action || '',
+      canal: action.canal || '',
+      statut: 'À faire',
+      priorite: action.priorite || null,
+      date_action: action.date_relance || tomorrow,
+      date_relance: null,
+      candidat_id: action.candidat_id || null,
+      decideur_id: action.decideur_id || null,
+      mission_id: action.mission_id || null,
+      entreprise_id: action.entreprise_id || null,
+      reponse: false,
+      message_notes: `Suite de : ${action.action || ''}`,
+      next_step: '',
+    };
+    await Store.add('actions', followUp);
+    UI.toast(`Action créée : ${followUp.action}`);
+    setTimeout(() => location.reload(), 600);
+  };
 
   // ========== Actions à faire ==========
   function renderTodoActions() {
