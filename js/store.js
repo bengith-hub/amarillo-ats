@@ -35,13 +35,18 @@ const Store = (() => {
     emit(entity, data);
   }
 
-  // Background revalidate — fetch from API without blocking
+  // Queue for background revalidation to avoid parallel API calls
+  let _revalidateQueue = Promise.resolve();
+
+  // Background revalidate — fetch from API without blocking, queued
   function revalidate(entity) {
     if (_refreshing[entity]) return _refreshing[entity];
-    _refreshing[entity] = API.fetchBin(entity).then(data => {
+    _refreshing[entity] = (_revalidateQueue = _revalidateQueue.then(async () => {
+      await new Promise(r => setTimeout(r, 300)); // rate limit spacing
+      const data = await API.fetchBin(entity);
       setCachedData(entity, data);
       return data;
-    }).catch(e => {
+    })).catch(e => {
       console.warn(`Background revalidate ${entity} failed:`, e);
       return cache[entity] || [];
     }).finally(() => {
@@ -74,13 +79,19 @@ const Store = (() => {
     }
   }
 
-  // Load all entities — instant if cached, parallel API calls only if needed
+  // Load all entities — sequential with delay to avoid JSONBin rate limits
   async function loadAll() {
     const entities = ['candidats', 'entreprises', 'decideurs', 'missions', 'actions', 'facturation', 'references', 'notes'];
     const results = {};
-    await Promise.all(entities.map(async (e) => {
+    let needsApi = 0;
+    for (const e of entities) {
       results[e] = await load(e);
-    }));
+      // Small delay between API calls (load() skips if cached)
+      if (!getCachedData(e, false)) {
+        needsApi++;
+        if (needsApi > 1) await new Promise(r => setTimeout(r, 300));
+      }
+    }
     return results;
   }
 
@@ -165,10 +176,13 @@ const Store = (() => {
     }
   }
 
-  // Force refresh all (parallel)
+  // Force refresh all (sequential with delay to respect rate limits)
   async function refreshAll() {
     const entities = ['candidats', 'entreprises', 'decideurs', 'missions', 'actions', 'facturation', 'references', 'notes'];
-    await Promise.all(entities.map(e => refresh(e)));
+    for (const e of entities) {
+      await refresh(e);
+      await new Promise(r => setTimeout(r, 300));
+    }
   }
 
   // Event system for reactivity
