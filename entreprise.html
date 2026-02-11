@@ -206,7 +206,6 @@
         { key: 'localisation', label: 'Localisation', type: 'autocomplete', options: () => Referentiels.get('localisations'), refKey: 'localisations' },
         { key: 'telephone', label: 'Téléphone', type: 'text' },
         { key: 'site_web', label: 'Site web', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(v)}" target="_blank" class="entity-link">${UI.escHtml(v)}</a>` : '' },
-        { key: 'icp_fit', label: 'ICP Fit', type: 'boolean', render: (v) => v ? '✅ Oui' : '❌ Non' },
         { key: 'source', label: 'Source', type: 'text' },
       ]
     });

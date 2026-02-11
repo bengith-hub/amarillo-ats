@@ -494,7 +494,7 @@ const UI = (() => {
             id: API.generateId('ent'),
             nom: input.value.trim(),
             secteur: '', taille: '', ca: '', localisation: '',
-            priorite: '', statut: 'À cibler', icp_fit: false,
+            priorite: '', statut: 'À cibler',
             site_web: '', telephone: '', angle_approche: '', source: '', notes: '',
             dernier_contact: null, prochaine_relance: null,
           };
