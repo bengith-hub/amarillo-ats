@@ -72,6 +72,7 @@
         <div style="display:flex;gap:8px;align-items:center;">
           ${UI.statusBadge(e.statut || 'À cibler', ENT_STATUTS, { entity: 'entreprises', recordId: entId, fieldName: 'statut', onUpdate: () => renderEntreprisePage() })}
           ${UI.statusBadge(e.priorite || '3 - Moyenne', ENT_PRIORITES, { entity: 'entreprises', recordId: entId, fieldName: 'priorite', onUpdate: () => renderEntreprisePage() })}
+          <button class="btn btn-danger btn-sm" id="btn-delete-entreprise" title="Supprimer cette entreprise">🗑️</button>
           <span class="autosave-indicator saved"><span class="sync-dot"></span> Auto-save</span>
         </div>
       </div>
@@ -192,6 +193,20 @@
           await Store.update('entreprises', entId, { nom: overlay.querySelector('#en-nom').value.trim() });
           UI.toast('Nom mis à jour');
           renderEntreprisePage();
+        }
+      });
+    });
+
+    document.getElementById('btn-delete-entreprise')?.addEventListener('click', () => {
+      UI.modal('Supprimer l\'entreprise', `
+        <p style="color:#dc2626;font-weight:600;">Supprimer <strong>${UI.escHtml(e.nom || '')}</strong> ?</p>
+        <p style="font-size:0.875rem;color:#64748b;margin-top:8px;">Cette action est irréversible. Les décideurs rattachés ne seront pas supprimés.</p>
+      `, {
+        saveLabel: 'Supprimer',
+        onSave: async () => {
+          await Store.remove('entreprises', entId);
+          UI.toast('Entreprise supprimée');
+          setTimeout(() => window.location.href = 'entreprises.html', 500);
         }
       });
     });
