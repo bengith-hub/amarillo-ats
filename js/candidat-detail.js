@@ -183,13 +183,13 @@
     UI.inlineEdit('profil-dates-fields', {
       entity: 'candidats', recordId: id,
       fields: [
-        { key: 'debut_poste_actuel', label: 'Prise de poste actuel', type: 'date', render: (v) => {
+        { key: 'debut_poste_actuel', label: 'Prise de poste actuel', type: 'month', render: (v) => {
           if (!v) return '';
-          return `${UI.formatDate(v)}`;
+          return UI.formatMonthYear(v);
         }},
-        { key: 'debut_carriere', label: 'Début de carrière', type: 'date', render: (v) => {
+        { key: 'debut_carriere', label: 'Début de carrière', type: 'month', render: (v) => {
           if (!v) return '';
-          return `${UI.formatDate(v)}`;
+          return UI.formatMonthYear(v);
         }}
       ],
       onAfterSave: () => {
@@ -722,10 +722,8 @@
       <div class="form-row">
         <div class="form-group">
           <label>Entreprise actuelle</label>
-          <select id="f-entreprise">
-            <option value="">— Aucune —</option>
-            ${entreprises.map(e => `<option value="${e.id}" ${c.entreprise_actuelle_id === e.id ? 'selected' : ''}>${UI.escHtml(e.nom)}</option>`).join('')}
-          </select>
+          <input type="text" id="f-entreprise-search" value="${c.entreprise_actuelle_id ? (Store.resolve('entreprises', c.entreprise_actuelle_id)?.displayName || '') : ''}" placeholder="Tapez pour rechercher..." />
+          <input type="hidden" id="f-entreprise" value="${c.entreprise_actuelle_id || ''}" />
         </div>
         <div class="form-group">
           <label>Statut</label>
@@ -763,8 +761,8 @@
         </div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>Prise de poste actuel</label><input type="date" id="f-debut-poste" value="${c.debut_poste_actuel || ''}" /></div>
-        <div class="form-group"><label>Début de carrière</label><input type="date" id="f-debut-carriere" value="${c.debut_carriere || ''}" /></div>
+        <div class="form-group"><label>Prise de poste actuel</label><input type="month" id="f-debut-poste" value="${(c.debut_poste_actuel || '').substring(0, 7)}" /></div>
+        <div class="form-group"><label>Début de carrière</label><input type="month" id="f-debut-carriere" value="${(c.debut_carriere || '').substring(0, 7)}" /></div>
       </div>
       <div class="form-group"><label>Motivation changement</label><textarea id="f-motivation">${UI.escHtml(c.motivation_changement||'')}</textarea></div>
       <div class="form-group"><label>Télétravail</label><input type="text" id="f-teletravail" value="${UI.escHtml(c.teletravail||'')}" /></div>
@@ -804,6 +802,9 @@
         setTimeout(() => location.reload(), 500);
       }
     });
+
+    // Init autocomplete after modal renders
+    UI.entrepriseAutocomplete('f-entreprise-search', 'f-entreprise');
   }
 
   // ============================================================

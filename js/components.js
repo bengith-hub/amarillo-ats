@@ -423,6 +423,18 @@ const UI = (() => {
     }
   }
 
+  function formatMonthYear(dateStr) {
+    if (!dateStr) return '—';
+    try {
+      // Handle both "YYYY-MM" and "YYYY-MM-DD" formats
+      const parts = dateStr.split('-');
+      const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1);
+      return d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    } catch {
+      return dateStr;
+    }
+  }
+
   function formatCurrency(amount) {
     if (!amount && amount !== 0) return '—';
     return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(amount);
@@ -712,18 +724,19 @@ const UI = (() => {
         };
         input.addEventListener('blur', finish);
         input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') { el.classList.remove('editing'); renderFields(); } });
-      } else if (fieldDef.type === 'date') {
+      } else if (fieldDef.type === 'date' || fieldDef.type === 'month') {
         const input = document.createElement('input');
-        input.type = 'date';
+        input.type = fieldDef.type === 'month' ? 'month' : 'date';
         input.className = 'inline-edit-input';
-        input.value = currentValue;
+        // For month inputs, only use YYYY-MM portion
+        input.value = fieldDef.type === 'month' ? (currentValue || '').substring(0, 7) : currentValue;
         el.innerHTML = '';
         el.appendChild(input);
         input.focus();
 
         const finish = async () => {
           const val = input.value || null;
-          if (val !== currentValue) {
+          if (val !== currentValue && val !== (currentValue || '').substring(0, 7)) {
             await saveField(fieldDef.key, val);
           }
           el.classList.remove('editing');
@@ -848,6 +861,6 @@ const UI = (() => {
     initGlobalSearch, entrepriseAutocomplete,
     candidatDecideurLink,
     inlineEdit, statusBadge, showStatusPicker,
-    escHtml, formatDate, formatCurrency, getParam
+    escHtml, formatDate, formatMonthYear, formatCurrency, getParam
   };
 })();

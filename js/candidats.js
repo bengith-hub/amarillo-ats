@@ -66,7 +66,7 @@
           key: 'entreprise',
           label: 'Entreprise',
           render: r => {
-            if (!r.entreprise_actuelle_id) return r.entreprise_nom || '—';
+            if (!r.entreprise_actuelle_id) return r.entreprise_nom || r.entreprise_actuelle || '—';
             return UI.resolveLink('entreprises', r.entreprise_actuelle_id);
           }
         },
@@ -210,6 +210,16 @@
           </select>
         </div>
       </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Prise de poste actuel</label>
+          <input type="month" id="f-debut-poste" value="${(c.debut_poste_actuel || '').substring(0, 7)}" />
+        </div>
+        <div class="form-group">
+          <label>Début de carrière</label>
+          <input type="month" id="f-debut-carriere" value="${(c.debut_carriere || '').substring(0, 7)}" />
+        </div>
+      </div>
       <div class="form-group">
         <label>Origine</label>
         <select id="f-origine">
@@ -247,6 +257,8 @@
           diplome: overlay.querySelector('#f-diplome').value,
           origine: overlay.querySelector('#f-origine').value,
           notes: overlay.querySelector('#f-notes').value.trim(),
+          debut_poste_actuel: overlay.querySelector('#f-debut-poste').value || '',
+          debut_carriere: overlay.querySelector('#f-debut-carriere').value || '',
         };
 
         if (!data.nom) {
@@ -281,8 +293,6 @@
           data.teletravail = '';
           data.rtt = false;
           data.nb_rtt = 0;
-          data.debut_poste_actuel = '';
-          data.debut_carriere = '';
           await Store.add('candidats', data);
           UI.toast('Candidat créé');
         }
