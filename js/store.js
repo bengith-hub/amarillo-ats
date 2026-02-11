@@ -2,20 +2,24 @@
 
 const Store = (() => {
   const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  const STALE_TTL = 30 * 60 * 1000; // 30 min — serve stale but revalidate
   const cache = {};
   const listeners = {};
+  const _refreshing = {}; // track in-flight API calls
 
   function getCacheKey(entity) {
     return `ats_data_${entity}`;
   }
 
-  function getCachedData(entity) {
+  function getCachedData(entity, allowStale) {
     const key = getCacheKey(entity);
     const raw = localStorage.getItem(key);
     if (!raw) return null;
 
     const { data, timestamp } = JSON.parse(raw);
-    if (Date.now() - timestamp > CACHE_TTL) return null;
+    const age = Date.now() - timestamp;
+    if (!allowStale && age > CACHE_TTL) return null;
+    if (allowStale && age > STALE_TTL) return null;
 
     cache[entity] = data;
     return data;
@@ -31,26 +35,46 @@ const Store = (() => {
     emit(entity, data);
   }
 
-  // Load entity from cache or API
-  async function load(entity) {
-    const cached = getCachedData(entity);
-    if (cached) return cached;
+  // Background revalidate — fetch from API without blocking
+  function revalidate(entity) {
+    if (_refreshing[entity]) return _refreshing[entity];
+    _refreshing[entity] = API.fetchBin(entity).then(data => {
+      setCachedData(entity, data);
+      return data;
+    }).catch(e => {
+      console.warn(`Background revalidate ${entity} failed:`, e);
+      return cache[entity] || [];
+    }).finally(() => {
+      delete _refreshing[entity];
+    });
+    return _refreshing[entity];
+  }
 
+  // Load entity: serve from cache instantly, revalidate in background
+  async function load(entity) {
+    // 1. Fresh cache — return immediately
+    const fresh = getCachedData(entity, false);
+    if (fresh) return fresh;
+
+    // 2. Stale cache — return immediately + revalidate in background
+    const stale = getCachedData(entity, true);
+    if (stale) {
+      revalidate(entity); // fire & forget
+      return stale;
+    }
+
+    // 3. No cache at all — must wait for API
     try {
       const data = await API.fetchBin(entity);
       setCachedData(entity, data);
       return data;
     } catch (e) {
       console.error(`Failed to load ${entity}:`, e);
-      // Return stale cache if available
-      const key = getCacheKey(entity);
-      const raw = localStorage.getItem(key);
-      if (raw) return JSON.parse(raw).data;
       return [];
     }
   }
 
-  // Load all entities
+  // Load all entities — instant if cached, parallel API calls only if needed
   async function loadAll() {
     const entities = ['candidats', 'entreprises', 'decideurs', 'missions', 'actions', 'facturation', 'references', 'notes'];
     const results = {};
@@ -141,12 +165,10 @@ const Store = (() => {
     }
   }
 
-  // Force refresh all
+  // Force refresh all (parallel)
   async function refreshAll() {
     const entities = ['candidats', 'entreprises', 'decideurs', 'missions', 'actions', 'facturation', 'references', 'notes'];
-    for (const e of entities) {
-      await refresh(e);
-    }
+    await Promise.all(entities.map(e => refresh(e)));
   }
 
   // Event system for reactivity
