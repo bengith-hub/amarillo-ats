@@ -29,6 +29,26 @@
   const actions = Store.get('actions');
   const entreprises = Store.get('entreprises');
 
+  // Robust status check — handles 'À faire', 'A faire', 'à faire', missing/null/empty
+  function isPending(statut) {
+    if (!statut) return true; // no status = pending by default
+    const s = statut.normalize('NFC').toLowerCase().trim();
+    return s === 'à faire' || s === 'a faire';
+  }
+  function isDone(statut) {
+    if (!statut) return false;
+    const s = statut.normalize('NFC').toLowerCase().trim();
+    return s === 'fait';
+  }
+  function isCancelled(statut) {
+    if (!statut) return false;
+    const s = statut.normalize('NFC').toLowerCase().trim();
+    return s === 'annulé' || s === 'annule';
+  }
+  function isActive(statut) {
+    return !isDone(statut) && !isCancelled(statut);
+  }
+
   renderKPIs();
   renderUrgentBlock();
   renderTodoActions();
@@ -44,10 +64,10 @@
     );
     const activeStatuses = ['Approché', 'En qualification', 'Shortlisté', 'Présenté'];
     const activeCandidats = candidats.filter(c => activeStatuses.includes(c.statut));
-    const pendingActions = actions.filter(a => a.statut === 'À faire' || a.statut === 'A faire');
+    const pendingActions = actions.filter(a => isPending(a.statut));
     const overdueActions = pendingActions.filter(a => a.date_action && a.date_action < today);
     const totalFees = activeMissions.reduce((sum, m) => sum + (m.fee_estimee || 0), 0);
-    const doneThisWeek = actions.filter(a => a.statut === 'Fait' && a.date_action >= weekAgo);
+    const doneThisWeek = actions.filter(a => isDone(a.statut) && a.date_action >= weekAgo);
 
     document.getElementById('kpi-missions').textContent = activeMissions.length;
     document.getElementById('kpi-candidats').textContent = activeCandidats.length;
@@ -66,10 +86,10 @@
     if (!container) return;
 
     const overdue = actions.filter(a =>
-      (a.statut === 'À faire' || a.statut === 'A faire') && a.date_action && a.date_action < today
+      isPending(a.statut) && a.date_action && a.date_action < today
     );
     const overdueRelances = actions.filter(a =>
-      a.date_relance && a.date_relance <= today && a.statut !== 'Fait' && a.statut !== 'Annulé'
+      a.date_relance && a.date_relance <= today && isActive(a.statut)
     );
     const urgentItems = [...new Map([...overdue, ...overdueRelances].map(a => [a.id, a])).values()];
 
@@ -105,8 +125,18 @@
   // ========== Actions à faire ==========
   function renderTodoActions() {
     const pending = actions
-      .filter(a => (a.statut === 'À faire' || a.statut === 'A faire') && (!a.date_action || a.date_action >= today))
-      .sort((a, b) => (a.date_action || 'zzz').localeCompare(b.date_action || 'zzz'));
+      .filter(a => isPending(a.statut))
+      .sort((a, b) => {
+        // Today first, then future, then past (most recent past first)
+        const aDate = a.date_action || '';
+        const bDate = b.date_action || '';
+        const aIsToday = aDate === today ? 0 : (aDate >= today ? 1 : 2);
+        const bIsToday = bDate === today ? 0 : (bDate >= today ? 1 : 2);
+        if (aIsToday !== bIsToday) return aIsToday - bIsToday;
+        // Within same group, closest date first
+        if (aIsToday <= 1) return (aDate || 'zzz').localeCompare(bDate || 'zzz');
+        return bDate.localeCompare(aDate); // past: most recent first
+      });
 
     UI.dataTable('dashboard-actions', {
       columns: [
@@ -137,7 +167,7 @@
     if (!container) return;
 
     const upcoming = actions
-      .filter(a => a.date_relance && a.date_relance > today && a.date_relance <= weekFromNow && a.statut !== 'Fait' && a.statut !== 'Annulé')
+      .filter(a => a.date_relance && a.date_relance >= today && a.date_relance <= weekFromNow && isActive(a.statut))
       .sort((a, b) => (a.date_relance || '').localeCompare(b.date_relance || ''));
 
     if (upcoming.length === 0) {
@@ -241,7 +271,7 @@
   // ========== Activité récente ==========
   function renderRecentActivity() {
     const recent = [...actions]
-      .filter(a => a.statut === 'Fait')
+      .filter(a => isDone(a.statut))
       .sort((a, b) => (b.date_action || '').localeCompare(a.date_action || ''))
       .slice(0, 8);
 
