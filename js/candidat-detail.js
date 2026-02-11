@@ -39,7 +39,7 @@
         <div style="display:flex;align-items:center;">
           <div class="detail-avatar candidat">${(candidat.prenom || '?')[0]}</div>
           <div>
-            <h1>${UI.escHtml((candidat.prenom || '') + ' ' + (candidat.nom || ''))}</h1>
+            <h1 id="candidat-name" style="cursor:pointer;" title="Cliquer pour modifier">${UI.escHtml((candidat.prenom || '') + ' ' + (candidat.nom || ''))}</h1>
             <div class="subtitle">
               ${UI.escHtml(candidat.poste_actuel || '')}
               ${entreprise ? ` chez ${UI.entityLink('entreprises', entreprise.id, entreprise.displayName)}` : ''}
@@ -50,18 +50,45 @@
           ${UI.statusBadge(candidat.statut || 'To call', CANDIDAT_STATUTS, { entity: 'candidats', recordId: id, fieldName: 'statut', onUpdate: (s) => { candidat.statut = s; } })}
           ${UI.statusBadge(candidat.niveau || 'Middle', CANDIDAT_NIVEAUX, { entity: 'candidats', recordId: id, fieldName: 'niveau', onUpdate: (s) => { candidat.niveau = s; } })}
           <button class="btn btn-secondary btn-sm" id="btn-templates">📋 Trames</button>
-          <button class="btn btn-secondary btn-sm" id="btn-edit-candidat">Modifier</button>
           <span class="autosave-indicator saved"><span class="sync-dot"></span> Auto-save</span>
         </div>
       </div>
     `;
 
-    document.getElementById('btn-edit-candidat').addEventListener('click', () => {
-      showEditModal();
-    });
-
     document.getElementById('btn-templates').addEventListener('click', () => {
       showTemplatesModal({ candidatId: id });
+    });
+
+    // Click on name to edit
+    document.getElementById('candidat-name')?.addEventListener('click', () => {
+      UI.modal('Modifier le nom', `
+        <div class="form-row">
+          <div class="form-group"><label>Prénom</label><input type="text" id="cn-prenom" value="${UI.escHtml(candidat.prenom || '')}" /></div>
+          <div class="form-group"><label>Nom</label><input type="text" id="cn-nom" value="${UI.escHtml(candidat.nom || '')}" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Poste actuel</label><input type="text" id="cn-poste" value="${UI.escHtml(candidat.poste_actuel || '')}" /></div>
+          <div class="form-group"><label>Poste cible</label><input type="text" id="cn-poste-cible" value="${UI.escHtml(candidat.poste_cible || '')}" /></div>
+        </div>
+        <div class="form-group">
+          <label>Entreprise actuelle</label>
+          <input type="text" id="f-entreprise-search" value="${candidat.entreprise_actuelle_id ? (Store.resolve('entreprises', candidat.entreprise_actuelle_id)?.displayName || '') : ''}" placeholder="Tapez pour rechercher..." />
+          <input type="hidden" id="f-entreprise" value="${candidat.entreprise_actuelle_id || ''}" />
+        </div>
+      `, {
+        onSave: async (overlay) => {
+          await Store.update('candidats', id, {
+            prenom: overlay.querySelector('#cn-prenom').value.trim(),
+            nom: overlay.querySelector('#cn-nom').value.trim(),
+            poste_actuel: overlay.querySelector('#cn-poste').value.trim(),
+            poste_cible: overlay.querySelector('#cn-poste-cible').value.trim(),
+            entreprise_actuelle_id: overlay.querySelector('#f-entreprise').value || null,
+          });
+          UI.toast('Candidat mis à jour');
+          setTimeout(() => location.reload(), 300);
+        }
+      });
+      UI.entrepriseAutocomplete('f-entreprise-search', 'f-entreprise');
     });
   }
 
@@ -85,19 +112,13 @@
     const totalExp = computeDuration(candidat.debut_carriere);
 
     document.getElementById('tab-profil').innerHTML = `
-      <div class="card">
-        <div class="card-header"><h2>Informations générales</h2></div>
+      <div class="card" data-accent="green">
+        <div class="card-header">
+          <h2>Informations générales</h2>
+          <span class="edit-hint">cliquer sur un champ pour modifier</span>
+        </div>
         <div class="card-body">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            ${field('Localisation', candidat.localisation)}
-            ${field('Diplôme', candidat.diplome)}
-            ${field('Ingénieur / Master', candidat.ingenieur_master ? 'Oui' : 'Non')}
-            ${field('Origine', candidat.origine)}
-            ${field('Recommandé par', candidat.recommande_par)}
-            ${field('Ambassadeur', candidat.ambassadeur ? 'Oui' : 'Non')}
-            ${field('Exposition au pouvoir', candidat.exposition_pouvoir)}
-            ${field('Préavis', candidat.preavis)}
-          </div>
+          <div class="inline-fields-grid" id="profil-info-fields"></div>
         </div>
       </div>
 
@@ -129,44 +150,29 @@
       </div>
 
       <div class="card">
-        <div class="card-header"><h2>Contact</h2></div>
+        <div class="card-header">
+          <h2>Contact</h2>
+          <span class="edit-hint">cliquer pour modifier</span>
+        </div>
         <div class="card-body">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            ${field('Email', candidat.email ? `<a href="mailto:${UI.escHtml(candidat.email)}" class="entity-link">${UI.escHtml(candidat.email)}</a>` : '—', true)}
-            ${field('Téléphone', candidat.telephone ? `<a href="tel:${UI.escHtml(candidat.telephone)}" class="entity-link">${UI.escHtml(candidat.telephone)}</a>` : '—', true)}
-            ${field('LinkedIn', candidat.linkedin ? `<a href="${UI.escHtml(candidat.linkedin)}" target="_blank" class="entity-link">Profil LinkedIn</a>` : '—', true)}
-          </div>
+          <div class="inline-fields-grid" id="profil-contact-fields"></div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-header"><h2>Package & Rémunération</h2></div>
+      <div class="card" data-accent="orange">
+        <div class="card-header">
+          <h2>Package & Rémunération</h2>
+          <span class="edit-hint">cliquer pour modifier</span>
+        </div>
         <div class="card-body">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
-            <div>
-              <h3 style="font-size:0.8125rem;font-weight:600;color:#64748b;margin-bottom:8px;">Actuel</h3>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                ${field('Fixe', UI.formatCurrency(candidat.salaire_fixe_actuel))}
-                ${field('Variable', UI.formatCurrency(candidat.variable_actuel))}
-              </div>
-              <div style="margin-top:8px;font-size:0.9375rem;font-weight:700;color:#1e293b;">
-                Package : ${pkg > 0 ? UI.formatCurrency(pkg) : '—'}
-              </div>
+          <div class="inline-fields-grid" id="profil-package-fields"></div>
+          <div style="margin-top:12px;display:flex;gap:24px;">
+            <div style="font-size:0.9375rem;font-weight:700;color:#1e293b;">
+              Package actuel : ${pkg > 0 ? UI.formatCurrency(pkg) : '—'}
             </div>
-            <div>
-              <h3 style="font-size:0.8125rem;font-weight:600;color:#64748b;margin-bottom:8px;">Souhaité</h3>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                ${field('Fixe', UI.formatCurrency(candidat.salaire_fixe_souhaite))}
-                ${field('Variable', UI.formatCurrency(candidat.variable_souhaite))}
-              </div>
-              <div style="margin-top:8px;font-size:0.9375rem;font-weight:700;color:#1e293b;">
-                Package : ${pkgSouhaite > 0 ? UI.formatCurrency(pkgSouhaite) : '—'}
-              </div>
+            <div style="font-size:0.9375rem;font-weight:700;color:#1e293b;">
+              Package souhaité : ${pkgSouhaite > 0 ? UI.formatCurrency(pkgSouhaite) : '—'}
             </div>
-          </div>
-          <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
-            ${field('RTT', candidat.rtt ? `Oui (${candidat.nb_rtt || 0} jours)` : 'Non')}
-            ${field('Télétravail', candidat.teletravail)}
           </div>
         </div>
       </div>
@@ -179,6 +185,45 @@
         <div class="card-body" id="profil-notes"></div>
       </div>
     `;
+
+    // Inline editable — Informations générales
+    UI.inlineEdit('profil-info-fields', {
+      entity: 'candidats', recordId: id,
+      fields: [
+        { key: 'localisation', label: 'Localisation', type: 'autocomplete', options: () => Referentiels.get('localisations'), refKey: 'localisations' },
+        { key: 'diplome', label: 'Diplôme', type: 'select', options: Referentiels.get('candidat_diplomes') },
+        { key: 'ingenieur_master', label: 'Ingénieur / Master', type: 'boolean', render: (v) => v ? '✅ Oui' : '❌ Non' },
+        { key: 'origine', label: 'Origine', type: 'text' },
+        { key: 'recommande_par', label: 'Recommandé par', type: 'text' },
+        { key: 'ambassadeur', label: 'Ambassadeur', type: 'boolean', render: (v) => v ? '✅ Oui' : '❌ Non' },
+        { key: 'exposition_pouvoir', label: 'Exposition au pouvoir', type: 'text' },
+        { key: 'preavis', label: 'Préavis', type: 'text' },
+      ]
+    });
+
+    // Inline editable — Contact
+    UI.inlineEdit('profil-contact-fields', {
+      entity: 'candidats', recordId: id,
+      fields: [
+        { key: 'email', label: 'Email', type: 'text', render: (v) => v ? `<a href="mailto:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
+        { key: 'telephone', label: 'Téléphone', type: 'text', render: (v) => v ? `<a href="tel:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
+        { key: 'linkedin', label: 'LinkedIn', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(v)}" target="_blank" class="entity-link">Profil LinkedIn</a>` : '' },
+      ]
+    });
+
+    // Inline editable — Package
+    UI.inlineEdit('profil-package-fields', {
+      entity: 'candidats', recordId: id,
+      fields: [
+        { key: 'salaire_fixe_actuel', label: 'Fixe actuel', type: 'number', render: (v) => v ? UI.formatCurrency(v) : '—' },
+        { key: 'variable_actuel', label: 'Variable actuel', type: 'number', render: (v) => v ? UI.formatCurrency(v) : '—' },
+        { key: 'salaire_fixe_souhaite', label: 'Fixe souhaité', type: 'number', render: (v) => v ? UI.formatCurrency(v) : '—' },
+        { key: 'variable_souhaite', label: 'Variable souhaité', type: 'number', render: (v) => v ? UI.formatCurrency(v) : '—' },
+        { key: 'teletravail', label: 'Télétravail', type: 'text' },
+        { key: 'rtt', label: 'RTT', type: 'boolean', render: (v) => v ? '✅ Oui' : '❌ Non' },
+        { key: 'nb_rtt', label: 'Nb RTT (jours)', type: 'number' },
+      ]
+    });
 
     UI.inlineEdit('profil-dates-fields', {
       entity: 'candidats', recordId: id,
@@ -705,107 +750,6 @@
     }, 100);
   };
 
-  // Edit modal (reuse candidats.js logic)
-  function showEditModal() {
-    const entreprises = Store.get('entreprises');
-    const c = candidat;
-
-    const bodyHtml = `
-      <div class="form-row">
-        <div class="form-group"><label>Prénom</label><input type="text" id="f-prenom" value="${UI.escHtml(c.prenom || '')}" /></div>
-        <div class="form-group"><label>Nom</label><input type="text" id="f-nom" value="${UI.escHtml(c.nom || '')}" /></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Poste actuel</label><input type="text" id="f-poste-actuel" value="${UI.escHtml(c.poste_actuel || '')}" /></div>
-        <div class="form-group"><label>Poste cible</label><input type="text" id="f-poste-cible" value="${UI.escHtml(c.poste_cible || '')}" /></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Entreprise actuelle</label>
-          <input type="text" id="f-entreprise-search" value="${c.entreprise_actuelle_id ? (Store.resolve('entreprises', c.entreprise_actuelle_id)?.displayName || '') : ''}" placeholder="Tapez pour rechercher..." />
-          <input type="hidden" id="f-entreprise" value="${c.entreprise_actuelle_id || ''}" />
-        </div>
-        <div class="form-group">
-          <label>Statut</label>
-          <select id="f-statut">
-            ${Referentiels.get('candidat_statuts').map(s => `<option value="${s}" ${c.statut===s?'selected':''}>${s}</option>`).join('')}
-          </select>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Niveau</label>
-          <select id="f-niveau"><option value="">—</option>${Referentiels.get('candidat_niveaux').map(s=>`<option value="${s}" ${c.niveau===s?'selected':''}>${s}</option>`).join('')}</select>
-        </div>
-        <div class="form-group"><label>Localisation</label><input type="text" id="f-localisation" value="${UI.escHtml(c.localisation || '')}" /></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Email</label><input type="email" id="f-email" value="${UI.escHtml(c.email || '')}" /></div>
-        <div class="form-group"><label>Téléphone</label><input type="tel" id="f-telephone" value="${UI.escHtml(c.telephone || '')}" /></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>LinkedIn</label><input type="url" id="f-linkedin" value="${UI.escHtml(c.linkedin || '')}" /></div>
-        <div class="form-group"><label>Code Profiling Amarillo™</label><input type="text" id="f-profile-code" value="${UI.escHtml(c.profile_code || '')}" placeholder="AMA-XXXX" /></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Fixe actuel (€)</label><input type="number" id="f-salaire-fixe" value="${c.salaire_fixe_actuel||''}" /></div>
-        <div class="form-group"><label>Variable actuel (€)</label><input type="number" id="f-variable" value="${c.variable_actuel||''}" /></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Fixe souhaité (€)</label><input type="number" id="f-salaire-souhaite" value="${c.salaire_fixe_souhaite||''}" /></div>
-        <div class="form-group"><label>Variable souhaité (€)</label><input type="number" id="f-variable-souhaite" value="${c.variable_souhaite||''}" /></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Préavis</label><input type="text" id="f-preavis" value="${UI.escHtml(c.preavis || '')}" /></div>
-        <div class="form-group"><label>Diplôme</label>
-          <select id="f-diplome"><option value="">—</option>${Referentiels.get('candidat_diplomes').map(s=>`<option value="${s}" ${c.diplome===s?'selected':''}>${s}</option>`).join('')}</select>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Prise de poste actuel</label><input type="month" id="f-debut-poste" value="${(c.debut_poste_actuel || '').substring(0, 7)}" /></div>
-        <div class="form-group"><label>Début de carrière</label><input type="month" id="f-debut-carriere" value="${(c.debut_carriere || '').substring(0, 7)}" /></div>
-      </div>
-      <div class="form-group"><label>Motivation changement</label><textarea id="f-motivation">${UI.escHtml(c.motivation_changement||'')}</textarea></div>
-      <div class="form-group"><label>Télétravail</label><input type="text" id="f-teletravail" value="${UI.escHtml(c.teletravail||'')}" /></div>
-      <div class="form-group"><label>Notes</label><textarea id="f-notes">${UI.escHtml(c.notes||'')}</textarea></div>
-    `;
-
-    UI.modal('Modifier le candidat', bodyHtml, {
-      width: 600,
-      onSave: async (overlay) => {
-        const data = {
-          prenom: overlay.querySelector('#f-prenom').value.trim(),
-          nom: overlay.querySelector('#f-nom').value.trim(),
-          poste_actuel: overlay.querySelector('#f-poste-actuel').value.trim(),
-          poste_cible: overlay.querySelector('#f-poste-cible').value.trim(),
-          entreprise_actuelle_id: overlay.querySelector('#f-entreprise').value || null,
-          niveau: overlay.querySelector('#f-niveau').value,
-          statut: overlay.querySelector('#f-statut').value,
-          localisation: overlay.querySelector('#f-localisation').value.trim(),
-          email: overlay.querySelector('#f-email').value.trim(),
-          telephone: overlay.querySelector('#f-telephone').value.trim(),
-          linkedin: overlay.querySelector('#f-linkedin').value.trim(),
-          profile_code: overlay.querySelector('#f-profile-code').value.trim(),
-          salaire_fixe_actuel: parseInt(overlay.querySelector('#f-salaire-fixe').value) || 0,
-          variable_actuel: parseInt(overlay.querySelector('#f-variable').value) || 0,
-          salaire_fixe_souhaite: parseInt(overlay.querySelector('#f-salaire-souhaite').value) || 0,
-          variable_souhaite: parseInt(overlay.querySelector('#f-variable-souhaite').value) || 0,
-          preavis: overlay.querySelector('#f-preavis').value.trim(),
-          diplome: overlay.querySelector('#f-diplome').value,
-          debut_poste_actuel: overlay.querySelector('#f-debut-poste').value || null,
-          debut_carriere: overlay.querySelector('#f-debut-carriere').value || null,
-          motivation_changement: overlay.querySelector('#f-motivation').value.trim(),
-          teletravail: overlay.querySelector('#f-teletravail').value.trim(),
-          notes: overlay.querySelector('#f-notes').value.trim(),
-        };
-        await Store.update('candidats', id, data);
-        UI.toast('Candidat mis à jour');
-        setTimeout(() => location.reload(), 500);
-      }
-    });
-
-    // Init autocomplete after modal renders
-    UI.entrepriseAutocomplete('f-entreprise-search', 'f-entreprise');
-  }
 
   // ============================================================
   // PRÉSENTATIONS — suivi des envois de CV aux entreprises

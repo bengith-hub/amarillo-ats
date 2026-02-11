@@ -49,6 +49,7 @@
   <script src="js/store.js"></script>
   <script src="js/components.js"></script>
   <script src="js/referentiels.js"></script>
+  <script src="js/templates.js"></script>
   <script>
   (async function() {
     if (!API.isConfigured()) { UI.showConfigModal(); return; }
@@ -69,9 +70,12 @@
               <span>${cat.icon}</span> ${cat.label}
             </button>
           `).join('')}
+          <button class="ref-tab ${'trames' === activeCategory ? 'active' : ''}" data-cat="trames" style="${'trames' === activeCategory ? 'border-color:#c9a000;color:#c9a000;' : ''}">
+            <span>📝</span> Trames
+          </button>
         </div>
         <div class="ref-content">
-          ${categories.filter(cat => cat.id === activeCategory).map(cat => `
+          ${activeCategory === 'trames' ? renderTramesTab() : categories.filter(cat => cat.id === activeCategory).map(cat => `
             <div class="ref-items-grid">
               ${cat.items.map(item => {
                 const values = Referentiels.get(item.key);
@@ -205,6 +209,9 @@
           });
         });
       });
+
+      // Bind trames tab events
+      if (activeCategory === 'trames') bindTramesEvents();
     }
 
     function addValue(key) {
@@ -222,6 +229,90 @@
       Referentiels.addValue(key, val);
       UI.toast(`"${val}" ajouté`);
       render();
+    }
+
+    function renderTramesTab() {
+      const allTemplates = TemplatesStore.loadAll();
+      const cats = TemplatesStore.getCategories();
+
+      let html = '<div style="margin-bottom:16px;display:flex;justify-content:flex-end;">';
+      html += '<button class="btn btn-primary btn-sm" id="btn-new-trame">+ Nouvelle trame</button>';
+      html += '</div>';
+
+      for (const [catName, keys] of Object.entries(cats)) {
+        const validKeys = keys.filter(k => allTemplates[k]);
+        if (validKeys.length === 0) continue;
+
+        html += `<div style="margin-bottom:20px;">`;
+        html += `<div style="font-size:0.75rem;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px;">${catName}</div>`;
+        html += `<div class="ref-items-grid">`;
+
+        for (const key of validKeys) {
+          const tpl = allTemplates[key];
+          html += `
+            <div class="card ref-list-card" style="border-left:3px solid #c9a000;">
+              <div class="card-header">
+                <h2><span style="margin-right:6px;">${tpl.icon}</span>${UI.escHtml(tpl.title)}</h2>
+                <span style="font-size:0.6875rem;color:#94a3b8;">${tpl.sections.length} sections</span>
+              </div>
+              <div class="card-body">
+                <div style="font-size:0.8125rem;color:#64748b;margin-bottom:10px;">
+                  ${tpl.sections.map(s => `<span style="display:inline-block;background:#f1f5f9;border-radius:4px;padding:2px 8px;margin:2px;font-size:0.75rem;">${UI.escHtml(s.title)}</span>`).join('')}
+                </div>
+                <div style="display:flex;gap:6px;">
+                  <button class="btn btn-secondary btn-sm tpl-preview-btn" data-key="${key}" style="flex:1;">Aperçu</button>
+                  <button class="btn btn-primary btn-sm tpl-edit-btn" data-key="${key}" style="flex:1;">Modifier</button>
+                  <button class="btn btn-sm tpl-delete-btn" data-key="${key}" style="color:#dc2626;padding:4px 10px;" title="Supprimer">✕</button>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        html += `</div></div>`;
+      }
+
+      return html;
+    }
+
+    function bindTramesEvents() {
+      // New template
+      document.getElementById('btn-new-trame')?.addEventListener('click', () => {
+        showTemplateEditor(null, () => render());
+      });
+
+      // Preview buttons
+      container.querySelectorAll('.tpl-preview-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          showTemplateDetail(btn.dataset.key, {});
+        });
+      });
+
+      // Edit buttons
+      container.querySelectorAll('.tpl-edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          showTemplateEditor(btn.dataset.key, () => render());
+        });
+      });
+
+      // Delete buttons
+      container.querySelectorAll('.tpl-delete-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const key = btn.dataset.key;
+          const tpl = TemplatesStore.get(key);
+          UI.modal('Supprimer la trame', `
+            <p>Supprimer <strong>"${UI.escHtml(tpl?.title || key)}"</strong> ?</p>
+            <p style="font-size:0.875rem;color:#64748b;margin-top:8px;">Cette action est irréversible.</p>
+          `, {
+            saveLabel: 'Supprimer',
+            onSave: () => {
+              TemplatesStore.remove(key);
+              UI.toast('Trame supprimée');
+              render();
+            }
+          });
+        });
+      });
     }
 
     render();

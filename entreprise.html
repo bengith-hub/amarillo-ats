@@ -65,14 +65,13 @@
         <div style="display:flex;align-items:center;">
           <div class="detail-avatar entreprise">${(e.nom || '?')[0]}</div>
           <div>
-            <h1>${UI.escHtml(e.nom)}</h1>
+            <h1 id="ent-name" style="cursor:pointer;" title="Cliquer pour modifier">${UI.escHtml(e.nom)}</h1>
             <div class="subtitle">${UI.escHtml(e.secteur || '')} • ${UI.escHtml(e.taille || '')} • ${UI.escHtml(e.localisation || '')}</div>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           ${UI.statusBadge(e.statut || 'À cibler', ENT_STATUTS, { entity: 'entreprises', recordId: entId, fieldName: 'statut', onUpdate: () => renderEntreprisePage() })}
           ${UI.statusBadge(e.priorite || '3 - Moyenne', ENT_PRIORITES, { entity: 'entreprises', recordId: entId, fieldName: 'priorite', onUpdate: () => renderEntreprisePage() })}
-          <button class="btn btn-primary btn-sm" onclick="showEditEntrepriseModal()">Modifier</button>
           <span class="autosave-indicator saved"><span class="sync-dot"></span> Auto-save</span>
         </div>
       </div>
@@ -184,6 +183,19 @@
       </div>
     `;
 
+    // Inline edit for company name (click on h1)
+    document.getElementById('ent-name')?.addEventListener('click', () => {
+      UI.modal('Modifier le nom', `
+        <div class="form-group"><label>Nom</label><input type="text" id="en-nom" value="${UI.escHtml(e.nom || '')}" /></div>
+      `, {
+        onSave: async (overlay) => {
+          await Store.update('entreprises', entId, { nom: overlay.querySelector('#en-nom').value.trim() });
+          UI.toast('Nom mis à jour');
+          renderEntreprisePage();
+        }
+      });
+    });
+
     // Inline editable fields — Info
     UI.inlineEdit('ent-info-fields', {
       entity: 'entreprises', recordId: entId,
@@ -191,7 +203,7 @@
         { key: 'secteur', label: 'Secteur', type: 'text' },
         { key: 'taille', label: 'Taille', type: 'select', options: Referentiels.get('entreprise_tailles') },
         { key: 'ca', label: 'CA', type: 'text' },
-        { key: 'localisation', label: 'Localisation', type: 'text' },
+        { key: 'localisation', label: 'Localisation', type: 'autocomplete', options: () => Referentiels.get('localisations'), refKey: 'localisations' },
         { key: 'telephone', label: 'Téléphone', type: 'text' },
         { key: 'site_web', label: 'Site web', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(v)}" target="_blank" class="entity-link">${UI.escHtml(v)}</a>` : '' },
         { key: 'icp_fit', label: 'ICP Fit', type: 'boolean', render: (v) => v ? '✅ Oui' : '❌ Non' },
@@ -218,86 +230,6 @@
     });
   }
 
-  function showEditEntrepriseModal() {
-    const e = currentEntreprise;
-    if (!e) return;
-
-    const body = `
-      <div class="form-row">
-        <div class="form-group"><label>Nom</label><input type="text" id="ee-nom" value="${UI.escHtml(e.nom || '')}"></div>
-        <div class="form-group"><label>Secteur</label><input type="text" id="ee-secteur" value="${UI.escHtml(e.secteur || '')}"></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Taille</label>
-          <select id="ee-taille">
-            <option value="">—</option>
-            ${Referentiels.get('entreprise_tailles').map(t => `<option value="${t}" ${e.taille===t?'selected':''}>${t}</option>`).join('')}
-          </select>
-        </div>
-        <div class="form-group"><label>CA</label><input type="text" id="ee-ca" value="${UI.escHtml(e.ca || '')}"></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Localisation</label><input type="text" id="ee-localisation" value="${UI.escHtml(e.localisation || '')}"></div>
-        <div class="form-group"><label>Téléphone</label><input type="text" id="ee-telephone" value="${UI.escHtml(e.telephone || '')}"></div>
-      </div>
-      <div class="form-group"><label>Site web</label><input type="text" id="ee-site_web" value="${UI.escHtml(e.site_web || '')}"></div>
-      <div class="form-row">
-        <div class="form-group"><label>Priorité</label>
-          <select id="ee-priorite">
-            <option value="">—</option>
-            ${Referentiels.get('entreprise_priorites').map(p => `<option value="${p}" ${e.priorite===p?'selected':''}>${p}</option>`).join('')}
-          </select>
-        </div>
-        <div class="form-group"><label>Statut</label>
-          <select id="ee-statut">
-            <option value="">—</option>
-            ${Referentiels.get('entreprise_statuts').map(s => `<option value="${s}" ${e.statut===s?'selected':''}>${s}</option>`).join('')}
-          </select>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>ICP Fit</label>
-          <select id="ee-icp_fit">
-            <option value="false" ${!e.icp_fit?'selected':''}>Non</option>
-            <option value="true" ${e.icp_fit?'selected':''}>Oui</option>
-          </select>
-        </div>
-        <div class="form-group"><label>Source</label><input type="text" id="ee-source" value="${UI.escHtml(e.source || '')}"></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Dernier contact</label><input type="date" id="ee-dernier_contact" value="${e.dernier_contact || ''}"></div>
-        <div class="form-group"><label>Prochaine relance</label><input type="date" id="ee-prochaine_relance" value="${e.prochaine_relance || ''}"></div>
-      </div>
-      <div class="form-group"><label>Angle d'approche</label><textarea id="ee-angle_approche">${UI.escHtml(e.angle_approche || '')}</textarea></div>
-      <div class="form-group"><label>Notes</label><textarea id="ee-notes">${UI.escHtml(e.notes || '')}</textarea></div>
-    `;
-
-    UI.modal('Modifier l\'entreprise', body, {
-      width: 700,
-      onSave: async () => {
-        const updates = {
-          nom: document.getElementById('ee-nom').value.trim(),
-          secteur: document.getElementById('ee-secteur').value.trim(),
-          taille: document.getElementById('ee-taille').value,
-          ca: document.getElementById('ee-ca').value.trim(),
-          localisation: document.getElementById('ee-localisation').value.trim(),
-          telephone: document.getElementById('ee-telephone').value.trim(),
-          site_web: document.getElementById('ee-site_web').value.trim(),
-          priorite: document.getElementById('ee-priorite').value,
-          statut: document.getElementById('ee-statut').value,
-          icp_fit: document.getElementById('ee-icp_fit').value === 'true',
-          source: document.getElementById('ee-source').value.trim(),
-          dernier_contact: document.getElementById('ee-dernier_contact').value || null,
-          prochaine_relance: document.getElementById('ee-prochaine_relance').value || null,
-          angle_approche: document.getElementById('ee-angle_approche').value.trim(),
-          notes: document.getElementById('ee-notes').value.trim(),
-        };
-        await Store.update('entreprises', entId, updates);
-        renderEntreprisePage();
-        UI.toast('Entreprise mise à jour');
-      }
-    });
-  }
 
   function showAddDecideurModal() {
     const body = `

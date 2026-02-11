@@ -163,7 +163,7 @@
           { key: 'niveau_hierarchique', label: 'Niveau hiérarchique', type: 'select', options: Referentiels.get('decideur_niveaux_hierarchiques') },
           { key: 'role_decision', label: 'Rôle décision', type: 'select', options: Referentiels.get('decideur_roles_decision') },
           { key: 'perimetre', label: 'Périmètre', type: 'text' },
-          { key: 'localisation', label: 'Localisation', type: 'text' },
+          { key: 'localisation', label: 'Localisation', type: 'autocomplete', options: () => Referentiels.get('localisations'), refKey: 'localisations' },
         ]
       });
 

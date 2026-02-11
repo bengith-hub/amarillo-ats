@@ -303,6 +303,7 @@
 
     // Init autocomplete after modal renders
     UI.entrepriseAutocomplete('f-entreprise-search', 'f-entreprise');
+    UI.localisationAutocomplete('f-localisation');
   }
 
   // Expose for edit from detail page

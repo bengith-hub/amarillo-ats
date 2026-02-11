@@ -1,6 +1,6 @@
 // Amarillo ATS — Templates & Trames (importés depuis Notion)
 
-const TEMPLATES = {
+const DEFAULT_TEMPLATES = {
 
   // =============================================
   // TRAME D'ENTRETIEN CANDIDAT
@@ -325,9 +325,101 @@ const TEMPLATES = {
   }
 };
 
+// ============================================================
+// TEMPLATES STORE — persistence layer (localStorage)
+// ============================================================
+const TemplatesStore = (() => {
+  const STORAGE_KEY = 'ats_templates';
+  const CATEGORIES_KEY = 'ats_templates_categories';
+
+  const DEFAULT_CATEGORIES = {
+    'Candidats': ['entretien', 'reference', 'messageCandidats'],
+    'Missions': ['cadreMission', 'suiviJ3', 'suiviM1', 'suiviM2'],
+    'Prospection': ['pitchs', 'objections']
+  };
+
+  function loadAll() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_TEMPLATES };
+    try {
+      const saved = JSON.parse(raw);
+      // Merge: saved overrides defaults, add new defaults
+      const merged = { ...DEFAULT_TEMPLATES, ...saved };
+      return merged;
+    } catch { return { ...DEFAULT_TEMPLATES }; }
+  }
+
+  function saveAll(data) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  }
+
+  function get(key) {
+    return loadAll()[key] || null;
+  }
+
+  function save(key, tplData) {
+    const all = loadAll();
+    all[key] = tplData;
+    saveAll(all);
+  }
+
+  function remove(key) {
+    const all = loadAll();
+    delete all[key];
+    saveAll(all);
+    // Also remove from categories
+    const cats = getCategories();
+    for (const cat of Object.keys(cats)) {
+      cats[cat] = cats[cat].filter(k => k !== key);
+    }
+    saveCategories(cats);
+  }
+
+  function getCategories() {
+    const raw = localStorage.getItem(CATEGORIES_KEY);
+    if (!raw) return { ...DEFAULT_CATEGORIES };
+    try {
+      return JSON.parse(raw);
+    } catch { return { ...DEFAULT_CATEGORIES }; }
+  }
+
+  function saveCategories(cats) {
+    localStorage.setItem(CATEGORIES_KEY, JSON.stringify(cats));
+  }
+
+  function addToCategory(category, key) {
+    const cats = getCategories();
+    if (!cats[category]) cats[category] = [];
+    if (!cats[category].includes(key)) cats[category].push(key);
+    saveCategories(cats);
+  }
+
+  function resetAll() {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(CATEGORIES_KEY);
+  }
+
+  return { loadAll, saveAll, get, save, remove, getCategories, saveCategories, addToCategory, resetAll, DEFAULT_CATEGORIES };
+})();
+
+// Backward compat: global TEMPLATES alias (supports Object.entries/keys)
+const TEMPLATES = new Proxy({}, {
+  get: (_, key) => {
+    if (key === Symbol.iterator) return undefined;
+    return TemplatesStore.loadAll()[key];
+  },
+  ownKeys: () => Object.keys(TemplatesStore.loadAll()),
+  getOwnPropertyDescriptor: (_, key) => {
+    const all = TemplatesStore.loadAll();
+    if (key in all) return { configurable: true, enumerable: true, value: all[key] };
+    return undefined;
+  },
+  has: (_, key) => key in TemplatesStore.loadAll()
+});
+
 // Render a template as HTML for display in a modal
 function renderTemplate(templateKey) {
-  const tpl = TEMPLATES[templateKey];
+  const tpl = TemplatesStore.get(templateKey);
   if (!tpl) return '';
 
   let html = '';
@@ -354,7 +446,7 @@ function renderTemplate(templateKey) {
 
 // Render template as copyable text for notes
 function renderTemplateText(templateKey) {
-  const tpl = TEMPLATES[templateKey];
+  const tpl = TemplatesStore.get(templateKey);
   if (!tpl) return '';
 
   let text = tpl.icon + ' ' + tpl.title + '\n' + '='.repeat(40) + '\n\n';
@@ -381,20 +473,20 @@ function renderTemplateText(templateKey) {
 
 // Show template selector modal
 function showTemplatesModal(context) {
-  const categories = {
-    'Candidats': ['entretien', 'messageCandidats'],
-    'Missions': ['cadreMission', 'suiviJ3', 'suiviM1', 'suiviM2'],
-    'Prospection': ['pitchs', 'objections']
-  };
+  const categories = TemplatesStore.getCategories();
+  const allTemplates = TemplatesStore.loadAll();
 
   let bodyHtml = '';
 
   for (const [cat, keys] of Object.entries(categories)) {
+    const validKeys = keys.filter(k => allTemplates[k]);
+    if (validKeys.length === 0) continue;
+
     bodyHtml += `<div style="margin-bottom:16px;">`;
     bodyHtml += `<div style="font-size:0.75rem;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px;">${cat}</div>`;
 
-    for (const key of keys) {
-      const tpl = TEMPLATES[key];
+    for (const key of validKeys) {
+      const tpl = allTemplates[key];
       bodyHtml += `
         <div class="template-item" data-key="${key}"
           style="padding:10px 14px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:6px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:all 0.15s;"
@@ -428,7 +520,8 @@ function showTemplatesModal(context) {
 
 // Show template detail with copy-to-notes option
 function showTemplateDetail(templateKey, context) {
-  const tpl = TEMPLATES[templateKey];
+  const tpl = TemplatesStore.get(templateKey);
+  if (!tpl) return;
   const html = renderTemplate(templateKey);
 
   const bodyHtml = `
@@ -469,4 +562,204 @@ function showTemplateDetail(templateKey, context) {
       });
     }
   }, 50);
+}
+
+// ============================================================
+// TEMPLATE EDITOR — modal for creating / editing a template
+// ============================================================
+function showTemplateEditor(key, onSaved) {
+  const allTemplates = TemplatesStore.loadAll();
+  const isNew = !key;
+  const tpl = isNew ? { title: '', icon: '📝', sections: [{ title: '', fields: [''] }] } : JSON.parse(JSON.stringify(allTemplates[key]));
+  const tplKey = key || 'tpl_' + Date.now();
+
+  function buildEditorHtml() {
+    return `
+      <div style="max-height:65vh;overflow-y:auto;padding-right:8px;">
+        <div class="form-row">
+          <div class="form-group" style="flex:0 0 60px;">
+            <label>Icône</label>
+            <input type="text" id="tpl-ed-icon" value="${tpl.icon}" style="text-align:center;font-size:1.25rem;" />
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Titre</label>
+            <input type="text" id="tpl-ed-title" value="${UI.escHtml(tpl.title)}" placeholder="Nom de la trame..." />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Catégorie</label>
+          <select id="tpl-ed-category">
+            ${Object.keys(TemplatesStore.getCategories()).map(cat => {
+              const cats = TemplatesStore.getCategories();
+              const selected = key && cats[cat] && cats[cat].includes(key) ? 'selected' : '';
+              return `<option value="${cat}" ${selected}>${cat}</option>`;
+            }).join('')}
+          </select>
+        </div>
+        <div style="margin-top:16px;margin-bottom:8px;font-weight:600;font-size:0.875rem;">Sections</div>
+        <div id="tpl-ed-sections">
+          ${tpl.sections.map((sec, i) => `
+            <div class="tpl-section-block" data-idx="${i}" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:10px;">
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+                <input type="text" class="tpl-sec-title" value="${UI.escHtml(sec.title)}" placeholder="Titre de la section" style="flex:1;font-weight:600;" />
+                <button class="btn btn-sm" onclick="this.closest('.tpl-section-block').remove()" style="color:#dc2626;padding:4px 8px;">✕</button>
+              </div>
+              <div style="margin-bottom:6px;font-size:0.75rem;color:#64748b;">
+                <label style="cursor:pointer;"><input type="radio" name="sec-type-${i}" value="fields" ${sec.fields ? 'checked' : ''} class="tpl-sec-type" /> Champs (liste)</label>
+                <label style="cursor:pointer;margin-left:12px;"><input type="radio" name="sec-type-${i}" value="content" ${sec.content !== undefined && !sec.fields ? 'checked' : ''} class="tpl-sec-type" /> Texte libre</label>
+              </div>
+              ${sec.fields ? `
+                <div class="tpl-sec-fields">
+                  ${sec.fields.map(f => `<div style="display:flex;gap:4px;margin-bottom:4px;">
+                    <input type="text" class="tpl-field-input" value="${UI.escHtml(f)}" style="flex:1;font-size:0.8125rem;" placeholder="Champ..." />
+                    <button class="btn btn-sm" onclick="this.parentElement.remove()" style="color:#dc2626;padding:2px 6px;font-size:0.75rem;">✕</button>
+                  </div>`).join('')}
+                  <button class="btn btn-sm btn-secondary tpl-add-field" style="font-size:0.75rem;margin-top:4px;">+ Champ</button>
+                </div>
+              ` : `
+                <textarea class="tpl-sec-content" style="width:100%;min-height:80px;font-size:0.8125rem;">${UI.escHtml(sec.content || '')}</textarea>
+              `}
+            </div>
+          `).join('')}
+        </div>
+        <button class="btn btn-secondary btn-sm" id="tpl-add-section" style="width:100%;">+ Ajouter une section</button>
+      </div>
+    `;
+  }
+
+  UI.modal(isNew ? 'Nouvelle trame' : 'Modifier la trame', buildEditorHtml(), {
+    width: 650,
+    saveLabel: 'Enregistrer',
+    onSave: () => {
+      const overlay = document.querySelector('.modal-overlay');
+      const title = overlay.querySelector('#tpl-ed-title').value.trim();
+      const icon = overlay.querySelector('#tpl-ed-icon').value.trim() || '📝';
+      const category = overlay.querySelector('#tpl-ed-category').value;
+
+      if (!title) { UI.toast('Le titre est requis'); return; }
+
+      // Collect sections
+      const sections = [];
+      overlay.querySelectorAll('.tpl-section-block').forEach(block => {
+        const secTitle = block.querySelector('.tpl-sec-title').value.trim();
+        const typeRadio = block.querySelector('.tpl-sec-type:checked');
+        const type = typeRadio ? typeRadio.value : 'fields';
+
+        if (type === 'fields') {
+          const fields = [];
+          block.querySelectorAll('.tpl-field-input').forEach(inp => {
+            const v = inp.value.trim();
+            if (v) fields.push(v);
+          });
+          sections.push({ title: secTitle, fields });
+        } else {
+          const content = block.querySelector('.tpl-sec-content')?.value || '';
+          sections.push({ title: secTitle, content });
+        }
+      });
+
+      // Save template
+      TemplatesStore.save(tplKey, { title, icon, sections });
+
+      // Save category assignment
+      const cats = TemplatesStore.getCategories();
+      // Remove from all categories first
+      for (const cat of Object.keys(cats)) {
+        cats[cat] = cats[cat].filter(k => k !== tplKey);
+      }
+      // Add to selected category
+      if (!cats[category]) cats[category] = [];
+      cats[category].push(tplKey);
+      TemplatesStore.saveCategories(cats);
+
+      UI.toast(isNew ? 'Trame créée' : 'Trame mise à jour');
+      if (onSaved) onSaved();
+    }
+  });
+
+  // Bind dynamic behaviors after modal renders
+  setTimeout(() => {
+    const overlay = document.querySelector('.modal-overlay');
+    if (!overlay) return;
+
+    // Add section button
+    overlay.querySelector('#tpl-add-section')?.addEventListener('click', () => {
+      const container = overlay.querySelector('#tpl-ed-sections');
+      const idx = container.querySelectorAll('.tpl-section-block').length;
+      const div = document.createElement('div');
+      div.className = 'tpl-section-block';
+      div.dataset.idx = idx;
+      div.style.cssText = 'background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:10px;';
+      div.innerHTML = `
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+          <input type="text" class="tpl-sec-title" value="" placeholder="Titre de la section" style="flex:1;font-weight:600;" />
+          <button class="btn btn-sm" onclick="this.closest('.tpl-section-block').remove()" style="color:#dc2626;padding:4px 8px;">✕</button>
+        </div>
+        <div style="margin-bottom:6px;font-size:0.75rem;color:#64748b;">
+          <label style="cursor:pointer;"><input type="radio" name="sec-type-${idx}" value="fields" checked class="tpl-sec-type" /> Champs (liste)</label>
+          <label style="cursor:pointer;margin-left:12px;"><input type="radio" name="sec-type-${idx}" value="content" class="tpl-sec-type" /> Texte libre</label>
+        </div>
+        <div class="tpl-sec-fields">
+          <div style="display:flex;gap:4px;margin-bottom:4px;">
+            <input type="text" class="tpl-field-input" value="" style="flex:1;font-size:0.8125rem;" placeholder="Champ..." />
+            <button class="btn btn-sm" onclick="this.parentElement.remove()" style="color:#dc2626;padding:2px 6px;font-size:0.75rem;">✕</button>
+          </div>
+          <button class="btn btn-sm btn-secondary tpl-add-field" style="font-size:0.75rem;margin-top:4px;">+ Champ</button>
+        </div>
+      `;
+      container.appendChild(div);
+      bindAddFieldButtons(overlay);
+    });
+
+    // Bind add field buttons
+    bindAddFieldButtons(overlay);
+
+    // Bind type radio changes
+    overlay.querySelectorAll('.tpl-sec-type').forEach(radio => {
+      radio.addEventListener('change', () => {
+        const block = radio.closest('.tpl-section-block');
+        const type = block.querySelector('.tpl-sec-type:checked').value;
+        const existingFields = block.querySelector('.tpl-sec-fields');
+        const existingContent = block.querySelector('.tpl-sec-content');
+
+        if (type === 'fields' && !existingFields) {
+          if (existingContent) existingContent.remove();
+          const div = document.createElement('div');
+          div.className = 'tpl-sec-fields';
+          div.innerHTML = `
+            <div style="display:flex;gap:4px;margin-bottom:4px;">
+              <input type="text" class="tpl-field-input" value="" style="flex:1;font-size:0.8125rem;" placeholder="Champ..." />
+              <button class="btn btn-sm" onclick="this.parentElement.remove()" style="color:#dc2626;padding:2px 6px;font-size:0.75rem;">✕</button>
+            </div>
+            <button class="btn btn-sm btn-secondary tpl-add-field" style="font-size:0.75rem;margin-top:4px;">+ Champ</button>
+          `;
+          block.appendChild(div);
+          bindAddFieldButtons(overlay);
+        } else if (type === 'content' && !existingContent) {
+          if (existingFields) existingFields.remove();
+          const ta = document.createElement('textarea');
+          ta.className = 'tpl-sec-content';
+          ta.style.cssText = 'width:100%;min-height:80px;font-size:0.8125rem;';
+          block.appendChild(ta);
+        }
+      });
+    });
+  }, 100);
+}
+
+function bindAddFieldButtons(overlay) {
+  overlay.querySelectorAll('.tpl-add-field').forEach(btn => {
+    // Remove old listeners by cloning
+    const newBtn = btn.cloneNode(true);
+    btn.replaceWith(newBtn);
+    newBtn.addEventListener('click', () => {
+      const div = document.createElement('div');
+      div.style.cssText = 'display:flex;gap:4px;margin-bottom:4px;';
+      div.innerHTML = `
+        <input type="text" class="tpl-field-input" value="" style="flex:1;font-size:0.8125rem;" placeholder="Champ..." />
+        <button class="btn btn-sm" onclick="this.parentElement.remove()" style="color:#dc2626;padding:2px 6px;font-size:0.75rem;">✕</button>
+      `;
+      newBtn.parentElement.insertBefore(div, newBtn);
+    });
+  });
 }
