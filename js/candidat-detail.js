@@ -372,7 +372,7 @@
       <div class="card">
         <div class="card-header">
           <h2>Historique des actions (${actions.length})</h2>
-          <button class="btn btn-sm btn-primary" onclick="newAction()">+ Action</button>
+          <button class="btn btn-sm btn-primary" id="btn-new-action">+ Action</button>
         </div>
         <div class="card-body">
           <div id="candidat-actions-table"></div>
@@ -395,6 +395,11 @@
       data: actions,
       onRowClick: (actionId) => showActionDetail(actionId),
       emptyMessage: 'Aucune action enregistrée'
+    });
+
+    document.getElementById('btn-new-action')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      newAction();
     });
   }
 
