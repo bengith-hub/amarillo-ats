@@ -118,5 +118,6 @@
         setTimeout(() => location.reload(), 500);
       }
     });
+    UI.localisationAutocomplete('e-loc');
   }
 })();

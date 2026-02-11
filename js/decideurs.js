@@ -139,5 +139,6 @@
         setTimeout(() => location.reload(), 500);
       }
     });
+    UI.localisationAutocomplete('d-loc');
   }
 })();

@@ -517,6 +517,68 @@ const UI = (() => {
     }, 50);
   }
 
+  // Autocomplete localisation input (from Referentiels)
+  function localisationAutocomplete(inputId) {
+    setTimeout(() => {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+
+      let dropdown = null;
+
+      input.addEventListener('input', () => {
+        const q = input.value.toLowerCase().trim();
+        if (dropdown) dropdown.remove();
+        if (q.length < 1) return;
+
+        const locs = Referentiels.get('localisations');
+        const matches = locs.filter(l => l.toLowerCase().includes(q)).slice(0, 10);
+
+        dropdown = document.createElement('div');
+        dropdown.style.cssText = 'position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:200;max-height:200px;overflow-y:auto;';
+
+        matches.forEach(loc => {
+          const item = document.createElement('div');
+          item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.8125rem;border-bottom:1px solid #f1f5f9;';
+          item.textContent = loc;
+          item.addEventListener('mousedown', (ev) => {
+            ev.preventDefault();
+            input.value = loc;
+            if (dropdown) dropdown.remove();
+            dropdown = null;
+          });
+          item.addEventListener('mouseenter', () => item.style.background = '#f8fafc');
+          item.addEventListener('mouseleave', () => item.style.background = '#fff');
+          dropdown.appendChild(item);
+        });
+
+        // Option to add to referentiels if no exact match
+        const exact = locs.some(l => l.toLowerCase() === q);
+        if (!exact && input.value.trim()) {
+          const addItem = document.createElement('div');
+          addItem.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.8125rem;color:#c9a000;font-weight:600;';
+          addItem.textContent = `+ Ajouter "${input.value.trim()}"`;
+          addItem.addEventListener('mousedown', (ev) => {
+            ev.preventDefault();
+            const val = input.value.trim();
+            Referentiels.addValue('localisations', val);
+            input.value = val;
+            if (dropdown) dropdown.remove();
+            dropdown = null;
+            toast('Localisation ajoutée aux référentiels');
+          });
+          dropdown.appendChild(addItem);
+        }
+
+        input.parentElement.style.position = 'relative';
+        input.parentElement.appendChild(dropdown);
+      });
+
+      input.addEventListener('blur', () => {
+        setTimeout(() => { if (dropdown) { dropdown.remove(); dropdown = null; } }, 200);
+      });
+    }, 50);
+  }
+
   // Candidat/Décideur link management
   function candidatDecideurLink(containerId, candidatId) {
     const container = document.getElementById(containerId);
@@ -743,6 +805,61 @@ const UI = (() => {
         };
         input.addEventListener('blur', finish);
         input.addEventListener('change', finish);
+      } else if (fieldDef.type === 'autocomplete' && fieldDef.options) {
+        // Autocomplete with referentiel suggestions
+        const wrapper = document.createElement('div');
+        wrapper.style.position = 'relative';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'inline-edit-input';
+        input.value = currentValue;
+        wrapper.appendChild(input);
+        el.innerHTML = '';
+        el.appendChild(wrapper);
+        input.focus();
+        input.select();
+
+        let acDropdown = null;
+        const buildDropdown = () => {
+          if (acDropdown) acDropdown.remove();
+          const q = input.value.toLowerCase().trim();
+          if (q.length < 1) return;
+          const opts = (typeof fieldDef.options === 'function' ? fieldDef.options() : fieldDef.options);
+          const matches = opts.filter(o => o.toLowerCase().includes(q)).slice(0, 8);
+          acDropdown = document.createElement('div');
+          acDropdown.style.cssText = 'position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:200;max-height:180px;overflow-y:auto;';
+          matches.forEach(opt => {
+            const item = document.createElement('div');
+            item.style.cssText = 'padding:6px 10px;cursor:pointer;font-size:0.8125rem;border-bottom:1px solid #f1f5f9;';
+            item.textContent = opt;
+            item.addEventListener('mousedown', (ev) => { ev.preventDefault(); input.value = opt; input.blur(); });
+            item.addEventListener('mouseenter', () => item.style.background = '#f8fafc');
+            item.addEventListener('mouseleave', () => item.style.background = '#fff');
+            acDropdown.appendChild(item);
+          });
+          if (!opts.some(o => o.toLowerCase() === q) && fieldDef.refKey) {
+            const addItem = document.createElement('div');
+            addItem.style.cssText = 'padding:6px 10px;cursor:pointer;font-size:0.8125rem;color:#c9a000;font-weight:600;';
+            addItem.textContent = `+ Ajouter "${input.value.trim()}"`;
+            addItem.addEventListener('mousedown', (ev) => { ev.preventDefault(); Referentiels.addValue(fieldDef.refKey, input.value.trim()); toast('Ajouté aux référentiels'); input.blur(); });
+            acDropdown.appendChild(addItem);
+          }
+          wrapper.appendChild(acDropdown);
+        };
+        input.addEventListener('input', buildDropdown);
+        buildDropdown();
+
+        const finish = async () => {
+          if (acDropdown) acDropdown.remove();
+          const val = input.value.trim();
+          if (val !== currentValue) {
+            await saveField(fieldDef.key, val);
+          }
+          el.classList.remove('editing');
+          renderFields();
+        };
+        input.addEventListener('blur', () => setTimeout(finish, 150));
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') { el.classList.remove('editing'); renderFields(); } });
       } else if (fieldDef.type === 'boolean') {
         // Toggle immediately
         const newVal = !record[fieldDef.key];
@@ -857,7 +974,7 @@ const UI = (() => {
     badge, autoBadgeStyle, entityLink, resolveLink,
     dataTable, filterBar, modal, toast,
     initTabs, timeline, showConfigModal,
-    initGlobalSearch, entrepriseAutocomplete,
+    initGlobalSearch, entrepriseAutocomplete, localisationAutocomplete,
     candidatDecideurLink,
     inlineEdit, statusBadge, showStatusPicker,
     escHtml, formatDate, formatMonthYear, formatCurrency, getParam
