@@ -517,6 +517,57 @@ const UI = (() => {
     }, 50);
   }
 
+  // Autocomplete candidat input (for "recommandé par", etc.)
+  function candidatAutocomplete(inputId) {
+    setTimeout(() => {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+
+      const candidats = Store.get('candidats');
+      let dropdown = null;
+
+      input.addEventListener('input', () => {
+        const q = input.value.toLowerCase();
+        if (dropdown) dropdown.remove();
+
+        if (q.length < 1) return;
+
+        const matches = candidats.filter(c => {
+          const name = `${c.prenom || ''} ${c.nom || ''}`.toLowerCase();
+          return name.includes(q);
+        }).slice(0, 8);
+
+        if (matches.length === 0) return;
+
+        dropdown = document.createElement('div');
+        dropdown.style.cssText = 'position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:200;max-height:200px;overflow-y:auto;';
+
+        matches.forEach(c => {
+          const fullName = `${c.prenom || ''} ${c.nom || ''}`.trim();
+          const item = document.createElement('div');
+          item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.8125rem;border-bottom:1px solid #f1f5f9;';
+          item.innerHTML = `<strong>${escHtml(fullName)}</strong> <span style="color:#64748b;font-size:0.75rem;">${escHtml(c.poste_actuel || '')}${c.entreprise_actuelle_id ? ' • ' + escHtml(Store.resolve('entreprises', c.entreprise_actuelle_id)?.displayName || '') : ''}</span>`;
+          item.addEventListener('mousedown', (ev) => {
+            ev.preventDefault();
+            input.value = fullName;
+            if (dropdown) dropdown.remove();
+            dropdown = null;
+          });
+          item.addEventListener('mouseenter', () => item.style.background = '#f8fafc');
+          item.addEventListener('mouseleave', () => item.style.background = '#fff');
+          dropdown.appendChild(item);
+        });
+
+        input.parentElement.style.position = 'relative';
+        input.parentElement.appendChild(dropdown);
+      });
+
+      input.addEventListener('blur', () => {
+        setTimeout(() => { if (dropdown) { dropdown.remove(); dropdown = null; } }, 200);
+      });
+    }, 50);
+  }
+
   // Autocomplete localisation input (from Referentiels)
   function localisationAutocomplete(inputId) {
     setTimeout(() => {
@@ -974,7 +1025,7 @@ const UI = (() => {
     badge, autoBadgeStyle, entityLink, resolveLink,
     dataTable, filterBar, modal, toast,
     initTabs, timeline, showConfigModal,
-    initGlobalSearch, entrepriseAutocomplete, localisationAutocomplete,
+    initGlobalSearch, entrepriseAutocomplete, candidatAutocomplete, localisationAutocomplete,
     candidatDecideurLink,
     inlineEdit, statusBadge, showStatusPicker,
     escHtml, formatDate, formatMonthYear, formatCurrency, getParam

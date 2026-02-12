@@ -207,9 +207,8 @@
       fields: [
         { key: 'localisation', label: 'Localisation', type: 'autocomplete', options: () => Referentiels.get('localisations'), refKey: 'localisations' },
         { key: 'diplome', label: 'Diplôme', type: 'select', options: Referentiels.get('candidat_diplomes') },
-        { key: 'ingenieur_master', label: 'Ingénieur / Master', type: 'boolean', render: (v) => v ? '✅ Oui' : '❌ Non' },
         { key: 'origine', label: 'Origine', type: 'text' },
-        { key: 'recommande_par', label: 'Recommandé par', type: 'text' },
+        { key: 'recommande_par', label: 'Recommandé par', type: 'autocomplete', options: () => Store.get('candidats').map(c => `${c.prenom || ''} ${c.nom || ''}`.trim()).filter(Boolean) },
         { key: 'ambassadeur', label: 'Ambassadeur', type: 'boolean', render: (v) => v ? '✅ Oui' : '❌ Non' },
         { key: 'exposition_pouvoir', label: 'Exposition au pouvoir', type: 'text' },
         { key: 'preavis', label: 'Préavis', type: 'text' },
@@ -372,7 +371,7 @@
       <div class="card">
         <div class="card-header">
           <h2>Historique des actions (${actions.length})</h2>
-          <button class="btn btn-sm btn-primary" onclick="newAction()">+ Action</button>
+          <button class="btn btn-sm btn-primary" id="btn-new-action">+ Action</button>
         </div>
         <div class="card-body">
           <div id="candidat-actions-table"></div>
@@ -395,6 +394,11 @@
       data: actions,
       onRowClick: (actionId) => showActionDetail(actionId),
       emptyMessage: 'Aucune action enregistrée'
+    });
+
+    document.getElementById('btn-new-action')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      newAction();
     });
   }
 

@@ -47,10 +47,13 @@
       if (filters.niveau) filtered = filtered.filter(c => c.niveau === filters.niveau);
       if (filters.localisation) filtered = filtered.filter(c => c.localisation === filters.localisation);
 
+      filtered.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
       renderTable(filtered);
     }
   });
 
+  // Sort by creation date (most recent first)
+  allCandidats.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
   renderTable(allCandidats);
 
   function renderTable(data) {
@@ -220,12 +223,44 @@
           <input type="month" id="f-debut-carriere" value="${(c.debut_carriere || '').substring(0, 7)}" />
         </div>
       </div>
-      <div class="form-group">
-        <label>Origine</label>
-        <select id="f-origine">
-          <option value="">—</option>
-          ${Referentiels.get('candidat_sources').map(s=>`<option value="${s}" ${c.origine===s?'selected':''}>${s}</option>`).join('')}
-        </select>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Origine</label>
+          <select id="f-origine">
+            <option value="">—</option>
+            ${Referentiels.get('candidat_sources').map(s=>`<option value="${s}" ${c.origine===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Recommandé par</label>
+          <input type="text" id="f-recommande-par" value="${UI.escHtml(c.recommande_par || '')}" placeholder="Tapez pour rechercher un candidat..." />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Exposition au pouvoir</label>
+          <input type="text" id="f-exposition-pouvoir" value="${UI.escHtml(c.exposition_pouvoir || '')}" />
+        </div>
+        <div class="form-group">
+          <label>Ambassadeur</label>
+          <select id="f-ambassadeur">
+            <option value="false" ${!c.ambassadeur ? 'selected' : ''}>Non</option>
+            <option value="true" ${c.ambassadeur ? 'selected' : ''}>Oui</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Télétravail</label>
+          <input type="text" id="f-teletravail" value="${UI.escHtml(c.teletravail || '')}" placeholder="Ex: 2j/semaine" />
+        </div>
+        <div class="form-group">
+          <label>RTT</label>
+          <select id="f-rtt">
+            <option value="false" ${!c.rtt ? 'selected' : ''}>Non</option>
+            <option value="true" ${c.rtt ? 'selected' : ''}>Oui</option>
+          </select>
+        </div>
       </div>
       <div class="form-group">
         <label>Notes</label>
@@ -256,6 +291,11 @@
           preavis: overlay.querySelector('#f-preavis').value.trim(),
           diplome: overlay.querySelector('#f-diplome').value,
           origine: overlay.querySelector('#f-origine').value,
+          recommande_par: overlay.querySelector('#f-recommande-par').value.trim(),
+          exposition_pouvoir: overlay.querySelector('#f-exposition-pouvoir').value.trim(),
+          ambassadeur: overlay.querySelector('#f-ambassadeur').value === 'true',
+          teletravail: overlay.querySelector('#f-teletravail').value.trim(),
+          rtt: overlay.querySelector('#f-rtt').value === 'true',
           notes: overlay.querySelector('#f-notes').value.trim(),
           debut_poste_actuel: overlay.querySelector('#f-debut-poste').value || '',
           debut_carriere: overlay.querySelector('#f-debut-carriere').value || '',
@@ -277,22 +317,17 @@
           data.candidats_lies_ids = [];
           data.manager_id = null;
           data.n2_id = null;
-          data.ambassadeur = false;
-          data.ingenieur_master = false;
-          data.exposition_pouvoir = '';
           data.motivation_changement = '';
           data.fit_poste = '';
           data.fit_culture = '';
           data.risques = '';
-          data.recommande_par = '';
           data.synthese_30s = '';
           data.parcours_cible = '';
           data.package_attentes = '';
           data.motivation_drivers = '';
           data.lecture_recruteur = '';
-          data.teletravail = '';
-          data.rtt = false;
           data.nb_rtt = 0;
+          data.created_at = new Date().toISOString();
           await Store.add('candidats', data);
           UI.toast('Candidat créé');
         }
@@ -304,6 +339,7 @@
     // Init autocomplete after modal renders
     UI.entrepriseAutocomplete('f-entreprise-search', 'f-entreprise');
     UI.localisationAutocomplete('f-localisation');
+    UI.candidatAutocomplete('f-recommande-par');
   }
 
   // Expose for edit from detail page
