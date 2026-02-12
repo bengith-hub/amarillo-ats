@@ -207,9 +207,8 @@
       fields: [
         { key: 'localisation', label: 'Localisation', type: 'autocomplete', options: () => Referentiels.get('localisations'), refKey: 'localisations' },
         { key: 'diplome', label: 'Diplôme', type: 'select', options: Referentiels.get('candidat_diplomes') },
-        { key: 'ingenieur_master', label: 'Ingénieur / Master', type: 'boolean', render: (v) => v ? '✅ Oui' : '❌ Non' },
         { key: 'origine', label: 'Origine', type: 'text' },
-        { key: 'recommande_par', label: 'Recommandé par', type: 'text' },
+        { key: 'recommande_par', label: 'Recommandé par', type: 'autocomplete', options: () => Store.get('candidats').map(c => `${c.prenom || ''} ${c.nom || ''}`.trim()).filter(Boolean) },
         { key: 'ambassadeur', label: 'Ambassadeur', type: 'boolean', render: (v) => v ? '✅ Oui' : '❌ Non' },
         { key: 'exposition_pouvoir', label: 'Exposition au pouvoir', type: 'text' },
         { key: 'preavis', label: 'Préavis', type: 'text' },
