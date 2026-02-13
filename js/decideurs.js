@@ -28,10 +28,13 @@
       if (filters.niveau_hierarchique) filtered = filtered.filter(d => d.niveau_hierarchique === filters.niveau_hierarchique);
       if (filters.niveau_relation) filtered = filtered.filter(d => d.niveau_relation === filters.niveau_relation);
       if (filters.priorite_prospection) filtered = filtered.filter(d => d.priorite_prospection === filters.priorite_prospection);
+      filtered.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
       renderTable(filtered);
     }
   });
 
+  // Sort by creation date (most recent first)
+  allDecideurs.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
   renderTable(allDecideurs);
 
   function renderTable(data) {
@@ -133,6 +136,7 @@
           data.profil_candidat_id = null;
           data.dernier_contact = null;
           data.prochaine_relance = null;
+          data.created_at = new Date().toISOString();
           await Store.add('decideurs', data);
           UI.toast('Décideur créé');
         }

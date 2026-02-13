@@ -22,10 +22,13 @@
       if (filters.taille) filtered = filtered.filter(e => e.taille === filters.taille);
       if (filters.priorite) filtered = filtered.filter(e => e.priorite === filters.priorite);
       if (filters.statut) filtered = filtered.filter(e => e.statut === filters.statut);
+      filtered.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
       renderTable(filtered);
     }
   });
 
+  // Sort by creation date (most recent first)
+  allEntreprises.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
   renderTable(allEntreprises);
 
   function renderTable(data) {
@@ -110,6 +113,7 @@
           data.source = '';
           data.dernier_contact = null;
           data.prochaine_relance = null;
+          data.created_at = new Date().toISOString();
           await Store.add('entreprises', data);
           UI.toast('Entreprise créée');
         }
