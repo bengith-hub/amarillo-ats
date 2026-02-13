@@ -497,6 +497,7 @@ const UI = (() => {
             priorite: '', statut: 'À cibler',
             site_web: '', telephone: '', angle_approche: '', source: '', notes: '',
             dernier_contact: null, prochaine_relance: null,
+            created_at: new Date().toISOString(),
           };
           await Store.add('entreprises', newEnt);
           input.value = newEnt.nom;
@@ -899,6 +900,126 @@ const UI = (() => {
         };
         input.addEventListener('input', buildDropdown);
         buildDropdown();
+
+        const finish = async () => {
+          if (acDropdown) acDropdown.remove();
+          const val = input.value.trim();
+          if (val !== currentValue) {
+            await saveField(fieldDef.key, val);
+          }
+          el.classList.remove('editing');
+          renderFields();
+        };
+        input.addEventListener('blur', () => setTimeout(finish, 150));
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') { el.classList.remove('editing'); renderFields(); } });
+      } else if (fieldDef.type === 'entreprise_autocomplete') {
+        // Special: entreprise autocomplete with ID storage
+        const wrapper = document.createElement('div');
+        wrapper.style.position = 'relative';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'inline-edit-input';
+        input.placeholder = 'Tapez pour rechercher...';
+        // Display current entreprise name
+        const currentEntId = record[fieldDef.key];
+        const currentEnt = currentEntId ? Store.resolve('entreprises', currentEntId) : null;
+        input.value = currentEnt ? currentEnt.displayName : '';
+        wrapper.appendChild(input);
+        el.innerHTML = '';
+        el.appendChild(wrapper);
+        input.focus();
+        input.select();
+
+        let acDropdown = null;
+        let selectedId = currentEntId || null;
+
+        const buildDropdown = () => {
+          if (acDropdown) acDropdown.remove();
+          const q = input.value.toLowerCase().trim();
+          if (q.length < 1) { selectedId = null; return; }
+          const entreprises = Store.get('entreprises');
+          const matches = entreprises.filter(e => (e.nom || '').toLowerCase().includes(q)).slice(0, 8);
+          acDropdown = document.createElement('div');
+          acDropdown.style.cssText = 'position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:200;max-height:200px;overflow-y:auto;';
+          matches.forEach(e => {
+            const item = document.createElement('div');
+            item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.8125rem;border-bottom:1px solid #f1f5f9;';
+            item.innerHTML = `<strong>${escHtml(e.nom)}</strong> <span style="color:#64748b;font-size:0.75rem;">${escHtml(e.secteur||'')} • ${escHtml(e.localisation||'')}</span>`;
+            item.addEventListener('mousedown', (ev) => {
+              ev.preventDefault();
+              input.value = e.nom;
+              selectedId = e.id;
+              if (acDropdown) acDropdown.remove();
+              acDropdown = null;
+              input.blur();
+            });
+            item.addEventListener('mouseenter', () => item.style.background = '#f8fafc');
+            item.addEventListener('mouseleave', () => item.style.background = '#fff');
+            acDropdown.appendChild(item);
+          });
+          wrapper.appendChild(acDropdown);
+        };
+        input.addEventListener('input', () => { selectedId = null; buildDropdown(); });
+
+        const finish = async () => {
+          if (acDropdown) acDropdown.remove();
+          const val = input.value.trim();
+          if (!val) selectedId = null;
+          if (selectedId !== currentEntId) {
+            await saveField(fieldDef.key, selectedId);
+          }
+          el.classList.remove('editing');
+          renderFields();
+        };
+        input.addEventListener('blur', () => setTimeout(finish, 150));
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') { el.classList.remove('editing'); renderFields(); } });
+      } else if (fieldDef.type === 'candidat_autocomplete') {
+        // Special: candidat autocomplete (stores text name)
+        const wrapper = document.createElement('div');
+        wrapper.style.position = 'relative';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'inline-edit-input';
+        input.placeholder = 'Tapez pour rechercher...';
+        input.value = currentValue;
+        wrapper.appendChild(input);
+        el.innerHTML = '';
+        el.appendChild(wrapper);
+        input.focus();
+        input.select();
+
+        let acDropdown = null;
+        const buildDropdown = () => {
+          if (acDropdown) acDropdown.remove();
+          const q = input.value.toLowerCase().trim();
+          if (q.length < 1) return;
+          const candidats = Store.get('candidats');
+          const matches = candidats.filter(c => {
+            const name = `${c.prenom || ''} ${c.nom || ''}`.toLowerCase();
+            return name.includes(q);
+          }).slice(0, 8);
+          if (matches.length === 0) return;
+          acDropdown = document.createElement('div');
+          acDropdown.style.cssText = 'position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:200;max-height:200px;overflow-y:auto;';
+          matches.forEach(c => {
+            const fullName = `${c.prenom || ''} ${c.nom || ''}`.trim();
+            const item = document.createElement('div');
+            item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.8125rem;border-bottom:1px solid #f1f5f9;';
+            item.innerHTML = `<strong>${escHtml(fullName)}</strong> <span style="color:#64748b;font-size:0.75rem;">${escHtml(c.poste_actuel || '')}</span>`;
+            item.addEventListener('mousedown', (ev) => {
+              ev.preventDefault();
+              input.value = fullName;
+              if (acDropdown) acDropdown.remove();
+              acDropdown = null;
+              input.blur();
+            });
+            item.addEventListener('mouseenter', () => item.style.background = '#f8fafc');
+            item.addEventListener('mouseleave', () => item.style.background = '#fff');
+            acDropdown.appendChild(item);
+          });
+          wrapper.appendChild(acDropdown);
+        };
+        input.addEventListener('input', buildDropdown);
 
         const finish = async () => {
           if (acDropdown) acDropdown.remove();

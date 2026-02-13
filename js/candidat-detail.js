@@ -205,10 +205,17 @@
     UI.inlineEdit('profil-info-fields', {
       entity: 'candidats', recordId: id,
       fields: [
+        { key: 'entreprise_actuelle_id', label: 'Entreprise actuelle', type: 'entreprise_autocomplete', render: (v) => {
+          if (!v) return '';
+          const ent = Store.resolve('entreprises', v);
+          return ent ? `<a href="entreprise.html?id=${ent.id}" class="entity-link">${UI.escHtml(ent.displayName)}</a>` : '';
+        }},
+        { key: 'poste_cible', label: 'Poste cible', type: 'text' },
         { key: 'localisation', label: 'Localisation', type: 'autocomplete', options: () => Referentiels.get('localisations'), refKey: 'localisations' },
         { key: 'diplome', label: 'Diplôme', type: 'select', options: Referentiels.get('candidat_diplomes') },
+        { key: 'profile_code', label: 'Code Profiling Amarillo™', type: 'text' },
         { key: 'origine', label: 'Origine', type: 'text' },
-        { key: 'recommande_par', label: 'Recommandé par', type: 'autocomplete', options: () => Store.get('candidats').map(c => `${c.prenom || ''} ${c.nom || ''}`.trim()).filter(Boolean) },
+        { key: 'recommande_par', label: 'Recommandé par', type: 'candidat_autocomplete' },
         { key: 'ambassadeur', label: 'Ambassadeur', type: 'boolean', render: (v) => v ? '✅ Oui' : '❌ Non' },
         { key: 'exposition_pouvoir', label: 'Exposition au pouvoir', type: 'text' },
         { key: 'preavis', label: 'Préavis', type: 'text' },
