@@ -428,7 +428,7 @@ function renderTemplate(templateKey) {
     html += `<h3 style="font-size:0.875rem;font-weight:700;color:#1e293b;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #FECC02;">${section.title}</h3>`;
 
     if (section.content) {
-      html += `<div style="background:#f8fafc;border-radius:8px;padding:12px 16px;font-size:0.8125rem;color:#334155;white-space:pre-wrap;line-height:1.6;border-left:3px solid #FECC02;">${section.content}</div>`;
+      html += `<div style="background:#f8fafc;border-radius:8px;padding:12px 16px;font-size:0.8125rem;color:#334155;white-space:pre-wrap;line-height:1.6;border-left:3px solid #FECC02;">${UI.escHtml(section.content)}</div>`;
     }
 
     if (section.fields) {
@@ -617,7 +617,8 @@ function showTemplateEditor(key, onSaved) {
                   <button class="btn btn-sm btn-secondary tpl-add-field" style="font-size:0.75rem;margin-top:4px;">+ Champ</button>
                 </div>
               ` : `
-                <textarea class="tpl-sec-content" style="width:100%;min-height:80px;font-size:0.8125rem;">${UI.escHtml(sec.content || '')}</textarea>
+                <textarea class="tpl-sec-content" style="width:100%;min-height:120px;font-size:0.8125rem;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;resize:vertical;box-sizing:border-box;white-space:pre-wrap;font-family:inherit;line-height:1.5;">${UI.escHtml(sec.content || '')}</textarea>
+                <div style="font-size:0.6875rem;color:#94a3b8;margin-top:4px;">Utilisez Entrée pour aller à la ligne</div>
               `}
             </div>
           `).join('')}
@@ -737,10 +738,16 @@ function showTemplateEditor(key, onSaved) {
           bindAddFieldButtons(overlay);
         } else if (type === 'content' && !existingContent) {
           if (existingFields) existingFields.remove();
+          const wrapper = document.createElement('div');
           const ta = document.createElement('textarea');
           ta.className = 'tpl-sec-content';
-          ta.style.cssText = 'width:100%;min-height:80px;font-size:0.8125rem;';
-          block.appendChild(ta);
+          ta.style.cssText = 'width:100%;min-height:120px;font-size:0.8125rem;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;resize:vertical;box-sizing:border-box;white-space:pre-wrap;font-family:inherit;line-height:1.5;';
+          wrapper.appendChild(ta);
+          const hint = document.createElement('div');
+          hint.style.cssText = 'font-size:0.6875rem;color:#94a3b8;margin-top:4px;';
+          hint.textContent = 'Utilisez Entrée pour aller à la ligne';
+          wrapper.appendChild(hint);
+          block.appendChild(wrapper);
         }
       });
     });
