@@ -1142,6 +1142,209 @@ const UI = (() => {
     setTimeout(() => document.addEventListener('click', closePicker), 10);
   }
 
+  // ============================================================
+  // DOCUMENTS & GOOGLE DRIVE — gestion des documents liés
+  // ============================================================
+
+  /**
+   * Renders a full documents management section for an entity.
+   * @param {string} containerId - DOM container id
+   * @param {object} opts
+   * @param {string} opts.entity - 'candidats' | 'entreprises' | 'decideurs'
+   * @param {string} opts.recordId - the record id
+   * @param {string} opts.docTypesKey - referentiels key for document types
+   * @param {function} [opts.onUpdate] - callback after any change
+   */
+  function documentsSection(containerId, { entity, recordId, docTypesKey, onUpdate }) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    function render() {
+      const record = Store.findById(entity, recordId);
+      if (!record) return;
+
+      const docs = record.documents || [];
+      const driveUrl = record.google_drive_url || '';
+      const docTypes = Referentiels.get(docTypesKey);
+
+      container.innerHTML = `
+        <div class="card" data-accent="orange" style="margin-bottom:16px;">
+          <div class="card-header">
+            <h2>Dossier Google Drive</h2>
+          </div>
+          <div class="card-body">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div style="flex:1;">
+                ${driveUrl
+                  ? `<a href="${escHtml(driveUrl)}" target="_blank" class="entity-link" style="display:inline-flex;align-items:center;gap:6px;">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                      Ouvrir le dossier Drive
+                    </a>`
+                  : `<span style="font-size:0.8125rem;color:#94a3b8;font-style:italic;">Aucun dossier Drive lié</span>`
+                }
+              </div>
+              <button class="btn btn-sm btn-secondary" id="doc-edit-drive-${containerId}">
+                ${driveUrl ? 'Modifier le lien' : 'Ajouter un lien Drive'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Documents (${docs.length})</h2>
+            <button class="btn btn-sm btn-primary" id="doc-add-${containerId}">+ Document</button>
+          </div>
+          <div class="card-body">
+            <div id="doc-list-${containerId}"></div>
+          </div>
+        </div>
+      `;
+
+      // Render document list
+      const listEl = document.getElementById(`doc-list-${containerId}`);
+      if (docs.length === 0) {
+        listEl.innerHTML = '<div class="empty-state"><p>Aucun document</p></div>';
+      } else {
+        listEl.innerHTML = `
+          <div class="data-table-wrapper"><table class="data-table"><thead><tr>
+            <th>Nom</th><th>Type</th><th>Date</th><th>Lien</th><th></th>
+          </tr></thead><tbody>
+          ${docs.map((doc, idx) => `<tr>
+            <td><strong>${escHtml(doc.nom || '—')}</strong></td>
+            <td>${badge(doc.type || '')}</td>
+            <td style="font-size:0.8125rem;">${formatDate(doc.date_ajout)}</td>
+            <td>
+              <a href="${escHtml(doc.url || '#')}" target="_blank" class="entity-link" style="font-size:0.8125rem;display:inline-flex;align-items:center;gap:4px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                Ouvrir
+              </a>
+            </td>
+            <td style="white-space:nowrap;">
+              <button class="btn btn-sm btn-secondary" data-doc-edit="${idx}" style="padding:2px 8px;font-size:0.75rem;">Modifier</button>
+              <button class="btn btn-sm btn-danger" data-doc-delete="${idx}" style="padding:2px 8px;font-size:0.75rem;">Supprimer</button>
+            </td>
+          </tr>`).join('')}
+          </tbody></table></div>
+        `;
+
+        // Delete handlers
+        listEl.querySelectorAll('[data-doc-delete]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.docDelete);
+            const docName = docs[idx]?.nom || 'ce document';
+            modal('Supprimer le document', `<p style="color:#dc2626;">Supprimer <strong>${escHtml(docName)}</strong> ?</p>`, {
+              saveLabel: 'Supprimer',
+              onSave: async () => {
+                const updated = [...docs];
+                updated.splice(idx, 1);
+                await Store.update(entity, recordId, { documents: updated });
+                toast('Document supprimé');
+                render();
+                if (onUpdate) onUpdate();
+              }
+            });
+          });
+        });
+
+        // Edit handlers
+        listEl.querySelectorAll('[data-doc-edit]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.docEdit);
+            showDocModal(docs[idx], idx);
+          });
+        });
+      }
+
+      // Drive link button
+      document.getElementById(`doc-edit-drive-${containerId}`)?.addEventListener('click', () => {
+        modal('Lien Google Drive', `
+          <div class="form-group">
+            <label>URL du dossier Google Drive</label>
+            <input type="url" id="doc-drive-url" value="${escHtml(driveUrl)}" placeholder="https://drive.google.com/drive/folders/..." />
+          </div>
+          <p style="font-size:0.75rem;color:#64748b;margin-top:8px;">
+            Collez ici le lien de partage du dossier Google Drive associé.
+            Pour créer un dossier, ouvrez Google Drive et copiez le lien ici.
+          </p>
+        `, {
+          onSave: async (overlay) => {
+            const url = overlay.querySelector('#doc-drive-url').value.trim();
+            await Store.update(entity, recordId, { google_drive_url: url });
+            toast(url ? 'Lien Drive enregistré' : 'Lien Drive supprimé');
+            render();
+            if (onUpdate) onUpdate();
+          }
+        });
+      });
+
+      // Add document button
+      document.getElementById(`doc-add-${containerId}`)?.addEventListener('click', () => {
+        showDocModal(null, null);
+      });
+
+      function showDocModal(existing, editIdx) {
+        const isEdit = existing !== null && editIdx !== null;
+        const d = existing || {};
+
+        modal(isEdit ? 'Modifier le document' : 'Ajouter un document', `
+          <div class="form-group">
+            <label>Nom du document</label>
+            <input type="text" id="doc-nom" value="${escHtml(d.nom || '')}" placeholder="Ex: CV Jean Dupont, Contrat cadre..." />
+          </div>
+          <div class="form-group">
+            <label>URL (lien Google Drive ou autre)</label>
+            <input type="url" id="doc-url" value="${escHtml(d.url || '')}" placeholder="https://drive.google.com/..." />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Type de document</label>
+              <select id="doc-type">
+                <option value="">—</option>
+                ${docTypes.map(t => `<option value="${t}" ${d.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Date</label>
+              <input type="date" id="doc-date" value="${d.date_ajout || new Date().toISOString().split('T')[0]}" />
+            </div>
+          </div>
+        `, {
+          onSave: async (overlay) => {
+            const nom = overlay.querySelector('#doc-nom').value.trim();
+            const url = overlay.querySelector('#doc-url').value.trim();
+            if (!nom || !url) {
+              toast('Le nom et l\'URL sont requis', 'error');
+              return;
+            }
+            const docData = {
+              id: isEdit ? (d.id || 'doc_' + Date.now()) : 'doc_' + Date.now(),
+              nom,
+              url,
+              type: overlay.querySelector('#doc-type').value,
+              date_ajout: overlay.querySelector('#doc-date').value,
+            };
+            const updated = [...docs];
+            if (isEdit) {
+              updated[editIdx] = docData;
+            } else {
+              updated.push(docData);
+            }
+            await Store.update(entity, recordId, { documents: updated });
+            toast(isEdit ? 'Document modifié' : 'Document ajouté');
+            render();
+            if (onUpdate) onUpdate();
+          }
+        });
+      }
+    }
+
+    render();
+    return { refresh: render };
+  }
+
   return {
     badge, autoBadgeStyle, entityLink, resolveLink,
     dataTable, filterBar, modal, toast,
@@ -1149,6 +1352,7 @@ const UI = (() => {
     initGlobalSearch, entrepriseAutocomplete, candidatAutocomplete, localisationAutocomplete,
     candidatDecideurLink,
     inlineEdit, statusBadge, showStatusPicker,
+    documentsSection,
     escHtml, formatDate, formatMonthYear, formatCurrency, getParam
   };
 })();
