@@ -1099,6 +1099,34 @@ const UI = (() => {
             item.addEventListener('mouseleave', () => item.style.background = '#fff');
             acDropdown.appendChild(item);
           });
+          // "Créer cette entreprise" option
+          if (!entreprises.some(e => (e.nom || '').toLowerCase() === q)) {
+            const createItem = document.createElement('div');
+            createItem.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.8125rem;color:#c9a000;font-weight:600;border-top:1px solid #e2e8f0;';
+            createItem.textContent = `+ Créer "${input.value.trim()}"`;
+            createItem.addEventListener('mousedown', async (ev) => {
+              ev.preventDefault();
+              const newEnt = {
+                id: API.generateId('ent'),
+                nom: input.value.trim(),
+                secteur: '', taille: '', ca: '', localisation: '',
+                priorite: '', statut: 'À cibler',
+                site_web: '', telephone: '', angle_approche: '', source: '', notes: '',
+                dernier_contact: null, prochaine_relance: null,
+                created_at: new Date().toISOString(),
+              };
+              await Store.add('entreprises', newEnt);
+              input.value = newEnt.nom;
+              selectedId = newEnt.id;
+              if (acDropdown) acDropdown.remove();
+              acDropdown = null;
+              toast('Entreprise créée : ' + newEnt.nom);
+              input.blur();
+            });
+            createItem.addEventListener('mouseenter', () => createItem.style.background = '#FFFDF0');
+            createItem.addEventListener('mouseleave', () => createItem.style.background = '#fff');
+            acDropdown.appendChild(createItem);
+          }
           wrapper.appendChild(acDropdown);
         };
         input.addEventListener('input', () => { selectedId = null; buildDropdown(); });

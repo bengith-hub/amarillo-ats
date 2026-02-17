@@ -601,6 +601,7 @@ function showTemplateEditor(key, onSaved) {
           ${tpl.sections.map((sec, i) => `
             <div class="tpl-section-block" data-idx="${i}" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:10px;">
               <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+                <span class="tpl-sec-drag-handle" style="color:#cbd5e1;cursor:grab;font-size:0.875rem;user-select:none;flex-shrink:0;" title="Glisser pour réordonner">⠿</span>
                 <input type="text" class="tpl-sec-title" value="${UI.escHtml(sec.title)}" placeholder="Titre de la section" style="flex:1;font-weight:600;" />
                 <button class="btn btn-sm" onclick="this.closest('.tpl-section-block').remove()" style="color:#dc2626;padding:4px 8px;">✕</button>
               </div>
@@ -693,6 +694,7 @@ function showTemplateEditor(key, onSaved) {
       div.style.cssText = 'background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:10px;';
       div.innerHTML = `
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+          <span class="tpl-sec-drag-handle" style="color:#cbd5e1;cursor:grab;font-size:0.875rem;user-select:none;flex-shrink:0;" title="Glisser pour réordonner">⠿</span>
           <input type="text" class="tpl-sec-title" value="" placeholder="Titre de la section" style="flex:1;font-weight:600;" />
           <button class="btn btn-sm" onclick="this.closest('.tpl-section-block').remove()" style="color:#dc2626;padding:4px 8px;">✕</button>
         </div>
@@ -710,10 +712,14 @@ function showTemplateEditor(key, onSaved) {
       `;
       container.appendChild(div);
       bindAddFieldButtons(overlay);
+      bindSectionDragDrop(overlay);
     });
 
     // Bind add field buttons
     bindAddFieldButtons(overlay);
+
+    // Bind section drag & drop
+    bindSectionDragDrop(overlay);
 
     // Bind type radio changes
     overlay.querySelectorAll('.tpl-sec-type').forEach(radio => {
@@ -752,6 +758,70 @@ function showTemplateEditor(key, onSaved) {
       });
     });
   }, 100);
+}
+
+function bindSectionDragDrop(overlay) {
+  const container = overlay.querySelector('#tpl-ed-sections');
+  if (!container) return;
+  let dragEl = null;
+
+  container.querySelectorAll('.tpl-section-block').forEach(block => {
+    // Disable draggable by default so inputs work normally
+    block.draggable = false;
+
+    // Enable draggable only when handle is pressed
+    const handle = block.querySelector('.tpl-sec-drag-handle');
+    if (handle) {
+      handle.addEventListener('mousedown', () => { block.draggable = true; });
+      handle.addEventListener('mouseup', () => { block.draggable = false; });
+    }
+
+    block.addEventListener('dragstart', (e) => {
+      dragEl = block;
+      block.style.opacity = '0.4';
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    block.addEventListener('dragend', () => {
+      block.style.opacity = '1';
+      block.draggable = false;
+      dragEl = null;
+      container.querySelectorAll('.tpl-section-block').forEach(b => {
+        b.style.borderTop = '';
+        b.style.borderBottom = '';
+      });
+    });
+    block.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (!dragEl || dragEl === block) return;
+      e.dataTransfer.dropEffect = 'move';
+      const rect = block.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (e.clientY < midY) {
+        block.style.borderTop = '2px solid #c9a000';
+        block.style.borderBottom = '';
+      } else {
+        block.style.borderBottom = '2px solid #c9a000';
+        block.style.borderTop = '';
+      }
+    });
+    block.addEventListener('dragleave', () => {
+      block.style.borderTop = '';
+      block.style.borderBottom = '';
+    });
+    block.addEventListener('drop', (e) => {
+      e.preventDefault();
+      block.style.borderTop = '';
+      block.style.borderBottom = '';
+      if (!dragEl || dragEl === block) return;
+      const rect = block.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (e.clientY < midY) {
+        container.insertBefore(dragEl, block);
+      } else {
+        container.insertBefore(dragEl, block.nextSibling);
+      }
+    });
+  });
 }
 
 function bindAddFieldButtons(overlay) {
