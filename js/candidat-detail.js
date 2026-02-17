@@ -121,7 +121,8 @@
 
   function renderProfil() {
     const pkg = (candidat.salaire_fixe_actuel || 0) + (candidat.variable_actuel || 0);
-    const pkgSouhaite = (candidat.salaire_fixe_souhaite || 0) + (candidat.variable_souhaite || 0);
+    const pkgSouhaiteMin = candidat.package_souhaite_min || 0;
+    const pkgSouhaite = candidat.package_souhaite || 0;
 
     const durePoste = computeDuration(candidat.debut_poste_actuel);
     const totalExp = computeDuration(candidat.debut_carriere);
@@ -150,7 +151,7 @@
                 <div style="font-size:0.75rem;font-weight:600;color:#0284c7;text-transform:uppercase;margin-bottom:8px;">Durées calculées</div>
                 <div style="display:flex;flex-direction:column;gap:12px;">
                   <div>
-                    <div style="font-size:0.75rem;color:#64748b;">Ancienneté poste actuel</div>
+                    <div style="font-size:0.75rem;color:#64748b;">${candidat.open_to_work ? 'En recherche depuis' : 'Ancienneté poste actuel'}</div>
                     <div style="font-size:1.125rem;font-weight:700;color:#0284c7;" id="computed-duree-poste">${durePoste || '—'}</div>
                   </div>
                   <div>
@@ -181,12 +182,12 @@
         </div>
         <div class="card-body">
           <div class="inline-fields-grid" id="profil-package-fields"></div>
-          <div style="margin-top:12px;display:flex;gap:24px;">
+          <div style="margin-top:12px;display:flex;gap:24px;flex-wrap:wrap;">
             <div style="font-size:0.9375rem;font-weight:700;color:#1e293b;">
-              Package actuel : ${pkg > 0 ? UI.formatCurrency(pkg) : '—'}
+              Package actuel : ${pkg > 0 ? `${pkg} K€` : '—'}
             </div>
             <div style="font-size:0.9375rem;font-weight:700;color:#1e293b;">
-              Package souhaité : ${pkgSouhaite > 0 ? UI.formatCurrency(pkgSouhaite) : '—'}
+              Package souhaité : ${pkgSouhaiteMin > 0 && pkgSouhaite > 0 ? `${pkgSouhaiteMin} – ${pkgSouhaite} K€` : pkgSouhaite > 0 ? `${pkgSouhaite} K€` : pkgSouhaiteMin > 0 ? `à partir de ${pkgSouhaiteMin} K€` : '—'}
             </div>
           </div>
         </div>
@@ -212,6 +213,8 @@
         }},
         { key: 'poste_cible', label: 'Poste cible', type: 'text' },
         { key: 'localisation', label: 'Localisation', type: 'autocomplete', options: () => Referentiels.get('localisations'), refKey: 'localisations' },
+        { key: 'date_naissance', label: 'Date de naissance', type: 'date', render: (v) => v ? UI.formatDate(v) : '' },
+        { key: 'open_to_work', label: 'Open to work', type: 'boolean', render: (v) => v ? '<span style="color:#16a34a;font-weight:600;">✅ Oui</span>' : '❌ Non' },
         { key: 'diplome', label: 'Diplôme', type: 'select', options: Referentiels.get('candidat_diplomes') },
         { key: 'profile_code', label: 'Code Profiling Amarillo™', type: 'text' },
         { key: 'origine', label: 'Origine', type: 'text' },
@@ -219,7 +222,13 @@
         { key: 'ambassadeur', label: 'Ambassadeur', type: 'boolean', render: (v) => v ? '✅ Oui' : '❌ Non' },
         { key: 'exposition_pouvoir', label: 'Exposition au pouvoir', type: 'text' },
         { key: 'preavis', label: 'Préavis', type: 'text' },
-      ]
+      ],
+      onAfterSave: (fieldKey) => {
+        // When open_to_work changes, update the date label
+        if (fieldKey === 'open_to_work') {
+          renderProfil();
+        }
+      }
     });
 
     // Inline editable — Contact
@@ -229,6 +238,9 @@
         { key: 'email', label: 'Email', type: 'text', render: (v) => v ? `<a href="mailto:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
         { key: 'telephone', label: 'Téléphone', type: 'text', render: (v) => v ? `<a href="tel:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
         { key: 'linkedin', label: 'LinkedIn', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(v)}" target="_blank" class="entity-link">Profil LinkedIn</a>` : '' },
+        { key: 'adresse_ligne1', label: 'Adresse', type: 'text' },
+        { key: 'code_postal', label: 'Code postal', type: 'text' },
+        { key: 'ville', label: 'Ville', type: 'text' },
       ]
     });
 
@@ -236,20 +248,24 @@
     UI.inlineEdit('profil-package-fields', {
       entity: 'candidats', recordId: id,
       fields: [
-        { key: 'salaire_fixe_actuel', label: 'Fixe actuel', type: 'number', render: (v) => v ? UI.formatCurrency(v) : '—' },
-        { key: 'variable_actuel', label: 'Variable actuel', type: 'number', render: (v) => v ? UI.formatCurrency(v) : '—' },
-        { key: 'salaire_fixe_souhaite', label: 'Fixe souhaité', type: 'number', render: (v) => v ? UI.formatCurrency(v) : '—' },
-        { key: 'variable_souhaite', label: 'Variable souhaité', type: 'number', render: (v) => v ? UI.formatCurrency(v) : '—' },
+        { key: 'salaire_fixe_actuel', label: 'Fixe actuel (K€)', type: 'number', render: (v) => v ? `${v} K€` : '—' },
+        { key: 'variable_actuel', label: 'Variable actuel (K€)', type: 'number', render: (v) => v ? `${v} K€` : '—' },
+        { key: 'package_souhaite_min', label: 'Package souhaité min (K€)', type: 'number', render: (v) => v ? `${v} K€` : '—' },
+        { key: 'package_souhaite', label: 'Package souhaité (K€)', type: 'number', render: (v) => v ? `${v} K€` : '—' },
         { key: 'teletravail', label: 'Télétravail', type: 'text' },
         { key: 'rtt', label: 'RTT', type: 'boolean', render: (v) => v ? '✅ Oui' : '❌ Non' },
         { key: 'nb_rtt', label: 'Nb RTT (jours)', type: 'number' },
-      ]
+      ],
+      onAfterSave: () => {
+        // Re-render to update package totals
+        renderProfil();
+      }
     });
 
     UI.inlineEdit('profil-dates-fields', {
       entity: 'candidats', recordId: id,
       fields: [
-        { key: 'debut_poste_actuel', label: 'Prise de poste actuel', type: 'month', render: (v) => {
+        { key: 'debut_poste_actuel', label: candidat.open_to_work ? 'Début de recherche d\'emploi' : 'Prise de poste actuel', type: 'month', render: (v) => {
           if (!v) return '';
           return UI.formatMonthYear(v);
         }},
