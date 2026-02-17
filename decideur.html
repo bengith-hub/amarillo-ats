@@ -113,6 +113,8 @@
               <div class="card-body" id="dec-notes-fields"></div>
             </div>
 
+            <div id="dec-documents-section"></div>
+
             <div class="card">
               <div class="card-header">
                 <h2>Missions liées (${missions.length})</h2>
@@ -142,6 +144,15 @@
               <div class="card-header"><h2>Liens</h2></div>
               <div class="card-body">
                 ${entreprise ? `<div style="margin-bottom:12px;"><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Entreprise</div>${UI.entityLink('entreprises', entreprise.id, entreprise.displayName)}</div>` : ''}
+                ${d.google_drive_url ? `
+                <div style="margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;">
+                  <div style="font-size:0.75rem;font-weight:600;color:#64748b;text-transform:uppercase;margin-bottom:4px;">Liens externes</div>
+                  <a href="${UI.escHtml(d.google_drive_url)}" target="_blank" class="entity-link" style="display:inline-flex;align-items:center;gap:4px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    Google Drive
+                  </a>
+                </div>
+                ` : ''}
                 <div id="dec-dates-fields" style="margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;"></div>
                 <div style="margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;">
                   <div style="font-size:0.75rem;color:#94a3b8;">
@@ -270,6 +281,14 @@
             renderPage();
           }
         });
+      });
+
+      // Documents section
+      UI.documentsSection('dec-documents-section', {
+        entity: 'decideurs',
+        recordId: id,
+        docTypesKey: 'document_types_decideur',
+        onUpdate: () => renderPage(),
       });
 
       UI.timeline('decideur-timeline', actions);

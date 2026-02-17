@@ -94,6 +94,20 @@ const Referentiels = (() => {
       'En attente', 'Intéressé', 'Entretien planifié', 'Refusé', 'Offre'
     ],
 
+    // --- DOCUMENTS ---
+    document_types_candidat: [
+      'CV', 'Lettre de motivation', 'Fiche d\'entretien', 'Références',
+      'Diplôme', 'Contrat', 'Pièce d\'identité', 'Autre'
+    ],
+    document_types_entreprise: [
+      'Contrat cadre', 'Conditions générales', 'Proposition commerciale',
+      'Organigramme', 'Fiche entreprise', 'Autre'
+    ],
+    document_types_decideur: [
+      'Carte de visite', 'Notes de réunion', 'Compte-rendu',
+      'Proposition', 'Autre'
+    ],
+
     // --- LOCALISATIONS ---
     localisations: [
       'Paris', 'Île-de-France', 'Lyon', 'Marseille', 'Toulouse',
@@ -247,6 +261,17 @@ const Referentiels = (() => {
         color: '#06b6d4',
         items: [
           { key: 'presentation_statuts', label: 'Statuts présentation' },
+        ]
+      },
+      {
+        id: 'documents',
+        label: 'Documents',
+        icon: '📁',
+        color: '#f59e0b',
+        items: [
+          { key: 'document_types_candidat', label: 'Types de documents (candidats)' },
+          { key: 'document_types_entreprise', label: 'Types de documents (entreprises)' },
+          { key: 'document_types_decideur', label: 'Types de documents (décideurs)' },
         ]
       },
       {
