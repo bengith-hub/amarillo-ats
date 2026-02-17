@@ -186,7 +186,7 @@
           await Store.add('missions', data);
           UI.toast('Mission créée');
         }
-        setTimeout(() => location.reload(), 500);
+        location.reload();
       }
     });
   }

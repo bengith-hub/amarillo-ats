@@ -176,7 +176,7 @@
             const fu = await createFollowUp(r);
             if (fu) UI.toast(`Action suivante créée : ${fu.action}`);
           }
-          setTimeout(() => location.reload(), 600);
+          location.reload();
         } }) },
       ],
       data: sorted,
@@ -311,6 +311,7 @@
 
     UI.modal(isEdit ? 'Modifier l\'action' : 'Nouvelle action', bodyHtml, {
       width: 640,
+      draftKey: isEdit ? 'action_edit_' + a.id : 'action_new',
       onSave: async (overlay) => {
         const data = {
           action: overlay.querySelector('#a-action').value.trim(),
@@ -347,7 +348,7 @@
           await Store.add('actions', data);
           UI.toast('Action créée');
         }
-        setTimeout(() => location.reload(), 600);
+        location.reload();
       }
     });
 

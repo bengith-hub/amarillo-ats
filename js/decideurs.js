@@ -140,7 +140,7 @@
           await Store.add('decideurs', data);
           UI.toast('Décideur créé');
         }
-        setTimeout(() => location.reload(), 500);
+        location.reload();
       }
     });
     UI.localisationAutocomplete('d-loc');

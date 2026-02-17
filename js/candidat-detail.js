@@ -70,7 +70,7 @@
         onSave: async () => {
           await Store.remove('candidats', id);
           UI.toast('Candidat supprimé');
-          setTimeout(() => window.location.href = 'candidats.html', 500);
+          window.location.href = 'candidats.html';
         }
       });
     });
@@ -101,7 +101,7 @@
             entreprise_actuelle_id: overlay.querySelector('#f-entreprise').value || null,
           });
           UI.toast('Candidat mis à jour');
-          setTimeout(() => location.reload(), 300);
+          location.reload();
         }
       });
       UI.entrepriseAutocomplete('f-entreprise-search', 'f-entreprise');
@@ -474,7 +474,7 @@
         await Store.update('actions', actionId, { statut: newStatut });
         UI.toast('Statut mis à jour');
         close();
-        setTimeout(() => location.reload(), 500);
+        location.reload();
       });
       document.getElementById('action-delete-btn')?.addEventListener('click', () => {
         close();
@@ -483,7 +483,7 @@
           onSave: async () => {
             await Store.remove('actions', actionId);
             UI.toast('Action supprimée');
-            setTimeout(() => location.reload(), 500);
+            location.reload();
           }
         });
       });
@@ -517,6 +517,7 @@
       </div>
     `, {
       width: 640,
+      draftKey: 'action_edit_' + a.id,
       onSave: async (overlay) => {
         await Store.update('actions', a.id, {
           action: overlay.querySelector('#ea-action').value.trim(),
@@ -531,7 +532,7 @@
           date_relance: overlay.querySelector('#ea-relance').value || null,
         });
         UI.toast('Action mise à jour');
-        setTimeout(() => location.reload(), 500);
+        location.reload();
       }
     });
     // Template inject for edit
@@ -670,7 +671,7 @@
         const value = overlay.querySelector('#edit-field-value').value.trim();
         await Store.update('candidats', id, { [fieldName]: value });
         UI.toast('Mis à jour');
-        setTimeout(() => location.reload(), 500);
+        location.reload();
       }
     });
   };
@@ -746,6 +747,7 @@
         </div>
       </div>
     `, {
+      draftKey: 'action_new_cand_' + id,
       onSave: async (overlay) => {
         const action = {
           id: API.generateId('act'),
@@ -770,7 +772,7 @@
         };
         await Store.add('actions', action);
         UI.toast('Action créée');
-        setTimeout(() => location.reload(), 500);
+        location.reload();
       }
     });
 
@@ -854,7 +856,7 @@
           updated.splice(idx, 1);
           await Store.update('candidats', id, { presentations: updated });
           UI.toast('Présentation supprimée');
-          setTimeout(() => location.reload(), 500);
+          location.reload();
         });
       });
     }
@@ -909,7 +911,7 @@
           const updated = [...(candidat.presentations || []), pres];
           await Store.update('candidats', id, { presentations: updated });
           UI.toast('Présentation ajoutée');
-          setTimeout(() => location.reload(), 500);
+          location.reload();
         }
       });
       // Init autocomplete for entreprise

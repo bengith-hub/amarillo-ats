@@ -203,7 +203,7 @@ const UI = (() => {
   }
 
   // Modal
-  function modal(title, bodyHtml, { onSave, saveLabel = 'Enregistrer', width } = {}) {
+  function modal(title, bodyHtml, { onSave, saveLabel = 'Enregistrer', width, draftKey } = {}) {
     let overlay = document.getElementById('modal-overlay');
     if (!overlay) {
       overlay = document.createElement('div');
@@ -230,22 +230,164 @@ const UI = (() => {
 
     overlay.classList.add('visible');
 
-    const close = () => overlay.classList.remove('visible');
+    // --- Dirty state tracking ---
+    let _dirty = false;
+    let _saved = false;
 
-    overlay.querySelector('.modal-close').addEventListener('click', close);
+    // --- Draft auto-save ---
+    const _draftLSKey = draftKey ? `ats_draft_${draftKey}` : null;
+    let _draftTimer = null;
+
+    function _collectFormData() {
+      const data = {};
+      overlay.querySelectorAll('input, textarea, select').forEach(el => {
+        if (!el.id || el.type === 'hidden') return;
+        data[el.id] = el.value;
+      });
+      return data;
+    }
+
+    function _restoreFormData(data) {
+      Object.entries(data).forEach(([id, value]) => {
+        const el = overlay.querySelector('#' + CSS.escape(id));
+        if (el && el.type !== 'hidden') el.value = value;
+      });
+    }
+
+    function _saveDraft() {
+      if (!_draftLSKey) return;
+      try {
+        localStorage.setItem(_draftLSKey, JSON.stringify({
+          data: _collectFormData(),
+          timestamp: Date.now()
+        }));
+      } catch (e) { /* localStorage full */ }
+    }
+
+    function _clearDraft() {
+      if (_draftLSKey) localStorage.removeItem(_draftLSKey);
+      if (_draftTimer) clearInterval(_draftTimer);
+    }
+
+    // --- Close functions ---
+    const close = () => {
+      overlay.classList.remove('visible');
+      document.removeEventListener('keydown', _escHandler);
+      if (_draftTimer) clearInterval(_draftTimer);
+    };
+
+    const guardedClose = () => {
+      if (_dirty && !_saved) {
+        if (!confirm('Vous avez des modifications non sauvegardées. Quitter sans enregistrer ?')) {
+          return;
+        }
+      }
+      close();
+    };
+
+    // --- Escape key ---
+    const _escHandler = (e) => {
+      if (e.key === 'Escape') guardedClose();
+    };
+    document.addEventListener('keydown', _escHandler);
+
+    // --- Event binding ---
+    overlay.querySelector('.modal-close').addEventListener('click', guardedClose);
     overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
+      if (e.target === overlay) guardedClose();
     });
 
     if (onSave) {
-      overlay.querySelector('.modal-cancel').addEventListener('click', close);
-      overlay.querySelector('.modal-save').addEventListener('click', () => {
-        onSave(overlay);
+      overlay.querySelector('.modal-cancel').addEventListener('click', guardedClose);
+      overlay.querySelector('.modal-save').addEventListener('click', async () => {
+        _saved = true;
+        _clearDraft();
+        const saveBtn = overlay.querySelector('.modal-save');
+        const cancelBtn = overlay.querySelector('.modal-cancel');
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Enregistrement...';
+        if (cancelBtn) cancelBtn.disabled = true;
+        try {
+          await onSave(overlay);
+        } catch (e) {
+          if (e && e.message !== 'validation') {
+            console.error('Save failed:', e);
+          }
+          _saved = false;
+          saveBtn.disabled = false;
+          saveBtn.textContent = saveLabel;
+          if (cancelBtn) cancelBtn.disabled = false;
+          return;
+        }
         close();
       });
     }
 
-    return { close, overlay };
+    // --- Attach dirty tracking + draft restore/auto-save (after DOM is parsed) ---
+    setTimeout(() => {
+      // Dirty tracking on all form inputs
+      overlay.querySelectorAll('input, textarea, select').forEach(el => {
+        const evt = el.tagName === 'SELECT' ? 'change' : 'input';
+        el.addEventListener(evt, () => { _dirty = true; });
+      });
+
+      // Draft restore + auto-save
+      if (_draftLSKey) {
+        try {
+          const raw = localStorage.getItem(_draftLSKey);
+          if (raw) {
+            const { data, timestamp } = JSON.parse(raw);
+            if (Date.now() - timestamp < 24 * 60 * 60 * 1000) {
+              const age = Math.round((Date.now() - timestamp) / 60000);
+              const ageLabel = age < 60
+                ? `${age} min`
+                : `${Math.round(age / 60)}h`;
+
+              const banner = document.createElement('div');
+              banner.style.cssText = 'background:#FFFDF0;border:1px solid #FEE566;border-radius:8px;padding:10px 14px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;font-size:0.8125rem;';
+              banner.innerHTML = `
+                <span>Brouillon trouvé (il y a ${ageLabel})</span>
+                <span>
+                  <button class="btn btn-sm btn-primary" id="draft-restore">Restaurer</button>
+                  <button class="btn btn-sm btn-secondary" id="draft-discard" style="margin-left:4px;">Ignorer</button>
+                </span>
+              `;
+              const modalBody = overlay.querySelector('.modal-body');
+              modalBody.insertBefore(banner, modalBody.firstChild);
+
+              banner.querySelector('#draft-restore').addEventListener('click', () => {
+                _restoreFormData(data);
+                _dirty = true;
+                banner.remove();
+              });
+              banner.querySelector('#draft-discard').addEventListener('click', () => {
+                _clearDraft();
+                banner.remove();
+              });
+            } else {
+              localStorage.removeItem(_draftLSKey);
+            }
+          }
+        } catch (e) { /* corrupted draft */ }
+
+        // Auto-save every 5s if dirty
+        _draftTimer = setInterval(() => {
+          if (_dirty) _saveDraft();
+        }, 5000);
+
+        // Also save on input (debounced 1s)
+        let _draftDebounce;
+        overlay.querySelectorAll('input, textarea, select').forEach(el => {
+          const evt = el.tagName === 'SELECT' ? 'change' : 'input';
+          el.addEventListener(evt, () => {
+            clearTimeout(_draftDebounce);
+            _draftDebounce = setTimeout(_saveDraft, 1000);
+          });
+        });
+      }
+    }, 0);
+
+    return { close, guardedClose, overlay };
   }
 
   // Toast notification
@@ -355,13 +497,13 @@ const UI = (() => {
           try {
             await API.initAllBins();
             toast('Bins créés avec succès !', 'success');
-            setTimeout(() => location.reload(), 1000);
+            location.reload();
           } catch (e) {
             toast('Erreur lors de la création des bins', 'error');
           }
         } else {
           toast('Configuration sauvegardée', 'success');
-          setTimeout(() => location.reload(), 1000);
+          location.reload();
         }
       }
     });
@@ -680,7 +822,7 @@ const UI = (() => {
               await Store.update('candidats', candidatId, { profil_decideur_id: decId });
               await Store.update('decideurs', decId, { profil_candidat_id: candidatId });
               toast('Lié au décideur');
-              setTimeout(() => location.reload(), 500);
+              location.reload();
             }
           }
         });
@@ -717,7 +859,7 @@ const UI = (() => {
               await Store.add('decideurs', newDec);
               await Store.update('candidats', candidatId, { profil_decideur_id: newDec.id });
               toast('Profil décideur créé');
-              setTimeout(() => location.reload(), 500);
+              location.reload();
             });
           }
         }, 100);
@@ -1317,7 +1459,7 @@ const UI = (() => {
             const url = overlay.querySelector('#doc-url').value.trim();
             if (!nom || !url) {
               toast('Le nom et l\'URL sont requis', 'error');
-              return;
+              throw new Error('validation');
             }
             const docData = {
               id: isEdit ? (d.id || 'doc_' + Date.now()) : 'doc_' + Date.now(),
@@ -1356,6 +1498,13 @@ const UI = (() => {
     escHtml, formatDate, formatMonthYear, formatCurrency, getParam
   };
 })();
+
+// Sync error feedback — show toast when API sync fails
+if (typeof Store !== 'undefined' && Store.onSyncError) {
+  Store.onSyncError(({ entity }) => {
+    UI.toast(`Erreur de synchronisation (${entity}). Modifications sauvegardées localement.`, 'error');
+  });
+}
 
 // Sidebar responsive toggle (hamburger menu)
 (function() {

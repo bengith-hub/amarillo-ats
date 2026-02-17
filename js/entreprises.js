@@ -117,7 +117,7 @@
           await Store.add('entreprises', data);
           UI.toast('Entreprise créée');
         }
-        setTimeout(() => location.reload(), 500);
+        location.reload();
       }
     });
     UI.localisationAutocomplete('e-loc');

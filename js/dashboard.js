@@ -195,7 +195,7 @@
     };
     await Store.add('actions', followUp);
     UI.toast(`Action créée : ${followUp.action}`);
-    setTimeout(() => location.reload(), 600);
+    location.reload();
   };
 
   // ========== Actions à faire ==========
