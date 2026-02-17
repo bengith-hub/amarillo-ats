@@ -168,8 +168,9 @@
         <div class="form-group">
           <label>Open to work</label>
           <select id="f-open-to-work">
-            <option value="false" ${!c.open_to_work ? 'selected' : ''}>Non</option>
-            <option value="true" ${c.open_to_work ? 'selected' : ''}>Oui</option>
+            <option value="" ${c.open_to_work === null || c.open_to_work === undefined || c.open_to_work === '' ? 'selected' : ''}>—</option>
+            <option value="false" ${c.open_to_work === false ? 'selected' : ''}>Non</option>
+            <option value="true" ${c.open_to_work === true ? 'selected' : ''}>Oui</option>
           </select>
         </div>
       </div>
@@ -271,8 +272,9 @@
         <div class="form-group">
           <label>Ambassadeur</label>
           <select id="f-ambassadeur">
-            <option value="false" ${!c.ambassadeur ? 'selected' : ''}>Non</option>
-            <option value="true" ${c.ambassadeur ? 'selected' : ''}>Oui</option>
+            <option value="" ${c.ambassadeur === null || c.ambassadeur === undefined || c.ambassadeur === '' ? 'selected' : ''}>—</option>
+            <option value="false" ${c.ambassadeur === false ? 'selected' : ''}>Non</option>
+            <option value="true" ${c.ambassadeur === true ? 'selected' : ''}>Oui</option>
           </select>
         </div>
       </div>
@@ -284,8 +286,9 @@
         <div class="form-group">
           <label>RTT</label>
           <select id="f-rtt">
-            <option value="false" ${!c.rtt ? 'selected' : ''}>Non</option>
-            <option value="true" ${c.rtt ? 'selected' : ''}>Oui</option>
+            <option value="" ${c.rtt === null || c.rtt === undefined || c.rtt === '' ? 'selected' : ''}>—</option>
+            <option value="false" ${c.rtt === false ? 'selected' : ''}>Non</option>
+            <option value="true" ${c.rtt === true ? 'selected' : ''}>Oui</option>
           </select>
         </div>
       </div>
@@ -309,7 +312,7 @@
           statut: overlay.querySelector('#f-statut').value,
           localisation: overlay.querySelector('#f-localisation').value.trim(),
           date_naissance: overlay.querySelector('#f-date-naissance').value || '',
-          open_to_work: overlay.querySelector('#f-open-to-work').value === 'true',
+          open_to_work: overlay.querySelector('#f-open-to-work').value === '' ? null : overlay.querySelector('#f-open-to-work').value === 'true',
           email: overlay.querySelector('#f-email').value.trim(),
           telephone: overlay.querySelector('#f-telephone').value.trim(),
           adresse_ligne1: overlay.querySelector('#f-adresse-ligne1').value.trim(),
@@ -326,9 +329,9 @@
           origine: overlay.querySelector('#f-origine').value,
           recommande_par: overlay.querySelector('#f-recommande-par').value.trim(),
           exposition_pouvoir: overlay.querySelector('#f-exposition-pouvoir').value.trim(),
-          ambassadeur: overlay.querySelector('#f-ambassadeur').value === 'true',
+          ambassadeur: overlay.querySelector('#f-ambassadeur').value === '' ? null : overlay.querySelector('#f-ambassadeur').value === 'true',
           teletravail: overlay.querySelector('#f-teletravail').value.trim(),
-          rtt: overlay.querySelector('#f-rtt').value === 'true',
+          rtt: overlay.querySelector('#f-rtt').value === '' ? null : overlay.querySelector('#f-rtt').value === 'true',
           notes: overlay.querySelector('#f-notes').value.trim(),
           debut_poste_actuel: overlay.querySelector('#f-debut-poste').value || '',
           debut_carriere: overlay.querySelector('#f-debut-carriere').value || '',
