@@ -78,10 +78,10 @@
         { key: 'localisation', label: 'Localisation' },
         {
           key: 'package',
-          label: 'Package actuel',
+          label: 'Package actuel (K€)',
           render: r => {
             const pkg = (r.salaire_fixe_actuel || 0) + (r.variable_actuel || 0);
-            return pkg > 0 ? UI.formatCurrency(pkg) : '—';
+            return pkg > 0 ? `${pkg} K€` : '—';
           }
         },
         {
@@ -162,12 +162,39 @@
       </div>
       <div class="form-row">
         <div class="form-group">
+          <label>Date de naissance</label>
+          <input type="date" id="f-date-naissance" value="${c.date_naissance || ''}" />
+        </div>
+        <div class="form-group">
+          <label>Open to work</label>
+          <select id="f-open-to-work">
+            <option value="false" ${!c.open_to_work ? 'selected' : ''}>Non</option>
+            <option value="true" ${c.open_to_work ? 'selected' : ''}>Oui</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
           <label>Email</label>
           <input type="email" id="f-email" value="${UI.escHtml(c.email || '')}" />
         </div>
         <div class="form-group">
           <label>Téléphone</label>
           <input type="tel" id="f-telephone" value="${UI.escHtml(c.telephone || '')}" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Adresse postale</label>
+        <input type="text" id="f-adresse-ligne1" value="${UI.escHtml(c.adresse_ligne1 || '')}" placeholder="Numéro et nom de rue" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Code postal</label>
+          <input type="text" id="f-code-postal" value="${UI.escHtml(c.code_postal || '')}" />
+        </div>
+        <div class="form-group">
+          <label>Ville</label>
+          <input type="text" id="f-ville" value="${UI.escHtml(c.ville || '')}" />
         </div>
       </div>
       <div class="form-row">
@@ -182,22 +209,22 @@
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Salaire fixe actuel (€)</label>
+          <label>Salaire fixe actuel (K€)</label>
           <input type="number" id="f-salaire-fixe" value="${c.salaire_fixe_actuel || ''}" />
         </div>
         <div class="form-group">
-          <label>Variable actuel (€)</label>
+          <label>Variable actuel (K€)</label>
           <input type="number" id="f-variable" value="${c.variable_actuel || ''}" />
         </div>
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Salaire fixe souhaité (€)</label>
-          <input type="number" id="f-salaire-souhaite" value="${c.salaire_fixe_souhaite || ''}" />
+          <label>Package souhaité min (K€)</label>
+          <input type="number" id="f-package-souhaite-min" value="${c.package_souhaite_min || ''}" placeholder="Fourchette basse" />
         </div>
         <div class="form-group">
-          <label>Variable souhaité (€)</label>
-          <input type="number" id="f-variable-souhaite" value="${c.variable_souhaite || ''}" />
+          <label>Package souhaité (K€)</label>
+          <input type="number" id="f-package-souhaite" value="${c.package_souhaite || ''}" placeholder="Souhaité" />
         </div>
       </div>
       <div class="form-row">
@@ -215,7 +242,7 @@
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Prise de poste actuel</label>
+          <label id="label-debut-poste">${c.open_to_work ? 'Début de recherche d\'emploi' : 'Prise de poste actuel'}</label>
           <input type="month" id="f-debut-poste" value="${(c.debut_poste_actuel || '').substring(0, 7)}" />
         </div>
         <div class="form-group">
@@ -280,14 +307,19 @@
           niveau: overlay.querySelector('#f-niveau').value,
           statut: overlay.querySelector('#f-statut').value,
           localisation: overlay.querySelector('#f-localisation').value.trim(),
+          date_naissance: overlay.querySelector('#f-date-naissance').value || '',
+          open_to_work: overlay.querySelector('#f-open-to-work').value === 'true',
           email: overlay.querySelector('#f-email').value.trim(),
           telephone: overlay.querySelector('#f-telephone').value.trim(),
+          adresse_ligne1: overlay.querySelector('#f-adresse-ligne1').value.trim(),
+          code_postal: overlay.querySelector('#f-code-postal').value.trim(),
+          ville: overlay.querySelector('#f-ville').value.trim(),
           linkedin: overlay.querySelector('#f-linkedin').value.trim(),
           profile_code: overlay.querySelector('#f-profile-code').value.trim(),
           salaire_fixe_actuel: parseInt(overlay.querySelector('#f-salaire-fixe').value) || 0,
           variable_actuel: parseInt(overlay.querySelector('#f-variable').value) || 0,
-          salaire_fixe_souhaite: parseInt(overlay.querySelector('#f-salaire-souhaite').value) || 0,
-          variable_souhaite: parseInt(overlay.querySelector('#f-variable-souhaite').value) || 0,
+          package_souhaite_min: parseInt(overlay.querySelector('#f-package-souhaite-min').value) || 0,
+          package_souhaite: parseInt(overlay.querySelector('#f-package-souhaite').value) || 0,
           preavis: overlay.querySelector('#f-preavis').value.trim(),
           diplome: overlay.querySelector('#f-diplome').value,
           origine: overlay.querySelector('#f-origine').value,
@@ -340,6 +372,15 @@
     UI.entrepriseAutocomplete('f-entreprise-search', 'f-entreprise');
     UI.localisationAutocomplete('f-localisation');
     UI.candidatAutocomplete('f-recommande-par');
+
+    // Toggle date label based on "open to work"
+    const otwSelect = document.getElementById('f-open-to-work');
+    if (otwSelect) {
+      otwSelect.addEventListener('change', () => {
+        const label = document.getElementById('label-debut-poste');
+        if (label) label.textContent = otwSelect.value === 'true' ? 'Début de recherche d\'emploi' : 'Prise de poste actuel';
+      });
+    }
   }
 
   // Expose for edit from detail page
