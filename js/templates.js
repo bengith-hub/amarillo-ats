@@ -557,7 +557,7 @@ function showTemplateDetail(templateKey, context) {
           const newNotes = currentNotes + (currentNotes ? '\n\n' : '') + text;
           await Store.update('candidats', context.candidatId, { notes: newNotes });
           UI.toast('Template ajouté aux notes du candidat');
-          setTimeout(() => location.reload(), 500);
+          location.reload();
         }
       });
     }

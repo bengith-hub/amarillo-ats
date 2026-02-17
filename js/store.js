@@ -6,6 +6,15 @@ const Store = (() => {
   const cache = {};
   const listeners = {};
   const _refreshing = {}; // track in-flight API calls
+  const _syncErrorCallbacks = [];
+
+  function onSyncError(callback) {
+    _syncErrorCallbacks.push(callback);
+  }
+
+  function _notifySyncError(entity, operation, error) {
+    _syncErrorCallbacks.forEach(cb => cb({ entity, operation, error }));
+  }
 
   function getCacheKey(entity) {
     return `ats_data_${entity}`;
@@ -125,6 +134,7 @@ const Store = (() => {
       await API.updateBin(entity, data);
     } catch (e) {
       console.error(`Failed to sync add for ${entity}:`, e);
+      _notifySyncError(entity, 'add', e);
     }
 
     return record;
@@ -144,6 +154,7 @@ const Store = (() => {
       await API.updateBin(entity, data);
     } catch (e) {
       console.error(`Failed to sync update for ${entity}:`, e);
+      _notifySyncError(entity, 'update', e);
     }
 
     return data[idx];
@@ -159,6 +170,7 @@ const Store = (() => {
       await API.updateBin(entity, data);
     } catch (e) {
       console.error(`Failed to sync delete for ${entity}:`, e);
+      _notifySyncError(entity, 'delete', e);
     }
 
     return true;
@@ -255,6 +267,6 @@ const Store = (() => {
     load, loadAll, get, findById, filter,
     add, update, remove,
     refresh, refreshAll,
-    on, search, resolve
+    on, onSyncError, search, resolve
   };
 })();

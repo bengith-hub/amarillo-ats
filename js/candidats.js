@@ -297,6 +297,7 @@
 
     UI.modal(isEdit ? 'Modifier le candidat' : 'Nouveau candidat', bodyHtml, {
       width: 600,
+      draftKey: isEdit ? 'candidat_edit_' + c.id : 'candidat_new',
       onSave: async (overlay) => {
         const data = {
           prenom: overlay.querySelector('#f-prenom').value.trim(),
@@ -335,7 +336,7 @@
 
         if (!data.nom) {
           UI.toast('Le nom est obligatoire', 'error');
-          return;
+          throw new Error('validation');
         }
 
         if (isEdit) {
@@ -364,7 +365,7 @@
           UI.toast('Candidat créé');
         }
 
-        setTimeout(() => location.reload(), 500);
+        location.reload();
       }
     });
 
