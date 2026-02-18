@@ -49,7 +49,8 @@
       ],
       data: data,
       onRowClick: (id) => window.location.href = `entreprise.html?id=${id}`,
-      emptyMessage: 'Aucune entreprise'
+      emptyMessage: 'Aucune entreprise',
+      storageKey: 'entreprises'
     });
   }
 

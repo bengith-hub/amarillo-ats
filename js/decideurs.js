@@ -51,7 +51,8 @@
       ],
       data: data,
       onRowClick: (id) => window.location.href = `decideur.html?id=${id}`,
-      emptyMessage: 'Aucun décideur'
+      emptyMessage: 'Aucun décideur',
+      storageKey: 'decideurs'
     });
   }
 

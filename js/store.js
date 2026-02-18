@@ -147,7 +147,7 @@ const Store = (() => {
     if (idx === -1) return null;
 
     const now = new Date().toISOString().split('T')[0];
-    data[idx] = { ...data[idx], ...updates, updated_at: now };
+    Object.assign(data[idx], updates, { updated_at: now });
     setCachedData(entity, data);
 
     try {

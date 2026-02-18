@@ -91,10 +91,27 @@ const UI = (() => {
     return entityLink(entity, id, record.displayName);
   }
 
-  // Sortable, filterable data table
-  function dataTable(containerId, { columns, data, onRowClick, emptyMessage = 'Aucune donnée' }) {
+  // Sortable, filterable data table with column visibility
+  function dataTable(containerId, { columns, data, onRowClick, emptyMessage = 'Aucune donnée', storageKey }) {
     const container = document.getElementById(containerId);
     if (!container) return;
+
+    // Column visibility (persisted in localStorage)
+    let hiddenCols = new Set();
+    if (storageKey) {
+      try {
+        const saved = JSON.parse(localStorage.getItem('ats_cols_' + storageKey) || '[]');
+        hiddenCols = new Set(saved);
+      } catch { /* ignore */ }
+    }
+
+    function saveColVisibility() {
+      if (storageKey) localStorage.setItem('ats_cols_' + storageKey, JSON.stringify([...hiddenCols]));
+    }
+
+    function visibleColumns() {
+      return columns.filter(c => !hiddenCols.has(c.key));
+    }
 
     if (!data || data.length === 0) {
       container.innerHTML = `<div class="empty-state"><p>${emptyMessage}</p></div>`;
@@ -103,14 +120,31 @@ const UI = (() => {
 
     let sortCol = null;
     let sortDir = 'asc';
+    let currentRows = data;
 
     function render(rows) {
+      currentRows = rows;
+      const visCols = visibleColumns();
       const html = `
+        ${storageKey ? `<div style="display:flex;justify-content:flex-end;margin-bottom:6px;position:relative;">
+          <button class="col-settings-btn" style="border:none;background:#f1f5f9;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:0.75rem;color:#64748b;display:inline-flex;align-items:center;gap:4px;">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+            Colonnes
+          </button>
+          <div class="col-settings-dropdown" style="display:none;position:absolute;right:0;top:100%;z-index:100;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);padding:8px;min-width:200px;">
+            ${columns.map(col => `
+              <label style="display:flex;align-items:center;gap:6px;padding:4px 6px;font-size:0.8125rem;cursor:pointer;border-radius:4px;white-space:nowrap;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                <input type="checkbox" data-col-key="${col.key}" ${!hiddenCols.has(col.key) ? 'checked' : ''} style="accent-color:#3b82f6;" />
+                ${col.label}
+              </label>
+            `).join('')}
+          </div>
+        </div>` : ''}
         <div class="data-table-wrapper">
           <table class="data-table">
             <thead>
               <tr>
-                ${columns.map(col => `
+                ${visCols.map(col => `
                   <th data-key="${col.key}" class="${sortCol === col.key ? 'sorted' : ''}">
                     ${col.label}
                     <span class="sort-icon">${sortCol === col.key ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}</span>
@@ -121,7 +155,7 @@ const UI = (() => {
             <tbody>
               ${rows.map(row => `
                 <tr data-id="${row.id || ''}">
-                  ${columns.map(col => `<td>${col.render ? col.render(row) : escHtml(row[col.key] || '')}</td>`).join('')}
+                  ${visCols.map(col => `<td>${col.render ? col.render(row) : escHtml(row[col.key] || '')}</td>`).join('')}
                 </tr>
               `).join('')}
             </tbody>
@@ -129,6 +163,27 @@ const UI = (() => {
         </div>
       `;
       container.innerHTML = html;
+
+      // Column settings toggle
+      const colBtn = container.querySelector('.col-settings-btn');
+      const colDrop = container.querySelector('.col-settings-dropdown');
+      if (colBtn && colDrop) {
+        colBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          colDrop.style.display = colDrop.style.display === 'none' ? 'block' : 'none';
+        });
+        document.addEventListener('click', () => { colDrop.style.display = 'none'; }, { once: true });
+        colDrop.addEventListener('click', (e) => e.stopPropagation());
+        colDrop.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+          cb.addEventListener('change', () => {
+            const key = cb.dataset.colKey;
+            if (cb.checked) hiddenCols.delete(key);
+            else hiddenCols.add(key);
+            saveColVisibility();
+            render(currentRows);
+          });
+        });
+      }
 
       // Sort handlers
       container.querySelectorAll('th').forEach(th => {
@@ -153,7 +208,7 @@ const UI = (() => {
       if (onRowClick) {
         container.querySelectorAll('tbody tr').forEach(tr => {
           tr.addEventListener('click', (e) => {
-            if (e.target.closest('a')) return; // don't intercept link clicks
+            if (e.target.closest('a')) return;
             onRowClick(tr.dataset.id);
           });
         });
@@ -553,6 +608,13 @@ const UI = (() => {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  function normalizeUrl(url) {
+    if (!url) return '';
+    url = url.trim();
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    return 'https://' + url;
   }
 
   function formatDate(dateStr) {
@@ -1579,7 +1641,7 @@ const UI = (() => {
     candidatDecideurLink,
     inlineEdit, statusBadge, showStatusPicker,
     documentsSection, drawer,
-    escHtml, formatDate, formatMonthYear, formatCurrency, getParam
+    escHtml, normalizeUrl, formatDate, formatMonthYear, formatCurrency, getParam
   };
 })();
 
