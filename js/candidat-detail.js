@@ -244,7 +244,7 @@
       fields: [
         { key: 'email', label: 'Email', type: 'text', render: (v) => v ? `<a href="mailto:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
         { key: 'telephone', label: 'Téléphone', type: 'text', render: (v) => v ? `<a href="tel:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
-        { key: 'linkedin', label: 'LinkedIn', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(v)}" target="_blank" class="entity-link">Profil LinkedIn</a>` : '' },
+        { key: 'linkedin', label: 'LinkedIn', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(UI.normalizeUrl(v))}" target="_blank" class="entity-link">Profil LinkedIn</a>` : '' },
         { key: 'adresse_ligne1', label: 'Adresse', type: 'text' },
         { key: 'code_postal', label: 'Code postal', type: 'text' },
         { key: 'ville', label: 'Ville', type: 'text' },
@@ -636,8 +636,8 @@
         ${candidat.linkedin || candidat.profile_code || candidat.google_drive_url ? `
           <div style="margin-bottom:16px;">
             <div style="font-size:0.75rem;font-weight:600;color:#64748b;text-transform:uppercase;margin-bottom:4px;">Liens externes</div>
-            ${candidat.linkedin ? `<a href="${UI.escHtml(candidat.linkedin)}" target="_blank" class="entity-link">LinkedIn</a><br/>` : ''}
-            ${candidat.google_drive_url ? `<a href="${UI.escHtml(candidat.google_drive_url)}" target="_blank" class="entity-link" style="display:inline-flex;align-items:center;gap:4px;margin-top:4px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>Google Drive</a><br/>` : ''}
+            ${candidat.linkedin ? `<a href="${UI.escHtml(UI.normalizeUrl(candidat.linkedin))}" target="_blank" class="entity-link">LinkedIn</a><br/>` : ''}
+            ${candidat.google_drive_url ? `<a href="${UI.escHtml(UI.normalizeUrl(candidat.google_drive_url))}" target="_blank" class="entity-link" style="display:inline-flex;align-items:center;gap:4px;margin-top:4px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>Google Drive</a><br/>` : ''}
             ${candidat.profile_code ? `<a href="https://amarillo-dsi-profile.netlify.app/?session=${UI.escHtml(candidat.profile_code)}" target="_blank" class="entity-link" style="display:inline-flex;align-items:center;gap:4px;margin-top:4px;"><svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>Profiling Amarillo™ (${UI.escHtml(candidat.profile_code)})</a>` : ''}
           </div>
         ` : ''}

@@ -9,48 +9,154 @@
   const allCandidats = Store.get('candidats');
   let tableInstance = null;
 
-  // Filters
-  UI.filterBar('candidats-filters', {
-    searchPlaceholder: 'Rechercher un candidat...',
-    filters: [
-      {
-        key: 'statut',
-        label: 'Tous les statuts',
-        options: Referentiels.get('candidat_statuts')
-      },
-      {
-        key: 'niveau',
-        label: 'Tous les niveaux',
-        options: Referentiels.get('candidat_niveaux')
-      },
-      {
-        key: 'localisation',
-        label: 'Toutes localisations',
-        options: [...new Set(allCandidats.map(c => c.localisation).filter(Boolean))].sort()
-      }
-    ],
-    onFilter: ({ search, filters }) => {
-      let filtered = allCandidats;
+  // Advanced filters
+  const FILTER_DEFINITIONS = [
+    { key: 'statut', label: 'Statut', options: () => Referentiels.get('candidat_statuts') },
+    { key: 'niveau', label: 'Niveau', options: () => Referentiels.get('candidat_niveaux') },
+    { key: 'localisation', label: 'Localisation', options: () => [...new Set(allCandidats.map(c => c.localisation).filter(Boolean))].sort() },
+    { key: 'diplome', label: 'Diplôme', options: () => Referentiels.get('candidat_diplomes') },
+    { key: 'origine', label: 'Origine', options: () => Referentiels.get('candidat_sources') },
+    { key: 'open_to_work', label: 'Open to work', options: () => ['Oui', 'Non'] },
+    { key: 'ambassadeur', label: 'Ambassadeur', options: () => ['Oui', 'Neutre', 'Non'] },
+    { key: 'entreprise', label: 'Entreprise', options: () => [...new Set(allCandidats.map(c => {
+      if (c.entreprise_actuelle_id) { const e = Store.resolve('entreprises', c.entreprise_actuelle_id); return e ? e.displayName : null; }
+      return c.entreprise_nom || c.entreprise_actuelle || null;
+    }).filter(Boolean))].sort() },
+    { key: 'poste_actuel', label: 'Poste actuel', options: () => [...new Set(allCandidats.map(c => c.poste_actuel).filter(Boolean))].sort() },
+    { key: 'poste_cible', label: 'Poste cible', options: () => [...new Set(allCandidats.map(c => c.poste_cible).filter(Boolean))].sort() },
+  ];
 
-      if (search) {
-        const q = search.toLowerCase();
-        filtered = filtered.filter(c => {
-          const name = `${c.prenom || ''} ${c.nom || ''}`.toLowerCase();
-          return name.includes(q) ||
-            (c.poste_actuel || '').toLowerCase().includes(q) ||
-            (c.poste_cible || '').toLowerCase().includes(q) ||
-            (c.localisation || '').toLowerCase().includes(q);
-        });
-      }
+  const activeFilters = []; // { key, mode: 'include'|'exclude', values: [] }
+  let searchValue = '';
 
-      if (filters.statut) filtered = filtered.filter(c => c.statut === filters.statut);
-      if (filters.niveau) filtered = filtered.filter(c => c.niveau === filters.niveau);
-      if (filters.localisation) filtered = filtered.filter(c => c.localisation === filters.localisation);
+  function applyFilters() {
+    let filtered = allCandidats;
 
-      filtered.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-      renderTable(filtered);
+    if (searchValue) {
+      const q = searchValue.toLowerCase();
+      filtered = filtered.filter(c => {
+        const name = `${c.prenom || ''} ${c.nom || ''}`.toLowerCase();
+        return name.includes(q) ||
+          (c.poste_actuel || '').toLowerCase().includes(q) ||
+          (c.poste_cible || '').toLowerCase().includes(q) ||
+          (c.localisation || '').toLowerCase().includes(q) ||
+          (c.email || '').toLowerCase().includes(q) ||
+          (c.telephone || '').toLowerCase().includes(q);
+      });
     }
-  });
+
+    for (const af of activeFilters) {
+      if (af.values.length === 0) continue;
+      const match = (c) => {
+        let val;
+        if (af.key === 'open_to_work') {
+          val = c.open_to_work === true ? 'Oui' : 'Non';
+        } else if (af.key === 'ambassadeur') {
+          val = c.ambassadeur === true || c.ambassadeur === 'Oui' ? 'Oui' : c.ambassadeur === 'Neutre' ? 'Neutre' : 'Non';
+        } else if (af.key === 'entreprise') {
+          if (c.entreprise_actuelle_id) { const e = Store.resolve('entreprises', c.entreprise_actuelle_id); val = e ? e.displayName : ''; }
+          else val = c.entreprise_nom || c.entreprise_actuelle || '';
+        } else {
+          val = c[af.key] || '';
+        }
+        return af.values.includes(val);
+      };
+      if (af.mode === 'include') filtered = filtered.filter(match);
+      else filtered = filtered.filter(c => !match(c));
+    }
+
+    filtered.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    renderTable(filtered);
+  }
+
+  function renderAdvancedFilters() {
+    const container = document.getElementById('candidats-filters');
+    if (!container) return;
+
+    const usedKeys = activeFilters.map(f => f.key);
+    const availableFilters = FILTER_DEFINITIONS.filter(d => !usedKeys.includes(d.key));
+
+    container.innerHTML = `
+      <div class="filters-bar" style="flex-direction:column;align-items:stretch;gap:12px;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="text" class="filter-search" placeholder="Rechercher un candidat..." value="${UI.escHtml(searchValue)}" />
+          ${availableFilters.length > 0 ? `
+            <select class="filter-select" id="add-filter-select" style="color:#64748b;">
+              <option value="">+ Ajouter un filtre</option>
+              ${availableFilters.map(f => `<option value="${f.key}">${f.label}</option>`).join('')}
+            </select>
+          ` : ''}
+        </div>
+        ${activeFilters.length > 0 ? `
+          <div id="active-filters-area" style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${activeFilters.map((af, idx) => {
+              const def = FILTER_DEFINITIONS.find(d => d.key === af.key);
+              const opts = def ? def.options() : [];
+              return `
+                <div class="adv-filter-chip" data-idx="${idx}" style="display:inline-flex;align-items:center;gap:4px;background:${af.mode === 'exclude' ? '#fef2f2' : '#f0f9ff'};border:1px solid ${af.mode === 'exclude' ? '#fca5a5' : '#bae6fd'};border-radius:8px;padding:4px 8px;font-size:0.8125rem;">
+                  <button class="filter-mode-toggle" data-idx="${idx}" style="border:none;background:${af.mode === 'exclude' ? '#ef4444' : '#3b82f6'};color:#fff;border-radius:4px;padding:1px 6px;font-size:0.6875rem;cursor:pointer;font-weight:600;" title="Cliquer pour basculer inclure/exclure">
+                    ${af.mode === 'include' ? 'INCL' : 'EXCL'}
+                  </button>
+                  <span style="font-weight:600;color:#334155;">${def ? def.label : af.key}:</span>
+                  <select class="filter-value-select" data-idx="${idx}" multiple style="border:1px solid #e2e8f0;border-radius:4px;font-size:0.75rem;padding:2px 4px;min-width:120px;max-height:60px;">
+                    ${opts.map(o => `<option value="${o}" ${af.values.includes(o) ? 'selected' : ''}>${o}</option>`).join('')}
+                  </select>
+                  <button class="filter-remove" data-idx="${idx}" style="border:none;background:none;cursor:pointer;color:#94a3b8;font-size:1rem;padding:0 2px;" title="Supprimer ce filtre">&times;</button>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+
+    // Search
+    container.querySelector('.filter-search').addEventListener('input', (e) => {
+      searchValue = e.target.value;
+      applyFilters();
+    });
+
+    // Add filter
+    const addSel = container.querySelector('#add-filter-select');
+    if (addSel) {
+      addSel.addEventListener('change', (e) => {
+        if (!e.target.value) return;
+        activeFilters.push({ key: e.target.value, mode: 'include', values: [] });
+        renderAdvancedFilters();
+      });
+    }
+
+    // Toggle include/exclude
+    container.querySelectorAll('.filter-mode-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx);
+        activeFilters[idx].mode = activeFilters[idx].mode === 'include' ? 'exclude' : 'include';
+        renderAdvancedFilters();
+        applyFilters();
+      });
+    });
+
+    // Value selection
+    container.querySelectorAll('.filter-value-select').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const idx = parseInt(sel.dataset.idx);
+        activeFilters[idx].values = Array.from(sel.selectedOptions).map(o => o.value);
+        applyFilters();
+      });
+    });
+
+    // Remove filter
+    container.querySelectorAll('.filter-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx);
+        activeFilters.splice(idx, 1);
+        renderAdvancedFilters();
+        applyFilters();
+      });
+    });
+  }
+
+  renderAdvancedFilters();
 
   // Sort by creation date (most recent first)
   allCandidats.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
@@ -99,7 +205,8 @@
       onRowClick: (id) => {
         window.location.href = `candidat.html?id=${id}`;
       },
-      emptyMessage: 'Aucun candidat trouvé'
+      emptyMessage: 'Aucun candidat trouvé',
+      storageKey: 'candidats'
     });
   }
 
