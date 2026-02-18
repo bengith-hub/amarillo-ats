@@ -319,40 +319,107 @@
   }
 
   function renderEntretien() {
+    // Fetch candidate actions that have notes
+    const candidatActions = Store.filter('actions', a => a.candidat_id === id)
+      .sort((a, b) => (b.date_action || '').localeCompare(a.date_action || ''));
+    const actionsWithNotes = candidatActions.filter(a => a.message_notes && a.message_notes.trim());
+    const notesCount = actionsWithNotes.length;
+
+    // Build dynamic type filter options from this candidate's actions
+    const actionTypes = [...new Set(actionsWithNotes.map(a => a.type_action).filter(Boolean))];
+    const typeOptions = actionTypes.map(t => `<option value="${UI.escHtml(t)}">${UI.escHtml(t)}</option>`).join('');
+
     document.getElementById('tab-entretien').innerHTML = `
-      <div class="card" data-accent="gold">
-        <div class="card-header">
-          <h2>Synthèse 30 secondes</h2>
-          <span class="edit-hint">cliquer pour modifier</span>
-        </div>
-        <div class="card-body" id="entretien-synthese"></div>
+      <div class="entretien-toolbar">
+        <button class="btn btn-sm btn-secondary" id="btn-toggle-notes-panel" title="Afficher les notes d'actions à côté">
+          Notes d'actions (${notesCount})
+        </button>
       </div>
 
-      <div class="card" data-accent="blue">
-        <div class="card-header">
-          <h2>Parcours cible</h2>
-          <span class="edit-hint">cliquer pour modifier</span>
+      <div class="entretien-layout" id="entretien-layout">
+        <div class="entretien-notes-panel" id="entretien-notes-panel">
+          <div class="card" data-accent="cyan" style="position:sticky;top:80px;">
+            <div class="card-header">
+              <h2>Notes d'actions</h2>
+              <button class="btn btn-sm btn-secondary" id="btn-close-notes-panel" title="Fermer">&times;</button>
+            </div>
+            <div class="card-body" style="padding:12px;">
+              ${actionTypes.length > 1 ? `
+              <div style="margin-bottom:12px;">
+                <select id="notes-filter-type" style="font-size:0.75rem;padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
+                  <option value="">Tous les types</option>
+                  ${typeOptions}
+                </select>
+              </div>` : ''}
+              <div id="entretien-notes-list" style="max-height:calc(100vh - 340px);overflow-y:auto;"></div>
+            </div>
+          </div>
         </div>
-        <div class="card-body" id="entretien-parcours"></div>
-      </div>
 
-      <div class="card" data-accent="green">
-        <div class="card-header">
-          <h2>Motivation & Drivers</h2>
-          <span class="edit-hint">cliquer pour modifier</span>
-        </div>
-        <div class="card-body" id="entretien-motivation"></div>
-      </div>
+        <div class="entretien-fields">
+          <div class="card" data-accent="gold">
+            <div class="card-header">
+              <h2>Synthèse 30 secondes</h2>
+              <span class="edit-hint">cliquer pour modifier</span>
+            </div>
+            <div class="card-body" id="entretien-synthese"></div>
+          </div>
 
-      <div class="card" data-accent="purple">
-        <div class="card-header">
-          <h2>Lecture recruteur</h2>
-          <span class="edit-hint">cliquer pour modifier</span>
+          <div class="card" data-accent="blue">
+            <div class="card-header">
+              <h2>Parcours cible</h2>
+              <span class="edit-hint">cliquer pour modifier</span>
+            </div>
+            <div class="card-body" id="entretien-parcours"></div>
+          </div>
+
+          <div class="card" data-accent="green">
+            <div class="card-header">
+              <h2>Motivation & Drivers</h2>
+              <span class="edit-hint">cliquer pour modifier</span>
+            </div>
+            <div class="card-body" id="entretien-motivation"></div>
+          </div>
+
+          <div class="card" data-accent="purple">
+            <div class="card-header">
+              <h2>Lecture recruteur</h2>
+              <span class="edit-hint">cliquer pour modifier</span>
+            </div>
+            <div class="card-body" id="entretien-lecture"></div>
+          </div>
         </div>
-        <div class="card-body" id="entretien-lecture"></div>
       </div>
     `;
 
+    // Render notes list
+    renderEntretienNotes(actionsWithNotes);
+
+    // Toggle panel
+    document.getElementById('btn-toggle-notes-panel').addEventListener('click', () => {
+      const layout = document.getElementById('entretien-layout');
+      const isOpen = layout.classList.toggle('notes-open');
+      localStorage.setItem('ats_entretien_notes_open', isOpen ? '1' : '');
+    });
+
+    document.getElementById('btn-close-notes-panel').addEventListener('click', () => {
+      document.getElementById('entretien-layout').classList.remove('notes-open');
+      localStorage.setItem('ats_entretien_notes_open', '');
+    });
+
+    // Restore saved preference
+    if (localStorage.getItem('ats_entretien_notes_open') === '1' && notesCount > 0) {
+      document.getElementById('entretien-layout').classList.add('notes-open');
+    }
+
+    // Type filter
+    document.getElementById('notes-filter-type')?.addEventListener('change', (e) => {
+      const filterVal = e.target.value;
+      const filtered = filterVal ? actionsWithNotes.filter(a => a.type_action === filterVal) : actionsWithNotes;
+      renderEntretienNotes(filtered);
+    });
+
+    // Inline edit bindings (unchanged)
     UI.inlineEdit('entretien-synthese', {
       entity: 'candidats', recordId: id,
       fields: [
@@ -383,6 +450,43 @@
         { key: 'risques', label: 'Risques', type: 'text' },
         { key: 'lecture_recruteur', label: 'Lecture recruteur', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' }
       ]
+    });
+  }
+
+  function renderEntretienNotes(actions) {
+    const container = document.getElementById('entretien-notes-list');
+    if (!container) return;
+
+    if (actions.length === 0) {
+      container.innerHTML = '<div style="font-size:0.8125rem;color:#94a3b8;font-style:italic;padding:8px;">Aucune note d\'action.</div>';
+      return;
+    }
+
+    const canalIcons = { 'Appel': '\u{1F4DE}', 'LinkedIn': '\u{1F4AC}', 'Email': '\u{1F4E7}', 'Visio': '\u{1F4F9}', 'Physique': '\u{1F91D}', 'SMS': '\u{1F4F1}' };
+
+    container.innerHTML = actions.map(a => {
+      const icon = canalIcons[a.canal] || '\u{1F4CC}';
+      return `
+        <div class="entretien-note-item">
+          <div class="entretien-note-header">
+            <span>${icon}</span>
+            <strong style="font-size:0.8125rem;">${UI.escHtml(a.action || '')}</strong>
+            <span style="font-size:0.6875rem;color:#94a3b8;margin-left:auto;white-space:nowrap;">${UI.formatDate(a.date_action)}</span>
+          </div>
+          <div class="entretien-note-meta">
+            ${a.type_action ? UI.badge(a.type_action) : ''}
+            ${a.canal ? UI.badge(a.canal) : ''}
+          </div>
+          <div class="entretien-note-body">${UI.escHtml(a.message_notes)}</div>
+        </div>`;
+    }).join('');
+
+    // Collapse long notes
+    container.querySelectorAll('.entretien-note-body').forEach(body => {
+      if (body.scrollHeight > 120) {
+        body.classList.add('collapsed');
+        body.addEventListener('click', () => body.classList.toggle('collapsed'));
+      }
     });
   }
 
