@@ -136,7 +136,7 @@
                 <h2>Actions (${actions.length})</h2>
                 <button class="btn btn-sm btn-primary" id="btn-new-dec-action">+ Action</button>
               </div>
-              <div class="card-body"><div id="decideur-timeline"></div></div>
+              <div class="card-body"><div id="decideur-actions-table"></div></div>
             </div>
           </div>
 
@@ -243,6 +243,7 @@
       // New action button
       document.getElementById('btn-new-dec-action')?.addEventListener('click', () => {
         const missions = Store.get('missions');
+        const tplOpts = typeof TEMPLATES !== 'undefined' ? Object.entries(TEMPLATES).map(([k, t]) => `<option value="${k}">${t.icon} ${t.title}</option>`).join('') : '';
         UI.modal('Nouvelle action', `
           <div class="form-group"><label>Action</label><input type="text" id="da-action" placeholder="Ex: Appel de prospection..." /></div>
           <div class="form-row">
@@ -253,7 +254,11 @@
             <div class="form-group"><label>Statut</label><select id="da-statut"><option value="À faire">À faire</option><option value="Fait" selected>Fait</option></select></div>
             <div class="form-group"><label>Date</label><input type="date" id="da-date" value="${new Date().toISOString().split('T')[0]}" /></div>
           </div>
-          <div class="form-group"><label>Mission liée</label><select id="da-mission"><option value="">— Aucune —</option>${missions.map(m => `<option value="${m.id}">${UI.escHtml(m.nom||m.ref)}</option>`).join('')}</select></div>
+          <div class="form-row">
+            <div class="form-group"><label>Mission liée</label><select id="da-mission"><option value="">— Aucune —</option>${missions.map(m => `<option value="${m.id}">${UI.escHtml(m.nom||m.ref)}</option>`).join('')}</select></div>
+            <div class="form-group"><label>Réponse</label><select id="da-reponse"><option value="false" selected>Non</option><option value="true">Oui</option></select></div>
+          </div>
+          ${tplOpts ? `<div class="form-group" style="background:#FFFDF0;border:1px solid #FEE566;border-radius:8px;padding:12px;"><label style="color:#c9a000;">📋 Trame</label><select id="da-template"><option value="">—</option>${tplOpts}</select><div id="da-tpl-preview" style="display:none;max-height:150px;overflow-y:auto;font-size:0.8125rem;background:#fff;border-radius:6px;padding:8px;border:1px solid #e2e8f0;margin-top:8px;"></div></div>` : ''}
           <div class="form-group"><label>Notes</label><textarea id="da-notes" style="min-height:80px;"></textarea></div>
           <div class="form-row">
             <div class="form-group"><label>Next step</label><input type="text" id="da-next" /></div>
@@ -275,13 +280,33 @@
               message_notes: overlay.querySelector('#da-notes').value.trim(),
               next_step: overlay.querySelector('#da-next').value.trim(),
               date_relance: overlay.querySelector('#da-relance').value || null,
-              reponse: false, priorite: null, phase: '', finalite: '', objectif: '', moment_suivi: '',
+              reponse: overlay.querySelector('#da-reponse').value === 'true',
+              priorite: null, phase: '', finalite: '', objectif: '', moment_suivi: '',
             };
             await Store.add('actions', action);
             UI.toast('Action créée');
             renderPage();
           }
         });
+        // Template inject for new action
+        setTimeout(() => {
+          const sel = document.getElementById('da-template');
+          const prev = document.getElementById('da-tpl-preview');
+          if (sel && prev) sel.addEventListener('change', () => {
+            const k = sel.value;
+            if (k && TEMPLATES[k]) {
+              prev.style.display = 'block';
+              prev.innerHTML = renderTemplate(k) + '<button class="btn btn-primary btn-sm" id="da-tpl-inject" style="margin-top:6px;width:100%;">Insérer</button>';
+              document.getElementById('da-tpl-inject').addEventListener('click', (e) => {
+                e.preventDefault();
+                const n = document.getElementById('da-notes');
+                n.value = n.value + (n.value ? '\n\n' : '') + renderTemplateText(k);
+                prev.innerHTML = '<div style="color:#16a34a;text-align:center;padding:6px;">✓ Insérée</div>';
+                setTimeout(() => { prev.style.display = 'none'; sel.value = ''; }, 1200);
+              });
+            } else prev.style.display = 'none';
+          });
+        }, 100);
       });
 
       // Documents section
@@ -292,7 +317,151 @@
         onUpdate: () => renderPage(),
       });
 
-      UI.timeline('decideur-timeline', actions);
+      const todayStr = new Date().toISOString().split('T')[0];
+      UI.dataTable('decideur-actions-table', {
+        columns: [
+          { key: 'action', label: 'Action', render: r => {
+            const overdue = (r.statut === 'À faire' || r.statut === 'A faire') && r.date_action && r.date_action < todayStr;
+            return `<strong${overdue ? ' style="color:#dc2626;"' : ''}>${UI.escHtml(r.action || '')}</strong>`;
+          }},
+          { key: 'type_action', label: 'Type', render: r => `<span style="font-size:0.75rem;color:#64748b;">${UI.escHtml(r.type_action || '')}</span>` },
+          { key: 'canal', label: 'Canal', render: r => UI.badge(r.canal) },
+          { key: 'date_action', label: 'Date', render: r => UI.formatDate(r.date_action) },
+          { key: 'next_step', label: 'Next step', render: r => r.next_step ? `<span style="font-size:0.75rem;color:#c9a000;">→ ${UI.escHtml(r.next_step)}</span>` : '' },
+          { key: 'statut', label: 'Statut', render: r => UI.statusBadge(r.statut || 'À faire', ['À faire', 'En cours', 'Fait', 'Annulé'], { entity: 'actions', recordId: r.id, fieldName: 'statut', onUpdate: () => renderPage() }) },
+        ],
+        data: actions,
+        onRowClick: (actionId) => showDecActionDetail(actionId),
+        emptyMessage: 'Aucune action enregistrée'
+      });
+    }
+
+    function showDecActionDetail(actionId) {
+      const action = Store.findById('actions', actionId);
+      if (!action) return;
+      const missionName = action.mission_id ? (Store.resolve('missions', action.mission_id)?.displayName || '') : '';
+
+      const bodyHtml = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+          <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Action</div><div style="font-size:0.875rem;">${UI.escHtml(action.action || '—')}</div></div>
+          <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Type</div><div style="font-size:0.875rem;">${UI.escHtml(action.type_action || '—')}</div></div>
+          <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Canal</div><div>${UI.badge(action.canal)}</div></div>
+          <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Statut</div><div>${UI.badge(action.statut)}</div></div>
+          <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Date</div><div style="font-size:0.875rem;">${UI.formatDate(action.date_action)}</div></div>
+          <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Réponse</div><div style="font-size:0.875rem;">${action.reponse ? '<span style="color:#16a34a;font-weight:600;">Oui</span>' : 'Non'}</div></div>
+          ${missionName ? `<div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Mission</div><div style="font-size:0.875rem;">${UI.escHtml(missionName)}</div></div>` : ''}
+          ${action.date_relance ? `<div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Relance</div><div style="font-size:0.875rem;">${UI.formatDate(action.date_relance)}</div></div>` : ''}
+        </div>
+        ${action.message_notes ? `
+          <div style="margin-bottom:12px;">
+            <div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:4px;">Message / Notes</div>
+            <div style="background:#f8fafc;border-radius:8px;padding:12px;font-size:0.8125rem;white-space:pre-wrap;max-height:300px;overflow-y:auto;border:1px solid #e2e8f0;">${UI.escHtml(action.message_notes)}</div>
+          </div>
+        ` : ''}
+        ${action.next_step ? `
+          <div style="margin-bottom:16px;">
+            <div style="font-size:0.75rem;font-weight:600;color:#c9a000;margin-bottom:4px;">→ Next step</div>
+            <div style="font-size:0.875rem;">${UI.escHtml(action.next_step)}</div>
+          </div>
+        ` : ''}
+        <div style="display:flex;gap:8px;border-top:1px solid #e2e8f0;padding-top:16px;">
+          <button class="btn btn-primary btn-sm" id="dec-action-edit-btn" style="flex:1;">✏️ Modifier</button>
+          <button class="btn btn-secondary btn-sm" id="dec-action-toggle-btn" style="flex:1;">${action.statut === 'Fait' ? '↩️ Remettre à faire' : '✅ Marquer fait'}</button>
+          <button class="btn btn-danger btn-sm" id="dec-action-delete-btn">🗑️ Supprimer</button>
+        </div>
+      `;
+
+      const { close } = UI.modal('Détail de l\'action', bodyHtml, { width: 560 });
+
+      setTimeout(() => {
+        document.getElementById('dec-action-edit-btn')?.addEventListener('click', () => {
+          close();
+          showDecEditActionModal(action);
+        });
+        document.getElementById('dec-action-toggle-btn')?.addEventListener('click', async () => {
+          const newStatut = action.statut === 'Fait' ? 'À faire' : 'Fait';
+          await Store.update('actions', actionId, { statut: newStatut });
+          UI.toast('Statut mis à jour');
+          close();
+          renderPage();
+        });
+        document.getElementById('dec-action-delete-btn')?.addEventListener('click', () => {
+          close();
+          UI.modal('Confirmer la suppression', `<p style="color:#dc2626;">Supprimer l'action « ${UI.escHtml(action.action)} » ?</p>`, {
+            saveLabel: 'Supprimer',
+            onSave: async () => {
+              await Store.remove('actions', actionId);
+              UI.toast('Action supprimée');
+              renderPage();
+            }
+          });
+        });
+      }, 50);
+    }
+
+    function showDecEditActionModal(a) {
+      const allMissions = Store.get('missions');
+      const tplOpts = typeof TEMPLATES !== 'undefined' ? Object.entries(TEMPLATES).map(([k, t]) => `<option value="${k}">${t.icon} ${t.title}</option>`).join('') : '';
+
+      UI.modal('Modifier l\'action', `
+        <div class="form-group"><label>Action</label><input type="text" id="ea-action" value="${UI.escHtml(a.action || '')}" /></div>
+        <div class="form-row">
+          <div class="form-group"><label>Type</label><select id="ea-type">${Referentiels.get('action_types').map(s=>`<option value="${s}" ${a.type_action===s?'selected':''}>${s}</option>`).join('')}</select></div>
+          <div class="form-group"><label>Canal</label><select id="ea-canal">${Referentiels.get('action_canaux').map(s=>`<option value="${s}" ${a.canal===s?'selected':''}>${s}</option>`).join('')}</select></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Statut</label><select id="ea-statut"><option value="À faire" ${(a.statut==='À faire'||a.statut==='A faire')?'selected':''}>À faire</option><option value="En cours" ${a.statut==='En cours'?'selected':''}>En cours</option><option value="Fait" ${a.statut==='Fait'?'selected':''}>Fait</option><option value="Annulé" ${a.statut==='Annulé'?'selected':''}>Annulé</option></select></div>
+          <div class="form-group"><label>Date</label><input type="date" id="ea-date" value="${a.date_action || ''}" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Mission</label><select id="ea-mission"><option value="">— Aucune —</option>${allMissions.map(m=>`<option value="${m.id}" ${a.mission_id===m.id?'selected':''}>${UI.escHtml(m.nom||m.ref)}</option>`).join('')}</select></div>
+          <div class="form-group"><label>Réponse</label><select id="ea-reponse"><option value="false" ${!a.reponse?'selected':''}>Non</option><option value="true" ${a.reponse?'selected':''}>Oui</option></select></div>
+        </div>
+        ${tplOpts ? `<div class="form-group" style="background:#FFFDF0;border:1px solid #FEE566;border-radius:8px;padding:12px;"><label style="color:#c9a000;">📋 Trame</label><select id="ea-template"><option value="">—</option>${tplOpts}</select><div id="ea-tpl-preview" style="display:none;max-height:150px;overflow-y:auto;font-size:0.8125rem;background:#fff;border-radius:6px;padding:8px;border:1px solid #e2e8f0;margin-top:8px;"></div></div>` : ''}
+        <div class="form-group"><label>Message / Notes</label><textarea id="ea-notes" style="min-height:120px;">${UI.escHtml(a.message_notes || '')}</textarea></div>
+        <div class="form-row">
+          <div class="form-group"><label>Next step</label><input type="text" id="ea-next" value="${UI.escHtml(a.next_step || '')}" /></div>
+          <div class="form-group"><label>Relance</label><input type="date" id="ea-relance" value="${a.date_relance || ''}" /></div>
+        </div>
+      `, {
+        width: 640,
+        draftKey: 'action_edit_' + a.id,
+        onSave: async (overlay) => {
+          await Store.update('actions', a.id, {
+            action: overlay.querySelector('#ea-action').value.trim(),
+            type_action: overlay.querySelector('#ea-type').value,
+            canal: overlay.querySelector('#ea-canal').value,
+            statut: overlay.querySelector('#ea-statut').value,
+            date_action: overlay.querySelector('#ea-date').value,
+            mission_id: overlay.querySelector('#ea-mission').value || null,
+            reponse: overlay.querySelector('#ea-reponse').value === 'true',
+            message_notes: overlay.querySelector('#ea-notes').value.trim(),
+            next_step: overlay.querySelector('#ea-next').value.trim(),
+            date_relance: overlay.querySelector('#ea-relance').value || null,
+          });
+          UI.toast('Action mise à jour');
+          renderPage();
+        }
+      });
+      // Template inject
+      setTimeout(() => {
+        const sel = document.getElementById('ea-template');
+        const prev = document.getElementById('ea-tpl-preview');
+        if (sel && prev) sel.addEventListener('change', () => {
+          const k = sel.value;
+          if (k && TEMPLATES[k]) {
+            prev.style.display = 'block';
+            prev.innerHTML = renderTemplate(k) + '<button class="btn btn-primary btn-sm" id="ea-tpl-inject" style="margin-top:6px;width:100%;">Insérer</button>';
+            document.getElementById('ea-tpl-inject').addEventListener('click', (e) => {
+              e.preventDefault();
+              const n = document.getElementById('ea-notes');
+              n.value = n.value + (n.value ? '\n\n' : '') + renderTemplateText(k);
+              prev.innerHTML = '<div style="color:#16a34a;text-align:center;padding:6px;">✓ Insérée</div>';
+              setTimeout(() => { prev.style.display = 'none'; sel.value = ''; }, 1200);
+            });
+          } else prev.style.display = 'none';
+        });
+      }, 100);
     }
   })();
   </script>
