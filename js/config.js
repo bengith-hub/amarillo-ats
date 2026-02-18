@@ -13,5 +13,6 @@ const ATS_CONFIG = {
     facturation: '698a4e0043b1c97be9727eb2',
     references: '698a4e0143b1c97be9727eb5',
     notes: '698a4df143b1c97be9727ea2'
-  }
+  },
+  orsApiKey: 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjBkMTlhODQyNDhmOTRjZGM4ZDZiMGRmMDBkZGZjN2Q5IiwiaCI6Im11cm11cjY0In0='
 };

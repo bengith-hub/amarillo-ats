@@ -1515,6 +1515,62 @@ const UI = (() => {
     return { refresh: render };
   }
 
+  // ============================================================
+  // DRAWER — slide-in panel from right (for map/route views)
+  // ============================================================
+  function drawer(title, contentHtml, { width = 520, onClose } = {}) {
+    let overlay = document.getElementById('drawer-overlay');
+    if (overlay) overlay.remove();
+
+    overlay = document.createElement('div');
+    overlay.id = 'drawer-overlay';
+    overlay.className = 'drawer-overlay';
+
+    const panel = document.createElement('div');
+    panel.className = 'drawer-panel';
+    panel.style.width = width + 'px';
+
+    panel.innerHTML = `
+      <div class="drawer-header">
+        <h3>${escHtml(title)}</h3>
+        <button class="modal-close drawer-close">&times;</button>
+      </div>
+      <div class="drawer-body">${contentHtml}</div>
+    `;
+
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    // Trigger animation
+    requestAnimationFrame(() => {
+      overlay.classList.add('visible');
+      panel.classList.add('visible');
+    });
+
+    const close = () => {
+      panel.classList.remove('visible');
+      overlay.classList.remove('visible');
+      setTimeout(() => {
+        overlay.remove();
+        if (onClose) onClose();
+      }, 300);
+      document.removeEventListener('keydown', escHandler);
+    };
+
+    const escHandler = (e) => {
+      if (e.key === 'Escape') close();
+    };
+    document.addEventListener('keydown', escHandler);
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+
+    panel.querySelector('.drawer-close').addEventListener('click', close);
+
+    return { close, panel, overlay };
+  }
+
   return {
     badge, autoBadgeStyle, entityLink, resolveLink,
     dataTable, filterBar, modal, toast,
@@ -1522,7 +1578,7 @@ const UI = (() => {
     initGlobalSearch, entrepriseAutocomplete, candidatAutocomplete, localisationAutocomplete,
     candidatDecideurLink,
     inlineEdit, statusBadge, showStatusPicker,
-    documentsSection,
+    documentsSection, drawer,
     escHtml, formatDate, formatMonthYear, formatCurrency, getParam
   };
 })();
