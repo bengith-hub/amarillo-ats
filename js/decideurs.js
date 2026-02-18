@@ -6,32 +6,148 @@
   UI.initGlobalSearch();
 
   const allDecideurs = Store.get('decideurs');
+  let tableInstance = null;
 
-  UI.filterBar('decideurs-filters', {
-    searchPlaceholder: 'Rechercher un décideur...',
-    filters: [
-      { key: 'fonction_macro', label: 'Toutes fonctions', options: Referentiels.get('decideur_fonctions_macro') },
-      { key: 'niveau_hierarchique', label: 'Tous niveaux', options: Referentiels.get('decideur_niveaux_hierarchiques') },
-      { key: 'niveau_relation', label: 'Tous niveaux relation', options: Referentiels.get('decideur_niveaux_relation') },
-      { key: 'priorite_prospection', label: 'Toutes priorités', options: Referentiels.get('decideur_priorites_prospection') }
-    ],
-    onFilter: ({ search, filters }) => {
-      let filtered = allDecideurs;
-      if (search) {
-        const q = search.toLowerCase();
-        filtered = filtered.filter(d => {
-          const name = `${d.prenom||''} ${d.nom||''}`.toLowerCase();
-          return name.includes(q) || (d.fonction || '').toLowerCase().includes(q);
-        });
-      }
-      if (filters.fonction_macro) filtered = filtered.filter(d => d.fonction_macro === filters.fonction_macro);
-      if (filters.niveau_hierarchique) filtered = filtered.filter(d => d.niveau_hierarchique === filters.niveau_hierarchique);
-      if (filters.niveau_relation) filtered = filtered.filter(d => d.niveau_relation === filters.niveau_relation);
-      if (filters.priorite_prospection) filtered = filtered.filter(d => d.priorite_prospection === filters.priorite_prospection);
-      filtered.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-      renderTable(filtered);
+  // Advanced filters
+  const FILTER_DEFINITIONS = [
+    { key: 'fonction_macro', label: 'Fonction macro', options: () => Referentiels.get('decideur_fonctions_macro') },
+    { key: 'niveau_hierarchique', label: 'Niveau hiérarchique', options: () => Referentiels.get('decideur_niveaux_hierarchiques') },
+    { key: 'niveau_relation', label: 'Niveau relation', options: () => Referentiels.get('decideur_niveaux_relation') },
+    { key: 'priorite_prospection', label: 'Priorité prospection', options: () => Referentiels.get('decideur_priorites_prospection') },
+    { key: 'role_decision', label: 'Rôle décision', options: () => Referentiels.get('decideur_roles_decision') },
+    { key: 'entreprise', label: 'Entreprise', options: () => [...new Set(allDecideurs.map(d => {
+      if (d.entreprise_id) { const e = Store.resolve('entreprises', d.entreprise_id); return e ? e.displayName : null; }
+      return null;
+    }).filter(Boolean))].sort() },
+    { key: 'perimetre', label: 'Périmètre', options: () => [...new Set(allDecideurs.map(d => d.perimetre).filter(Boolean))].sort() },
+    { key: 'localisation', label: 'Localisation', options: () => [...new Set(allDecideurs.map(d => d.localisation).filter(Boolean))].sort() },
+  ];
+
+  const activeFilters = []; // { key, mode: 'include'|'exclude', values: [] }
+  let searchValue = '';
+
+  function applyFilters() {
+    let filtered = allDecideurs;
+
+    if (searchValue) {
+      const q = searchValue.toLowerCase();
+      filtered = filtered.filter(d => {
+        const name = `${d.prenom || ''} ${d.nom || ''}`.toLowerCase();
+        return name.includes(q) ||
+          (d.fonction || '').toLowerCase().includes(q) ||
+          (d.email || '').toLowerCase().includes(q) ||
+          (d.telephone || '').toLowerCase().includes(q);
+      });
     }
-  });
+
+    for (const af of activeFilters) {
+      if (af.values.length === 0) continue;
+      const match = (d) => {
+        let val;
+        if (af.key === 'entreprise') {
+          if (d.entreprise_id) { const e = Store.resolve('entreprises', d.entreprise_id); val = e ? e.displayName : ''; }
+          else val = '';
+        } else {
+          val = d[af.key] || '';
+        }
+        return af.values.includes(val);
+      };
+      if (af.mode === 'include') filtered = filtered.filter(match);
+      else filtered = filtered.filter(d => !match(d));
+    }
+
+    filtered.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    renderTable(filtered);
+  }
+
+  function renderAdvancedFilters() {
+    const container = document.getElementById('decideurs-filters');
+    if (!container) return;
+
+    const usedKeys = activeFilters.map(f => f.key);
+    const availableFilters = FILTER_DEFINITIONS.filter(d => !usedKeys.includes(d.key));
+
+    container.innerHTML = `
+      <div class="filters-bar" style="flex-direction:column;align-items:stretch;gap:12px;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="text" class="filter-search" placeholder="Rechercher un décideur..." value="${UI.escHtml(searchValue)}" />
+          ${availableFilters.length > 0 ? `
+            <select class="filter-select" id="add-filter-select" style="color:#64748b;">
+              <option value="">+ Ajouter un filtre</option>
+              ${availableFilters.map(f => `<option value="${f.key}">${f.label}</option>`).join('')}
+            </select>
+          ` : ''}
+        </div>
+        ${activeFilters.length > 0 ? `
+          <div id="active-filters-area" style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${activeFilters.map((af, idx) => {
+              const def = FILTER_DEFINITIONS.find(d => d.key === af.key);
+              const opts = def ? def.options() : [];
+              return `
+                <div class="adv-filter-chip" data-idx="${idx}" style="display:inline-flex;align-items:center;gap:4px;background:${af.mode === 'exclude' ? '#fef2f2' : '#f0f9ff'};border:1px solid ${af.mode === 'exclude' ? '#fca5a5' : '#bae6fd'};border-radius:8px;padding:4px 8px;font-size:0.8125rem;">
+                  <button class="filter-mode-toggle" data-idx="${idx}" style="border:none;background:${af.mode === 'exclude' ? '#ef4444' : '#3b82f6'};color:#fff;border-radius:4px;padding:1px 6px;font-size:0.6875rem;cursor:pointer;font-weight:600;" title="Cliquer pour basculer inclure/exclure">
+                    ${af.mode === 'include' ? 'INCL' : 'EXCL'}
+                  </button>
+                  <span style="font-weight:600;color:#334155;">${def ? def.label : af.key}:</span>
+                  <select class="filter-value-select" data-idx="${idx}" multiple style="border:1px solid #e2e8f0;border-radius:4px;font-size:0.75rem;padding:2px 4px;min-width:120px;max-height:60px;">
+                    ${opts.map(o => `<option value="${o}" ${af.values.includes(o) ? 'selected' : ''}>${o}</option>`).join('')}
+                  </select>
+                  <button class="filter-remove" data-idx="${idx}" style="border:none;background:none;cursor:pointer;color:#94a3b8;font-size:1rem;padding:0 2px;" title="Supprimer ce filtre">&times;</button>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+
+    // Search
+    container.querySelector('.filter-search').addEventListener('input', (e) => {
+      searchValue = e.target.value;
+      applyFilters();
+    });
+
+    // Add filter
+    const addSel = container.querySelector('#add-filter-select');
+    if (addSel) {
+      addSel.addEventListener('change', (e) => {
+        if (!e.target.value) return;
+        activeFilters.push({ key: e.target.value, mode: 'include', values: [] });
+        renderAdvancedFilters();
+      });
+    }
+
+    // Toggle include/exclude
+    container.querySelectorAll('.filter-mode-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx);
+        activeFilters[idx].mode = activeFilters[idx].mode === 'include' ? 'exclude' : 'include';
+        renderAdvancedFilters();
+        applyFilters();
+      });
+    });
+
+    // Value selection
+    container.querySelectorAll('.filter-value-select').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const idx = parseInt(sel.dataset.idx);
+        activeFilters[idx].values = Array.from(sel.selectedOptions).map(o => o.value);
+        applyFilters();
+      });
+    });
+
+    // Remove filter
+    container.querySelectorAll('.filter-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx);
+        activeFilters.splice(idx, 1);
+        renderAdvancedFilters();
+        applyFilters();
+      });
+    });
+  }
+
+  renderAdvancedFilters();
 
   // Sort by creation date (most recent first)
   allDecideurs.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
