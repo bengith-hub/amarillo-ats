@@ -220,8 +220,13 @@
         { key: 'profile_code', label: 'Code Profiling Amarillo™', type: 'text' },
         { key: 'origine', label: 'Origine', type: 'text' },
         { key: 'recommande_par', label: 'Recommandé par', type: 'candidat_autocomplete' },
-        { key: 'ambassadeur', label: 'Ambassadeur', type: 'boolean', render: (v) => v ? '✅ Oui' : '❌ Non' },
-        { key: 'exposition_pouvoir', label: 'Exposition au pouvoir', type: 'text' },
+        { key: 'date_disponibilite', label: 'Date de disponibilité', type: 'date', render: (v) => v ? UI.formatDate(v) : '' },
+        { key: 'ambassadeur', label: 'Ambassadeur', type: 'select', options: ['Non', 'Neutre', 'Oui'], render: (v) => {
+          if (v === 'Oui' || v === true) return '✅ Oui';
+          if (v === 'Neutre') return '🔘 Neutre';
+          if (v === 'Non' || v === false) return '❌ Non';
+          return '';
+        }},
         { key: 'preavis', label: 'Préavis', type: 'text' },
       ],
       onAfterSave: (fieldKey) => {

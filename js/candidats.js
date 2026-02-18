@@ -266,15 +266,16 @@
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Exposition au pouvoir</label>
-          <input type="text" id="f-exposition-pouvoir" value="${UI.escHtml(c.exposition_pouvoir || '')}" />
+          <label>Date de disponibilité</label>
+          <input type="date" id="f-date-disponibilite" value="${c.date_disponibilite || ''}" />
         </div>
         <div class="form-group">
           <label>Ambassadeur</label>
           <select id="f-ambassadeur">
-            <option value="" ${c.ambassadeur === null || c.ambassadeur === undefined || c.ambassadeur === '' ? 'selected' : ''}>—</option>
-            <option value="false" ${c.ambassadeur === false ? 'selected' : ''}>Non</option>
-            <option value="true" ${c.ambassadeur === true ? 'selected' : ''}>Oui</option>
+            <option value="" ${!c.ambassadeur ? 'selected' : ''}>—</option>
+            <option value="Non" ${c.ambassadeur === 'Non' || c.ambassadeur === false ? 'selected' : ''}>Non</option>
+            <option value="Neutre" ${c.ambassadeur === 'Neutre' ? 'selected' : ''}>Neutre</option>
+            <option value="Oui" ${c.ambassadeur === 'Oui' || c.ambassadeur === true ? 'selected' : ''}>Oui</option>
           </select>
         </div>
       </div>
@@ -328,8 +329,8 @@
           diplome: overlay.querySelector('#f-diplome').value,
           origine: overlay.querySelector('#f-origine').value,
           recommande_par: overlay.querySelector('#f-recommande-par').value.trim(),
-          exposition_pouvoir: overlay.querySelector('#f-exposition-pouvoir').value.trim(),
-          ambassadeur: overlay.querySelector('#f-ambassadeur').value === '' ? null : overlay.querySelector('#f-ambassadeur').value === 'true',
+          date_disponibilite: overlay.querySelector('#f-date-disponibilite').value || '',
+          ambassadeur: overlay.querySelector('#f-ambassadeur').value || null,
           teletravail: overlay.querySelector('#f-teletravail').value.trim(),
           rtt: overlay.querySelector('#f-rtt').value === '' ? null : overlay.querySelector('#f-rtt').value === 'true',
           notes: overlay.querySelector('#f-notes').value.trim(),
