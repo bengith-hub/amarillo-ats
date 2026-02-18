@@ -61,6 +61,20 @@
     });
     const actions = Store.filter('actions', a => a.entreprise_id === entId);
 
+    // Auto-compute dernier_contact & prochaine_relance from actions
+    const todayIso = new Date().toISOString().split('T')[0];
+    const doneActions = actions.filter(a => a.statut === 'Fait' && a.date_action);
+    const computedDernier = doneActions.length > 0 ? doneActions.reduce((max, a) => a.date_action > max ? a.date_action : max, '') : null;
+    const futureRelances = actions.filter(a => (a.statut === 'À faire' || a.statut === 'A faire' || a.statut === 'En cours') && a.date_relance && a.date_relance >= todayIso);
+    const computedRelance = futureRelances.length > 0 ? futureRelances.reduce((min, a) => a.date_relance < min ? a.date_relance : min, futureRelances[0].date_relance) : null;
+    const dateUpdates = {};
+    if (computedDernier && computedDernier !== e.dernier_contact) dateUpdates.dernier_contact = computedDernier;
+    if (computedRelance && computedRelance !== e.prochaine_relance) dateUpdates.prochaine_relance = computedRelance;
+    if (Object.keys(dateUpdates).length > 0) {
+      Store.update('entreprises', entId, dateUpdates);
+      Object.assign(e, dateUpdates);
+    }
+
     document.getElementById('entreprise-content').innerHTML = `
       <div class="detail-header">
         <div style="display:flex;align-items:center;">

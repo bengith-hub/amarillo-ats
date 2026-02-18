@@ -61,6 +61,20 @@
       const missions = (d.missions_ids || []).map(mid => Store.findById('missions', mid)).filter(Boolean);
       const actions = Store.filter('actions', a => a.decideur_id === id).sort((a, b) => (b.date_action || '').localeCompare(a.date_action || ''));
 
+      // Auto-compute dernier_contact & prochaine_relance from actions
+      const todayIso = new Date().toISOString().split('T')[0];
+      const doneActions = actions.filter(a => a.statut === 'Fait' && a.date_action);
+      const computedDernier = doneActions.length > 0 ? doneActions.reduce((max, a) => a.date_action > max ? a.date_action : max, '') : null;
+      const futureRelances = actions.filter(a => (a.statut === 'À faire' || a.statut === 'A faire' || a.statut === 'En cours') && a.date_relance && a.date_relance >= todayIso);
+      const computedRelance = futureRelances.length > 0 ? futureRelances.reduce((min, a) => a.date_relance < min ? a.date_relance : min, futureRelances[0].date_relance) : null;
+      const updates = {};
+      if (computedDernier && computedDernier !== d.dernier_contact) updates.dernier_contact = computedDernier;
+      if (computedRelance && computedRelance !== d.prochaine_relance) updates.prochaine_relance = computedRelance;
+      if (Object.keys(updates).length > 0) {
+        Store.update('decideurs', id, updates);
+        Object.assign(d, updates);
+      }
+
       const STATUTS_RELATION = Referentiels.get('decideur_niveaux_relation');
       const PRIORITES = Referentiels.get('decideur_priorites_prospection');
 
