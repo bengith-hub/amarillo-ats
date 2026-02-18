@@ -33,6 +33,12 @@
   renderEntreprisesCibles();
   renderDSIProfile();
 
+  // Refresh header + sidebar after any inline edit that affects them
+  function refreshDependentViews() {
+    renderHeader();
+    renderSidebar();
+  }
+
   function renderHeader() {
     const entreprise = candidat.entreprise_actuelle_id ? Store.resolve('entreprises', candidat.entreprise_actuelle_id) : null;
 
@@ -233,7 +239,8 @@
         { key: 'preavis', label: 'Préavis', type: 'text' },
       ],
       onAfterSave: (fieldKey) => {
-        // When open_to_work changes, update the date label
+        refreshDependentViews();
+        // When open_to_work changes, re-render full profile (date labels change)
         if (fieldKey === 'open_to_work') {
           renderProfil();
         }
@@ -251,10 +258,14 @@
         { key: 'email', label: 'Email', type: 'text', render: (v) => v ? `<a href="mailto:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
         { key: 'telephone', label: 'Téléphone', type: 'text', render: (v) => v ? `<a href="tel:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
         { key: 'linkedin', label: 'LinkedIn', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(UI.normalizeUrl(v))}" target="_blank" class="entity-link">Profil LinkedIn</a>` : '' },
+        { key: 'google_drive_url', label: 'Google Drive', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(UI.normalizeUrl(v))}" target="_blank" class="entity-link">Dossier Drive</a>` : '' },
         { key: 'adresse_ligne1', label: 'Adresse', type: 'text' },
         { key: 'code_postal', label: 'Code postal', type: 'text' },
         { key: 'ville', label: 'Ville', type: 'text' },
-      ]
+      ],
+      onAfterSave: () => {
+        refreshDependentViews();
+      }
     });
 
     // --- Driving time button ---
@@ -273,8 +284,9 @@
         { key: 'nb_rtt', label: 'Nb RTT (jours)', type: 'number' },
       ],
       onAfterSave: () => {
-        // Re-render to update package totals
+        // Re-render to update package totals + sidebar
         renderProfil();
+        refreshDependentViews();
       }
     });
 
