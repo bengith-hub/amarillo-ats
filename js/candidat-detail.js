@@ -173,6 +173,7 @@
         </div>
         <div class="card-body">
           <div class="inline-fields-grid" id="profil-contact-fields"></div>
+          <div id="trajet-button-container" style="margin-top:12px;"></div>
         </div>
       </div>
 
@@ -244,6 +245,9 @@
         { key: 'ville', label: 'Ville', type: 'text' },
       ]
     });
+
+    // --- Driving time button ---
+    renderTrajetButton();
 
     // Inline editable — Package
     UI.inlineEdit('profil-package-fields', {
@@ -1016,5 +1020,195 @@
 
     document.getElementById('btn-add-cible-candidat')?.addEventListener('click', () => showAddCibleModal('candidat'));
     document.getElementById('btn-add-cible-recruteur')?.addEventListener('click', () => showAddCibleModal('recruteur'));
+  }
+
+  // ============================================================
+  // TEMPS DE TRAJET — drawer with mini-map
+  // ============================================================
+  function renderTrajetButton() {
+    const container = document.getElementById('trajet-button-container');
+    if (!container) return;
+
+    const isMobile = Geocoder.isMobile(candidat.localisation);
+
+    if (isMobile) {
+      container.innerHTML = `<span class="badge" style="background:#dbeafe;color:#1d4ed8;">Mobile — ${UI.escHtml(candidat.localisation || '')}</span>`;
+      return;
+    }
+
+    const hasLocation = candidat.localisation || candidat.ville;
+    if (!hasLocation) {
+      container.innerHTML = '<span style="font-size:0.75rem;color:#94a3b8;font-style:italic;">Ajoutez une adresse pour calculer les temps de trajet</span>';
+      return;
+    }
+
+    container.innerHTML = `<button class="btn btn-sm btn-secondary" id="btn-trajet" style="gap:6px;">
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+      Temps de trajet
+    </button>`;
+
+    document.getElementById('btn-trajet').addEventListener('click', openTrajetDrawer);
+  }
+
+  async function openTrajetDrawer() {
+    // Init routing
+    const config = API.getConfig();
+    if (config.orsApiKey || ATS_CONFIG.orsApiKey) {
+      Routing.init(config.orsApiKey || ATS_CONFIG.orsApiKey);
+    }
+
+    // Geocode candidate
+    const candidatCoords = await Geocoder.geocode(candidat);
+    if (!candidatCoords) {
+      UI.toast('Impossible de localiser ce candidat', 'error');
+      return;
+    }
+
+    const drawerContent = `
+      <div id="trajet-map" style="height:280px;border-radius:8px;margin-bottom:16px;background:#f1f5f9;"></div>
+      <div style="margin-bottom:16px;">
+        <label style="font-size:0.8125rem;font-weight:600;color:#475569;display:block;margin-bottom:4px;">Ajouter une entreprise</label>
+        <div style="position:relative;">
+          <input type="text" id="trajet-ent-search" placeholder="Tapez pour rechercher..." style="width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:0.875rem;" />
+        </div>
+      </div>
+      <div id="trajet-results" style="display:flex;flex-direction:column;gap:8px;"></div>
+    `;
+
+    const { panel, close } = UI.drawer(`Temps de trajet — ${candidat.prenom || ''} ${candidat.nom || ''}`, drawerContent, { width: 480 });
+
+    // Init mini-map after DOM is ready
+    setTimeout(() => {
+      const miniMap = L.map('trajet-map', { zoomControl: true }).setView([candidatCoords.lat, candidatCoords.lng], 10);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OSM',
+        maxZoom: 18
+      }).addTo(miniMap);
+
+      // Candidate marker
+      L.circleMarker([candidatCoords.lat, candidatCoords.lng], {
+        radius: 8,
+        fillColor: '#3b82f6',
+        color: '#fff',
+        weight: 2,
+        fillOpacity: 0.9
+      }).addTo(miniMap).bindTooltip(`${UI.escHtml((candidat.prenom || '') + ' ' + (candidat.nom || ''))}`, { permanent: true, direction: 'top', offset: [0, -10], className: 'carte-tooltip' });
+
+      // Track added entreprises
+      const addedEntreprises = [];
+      const entMarkers = [];
+
+      // Enterprise autocomplete
+      const searchInput = panel.querySelector('#trajet-ent-search');
+      const resultsContainer = panel.querySelector('#trajet-results');
+      let dropdown = null;
+
+      searchInput.addEventListener('input', () => {
+        const q = searchInput.value.toLowerCase().trim();
+        if (dropdown) dropdown.remove();
+        if (q.length < 1) return;
+
+        const allEnts = Store.get('entreprises');
+        const matches = allEnts.filter(e => (e.nom || '').toLowerCase().includes(q)).slice(0, 8);
+
+        dropdown = document.createElement('div');
+        dropdown.style.cssText = 'position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:200;max-height:200px;overflow-y:auto;';
+
+        matches.forEach(e => {
+          const item = document.createElement('div');
+          item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.8125rem;border-bottom:1px solid #f1f5f9;';
+          item.innerHTML = `<strong>${UI.escHtml(e.nom)}</strong> <span style="color:#64748b;font-size:0.75rem;">${UI.escHtml(e.localisation || '')}</span>`;
+          item.addEventListener('mousedown', async (ev) => {
+            ev.preventDefault();
+            searchInput.value = '';
+            if (dropdown) dropdown.remove();
+            dropdown = null;
+            await addEntreprise(e);
+          });
+          item.addEventListener('mouseenter', () => item.style.background = '#f8fafc');
+          item.addEventListener('mouseleave', () => item.style.background = '#fff');
+          dropdown.appendChild(item);
+        });
+
+        searchInput.parentElement.appendChild(dropdown);
+      });
+
+      searchInput.addEventListener('blur', () => {
+        setTimeout(() => { if (dropdown) { dropdown.remove(); dropdown = null; } }, 200);
+      });
+
+      async function addEntreprise(ent) {
+        if (addedEntreprises.find(e => e.id === ent.id)) {
+          UI.toast('Entreprise déjà ajoutée', 'error');
+          return;
+        }
+
+        const entCoords = await Geocoder.geocodeLocation(ent.localisation);
+        if (!entCoords) {
+          UI.toast('Impossible de localiser cette entreprise', 'error');
+          return;
+        }
+
+        // Add marker
+        const marker = L.marker([entCoords.lat, entCoords.lng], {
+          icon: L.divIcon({
+            className: 'entreprise-marker-icon',
+            html: '<div style="width:14px;height:14px;background:#10b981;border:2px solid #fff;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>',
+            iconSize: [14, 14],
+            iconAnchor: [7, 7]
+          })
+        }).addTo(miniMap);
+
+        // Add dashed line
+        const line = L.polyline([[candidatCoords.lat, candidatCoords.lng], [entCoords.lat, entCoords.lng]], {
+          color: '#10b981',
+          weight: 2,
+          dashArray: '6, 8',
+          opacity: 0.6
+        }).addTo(miniMap);
+
+        entMarkers.push(marker, line);
+
+        // Calculate driving time
+        const loadingId = `trajet-loading-${ent.id}`;
+        const resultEl = document.createElement('div');
+        resultEl.id = `trajet-result-${ent.id}`;
+        resultEl.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+            <div>
+              <div style="font-weight:600;font-size:0.8125rem;">${UI.escHtml(ent.nom)}</div>
+              <div style="font-size:0.6875rem;color:#64748b;">${UI.escHtml(ent.localisation || '')}</div>
+            </div>
+            <div id="${loadingId}" style="font-size:0.8125rem;color:#94a3b8;">Calcul...</div>
+          </div>
+        `;
+        resultsContainer.appendChild(resultEl);
+        addedEntreprises.push(ent);
+
+        // Fit bounds to show all markers
+        const allPoints = [[candidatCoords.lat, candidatCoords.lng], [entCoords.lat, entCoords.lng]];
+        addedEntreprises.forEach((ae, i) => {
+          // Already added to markers
+        });
+        miniMap.fitBounds(L.latLngBounds(
+          [candidatCoords, ...entMarkers.filter(m => m instanceof L.Marker).map(m => m.getLatLng())]
+        ), { padding: [30, 30] });
+
+        // Get driving time
+        const durations = await Routing.matrix(candidatCoords, [entCoords]);
+        const loadEl = document.getElementById(loadingId);
+        if (loadEl && durations && durations[0] !== null) {
+          const dur = durations[0];
+          const color = Routing.durationColor(dur);
+          loadEl.innerHTML = `<span style="font-weight:700;color:${color};">${Routing.formatDuration(dur)}</span><br/><span style="font-size:0.6875rem;color:#94a3b8;">en voiture</span>`;
+          marker.bindTooltip(`${UI.escHtml(ent.nom)}<br/><strong style="color:${color};">${Routing.formatDuration(dur)}</strong>`, { direction: 'top', offset: [0, -8], className: 'carte-tooltip' });
+        } else if (loadEl) {
+          loadEl.textContent = 'Erreur';
+        }
+      }
+
+      // Invalidate map size after drawer animation
+      setTimeout(() => miniMap.invalidateSize(), 350);
+    }, 50);
   }
 })();
