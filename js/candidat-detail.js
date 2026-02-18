@@ -31,6 +31,7 @@
   renderDocuments();
   renderSidebar();
   renderEntreprisesCibles();
+  renderDSIProfile();
 
   function renderHeader() {
     const entreprise = candidat.entreprise_actuelle_id ? Store.resolve('entreprises', candidat.entreprise_actuelle_id) : null;
@@ -136,6 +137,7 @@
         </div>
         <div class="card-body">
           <div class="inline-fields-grid" id="profil-info-fields"></div>
+          <div id="dsi-profile-display"></div>
         </div>
       </div>
 
@@ -234,6 +236,10 @@
         // When open_to_work changes, update the date label
         if (fieldKey === 'open_to_work') {
           renderProfil();
+        }
+        if (fieldKey === 'profile_code') {
+          DSIProfile.clearCache(candidat.profile_code);
+          renderDSIProfile();
         }
       }
     });
@@ -1215,5 +1221,106 @@
       // Invalidate map size after drawer animation
       setTimeout(() => miniMap.invalidateSize(), 350);
     }, 50);
+  }
+
+  // ============================================================
+  // DSI PROFILE DISPLAY
+  // ============================================================
+  async function renderDSIProfile() {
+    const container = document.getElementById('dsi-profile-display');
+    if (!container) return;
+
+    const code = candidat.profile_code;
+    if (!code || !code.startsWith('AMA')) {
+      container.innerHTML = '';
+      return;
+    }
+
+    // Loading state
+    container.innerHTML = `
+      <div style="margin-top:12px;background:#FFFDF0;border:1px solid #FEE566;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:10px;">
+        <div style="width:16px;height:16px;border:2px solid #FECC02;border-top-color:transparent;border-radius:50%;animation:dsi-spin 0.8s linear infinite;"></div>
+        <span style="font-size:0.8125rem;color:#92700c;">Chargement du profil DSI...</span>
+      </div>
+      <style>@keyframes dsi-spin { to { transform: rotate(360deg); } }</style>
+    `;
+
+    const result = await DSIProfile.fetchProfile(code);
+
+    if (!result || result.status === 'error') {
+      container.innerHTML = `
+        <div style="margin-top:12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;font-size:0.8125rem;color:#991b1b;">
+          Impossible de charger le profil DSI. <a href="#" id="dsi-retry" style="color:#dc2626;text-decoration:underline;">Réessayer</a>
+        </div>
+      `;
+      document.getElementById('dsi-retry')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        DSIProfile.clearCache(code);
+        renderDSIProfile();
+      });
+      return;
+    }
+
+    if (result.status === 'not_found') {
+      container.innerHTML = `
+        <div style="margin-top:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;font-size:0.8125rem;color:#64748b;">
+          Code <strong>${UI.escHtml(code)}</strong> — Session non trouvée. Le candidat n'a pas encore passé le profiling.
+        </div>
+      `;
+      return;
+    }
+
+    if (result.status === 'in_progress') {
+      container.innerHTML = `
+        <div style="margin-top:12px;background:#FFFDF0;border:1px solid #FEE566;border-radius:8px;padding:10px 14px;font-size:0.8125rem;color:#92700c;">
+          <strong>${UI.escHtml(code)}</strong> — Profiling en cours (non terminé)
+        </div>
+      `;
+      return;
+    }
+
+    // Completed — render profile card
+    const pillarNames = ['Leadership', 'Opérationnel', 'Innovation'];
+    const pillarColors = ['#FECC02', '#2D6A4F', '#3A5BA0'];
+    const scoreColor = result.avgNorm >= 70 ? '#16a34a' : result.avgNorm >= 50 ? '#FECC02' : result.avgNorm >= 30 ? '#E8A838' : '#dc2626';
+
+    container.innerHTML = `
+      <div style="margin-top:12px;background:linear-gradient(135deg, #1e293b 0%, #0f172a 100%);border-radius:10px;padding:16px 20px;color:#f8fafc;position:relative;overflow:hidden;">
+        <div style="position:absolute;top:0;right:0;width:120px;height:120px;background:radial-gradient(circle,rgba(254,204,2,0.08) 0%,transparent 70%);"></div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div>
+            <div style="font-size:0.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;margin-bottom:4px;">Profil DSI Amarillo\u2122</div>
+            <div style="font-size:1.125rem;font-weight:700;color:#FECC02;">${UI.escHtml(result.profile)}</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-size:0.625rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;margin-bottom:2px;">Indice global</div>
+            <div style="font-size:1.75rem;font-weight:800;color:${scoreColor};font-variant-numeric:tabular-nums;">${result.avgNorm}<span style="font-size:0.75rem;color:#94a3b8;font-weight:500;">/100</span></div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;margin-top:14px;">
+          ${result.pillarScoresNorm.map((score, i) => `
+            <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:6px;padding:8px 10px;text-align:center;">
+              <div style="font-size:0.625rem;color:#94a3b8;margin-bottom:2px;">${pillarNames[i]}</div>
+              <div style="font-size:1rem;font-weight:700;color:${pillarColors[i]};">${score}</div>
+              <div style="height:3px;background:rgba(255,255,255,0.1);border-radius:2px;margin-top:4px;">
+                <div style="height:100%;width:${score}%;background:${pillarColors[i]};border-radius:2px;transition:width 0.6s ease;"></div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+
+        <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;">
+          <a href="https://amarillo-dsi-profile.netlify.app/?session=${UI.escHtml(code)}" target="_blank"
+             style="font-size:0.75rem;color:#94a3b8;text-decoration:none;display:inline-flex;align-items:center;gap:4px;transition:color 0.15s;"
+             onmouseenter="this.style.color='#FECC02'" onmouseleave="this.style.color='#94a3b8'">
+            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+            Voir le rapport complet
+          </a>
+          <span style="font-size:0.625rem;color:#475569;">${UI.escHtml(code)}</span>
+        </div>
+      </div>
+    `;
   }
 })();
