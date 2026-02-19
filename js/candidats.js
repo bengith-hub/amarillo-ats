@@ -438,6 +438,17 @@
       width: 600,
       draftKey: isEdit ? 'candidat_edit_' + c.id : 'candidat_new',
       onSave: async (overlay) => {
+        // Authentifier Google Drive IMMÉDIATEMENT (le clic est un geste utilisateur valide,
+        // donc le popup OAuth ne sera pas bloqué). On fait ça avant tout await.
+        const needsDrive = _pendingCVFile && GoogleDrive.isConfigured();
+        if (needsDrive) {
+          try {
+            await GoogleDrive.authenticate();
+          } catch (authErr) {
+            console.warn('Auth Drive au save échouée:', authErr);
+          }
+        }
+
         const data = {
           prenom: overlay.querySelector('#f-prenom').value.trim(),
           nom: overlay.querySelector('#f-nom').value.trim(),
@@ -546,6 +557,10 @@
             } catch (driveErr) {
               console.error('Erreur Google Drive:', driveErr);
               UI.toast('Candidat créé, mais erreur Drive : ' + driveErr.message, 'error');
+              _pendingCVFile = null;
+              // Ne pas recharger immédiatement pour que l'utilisateur voie l'erreur
+              setTimeout(() => location.reload(), 3000);
+              return;
             }
             _pendingCVFile = null;
           }
@@ -682,6 +697,16 @@
             loadingDiv.style.display = 'none';
 
             UI.toast(`CV importé : ${filledCount} champs remplis`, 'success');
+
+            // Pré-authentifier Google Drive maintenant (le geste utilisateur est encore actif,
+            // donc le popup OAuth ne sera pas bloqué par le navigateur)
+            if (driveReady) {
+              try {
+                await GoogleDrive.authenticate();
+              } catch (authErr) {
+                console.warn('Pré-auth Drive échouée (sera retentée à la sauvegarde):', authErr);
+              }
+            }
           } catch (err) {
             resultDiv.style.color = '#dc2626';
             resultDiv.textContent = err.message;
