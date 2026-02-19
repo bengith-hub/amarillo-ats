@@ -221,6 +221,27 @@
     const entreprises = Store.get('entreprises');
 
     const bodyHtml = `
+      ${!isEdit ? `
+      <div id="cv-import-section" style="margin-bottom:20px;padding:16px;background:#f0f9ff;border:2px dashed #3b82f6;border-radius:10px;text-align:center;">
+        <input type="file" id="cv-file-input" accept=".pdf,.txt,.text,.md" style="display:none;" />
+        <div id="cv-import-idle">
+          <div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;">
+            <svg style="width:22px;height:22px;color:#3b82f6;flex-shrink:0;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+            <button type="button" class="btn btn-primary" id="btn-import-cv" style="font-size:0.875rem;">Importer un CV</button>
+            <button type="button" class="btn btn-secondary" id="btn-config-openai" style="font-size:0.75rem;" title="Configurer la clé API OpenAI">Clé API</button>
+          </div>
+          <p style="margin:8px 0 0;font-size:0.75rem;color:#64748b;">PDF ou fichier texte — les champs seront pré-remplis automatiquement via IA</p>
+        </div>
+        <div id="cv-import-loading" style="display:none;">
+          <div style="display:inline-flex;align-items:center;gap:10px;color:#3b82f6;font-weight:500;">
+            <span style="width:20px;height:20px;border:3px solid #bfdbfe;border-top-color:#3b82f6;border-radius:50%;animation:cv-spin 0.8s linear infinite;display:inline-block;"></span>
+            Analyse du CV en cours...
+          </div>
+        </div>
+        <div id="cv-import-result" style="display:none;font-weight:500;"></div>
+      </div>
+      <style>@keyframes cv-spin{to{transform:rotate(360deg)}}</style>
+      ` : ''}
       <div class="form-row">
         <div class="form-group">
           <label>Prénom</label>
@@ -492,6 +513,120 @@
         const label = document.getElementById('label-debut-poste');
         if (label) label.textContent = otwSelect.value === 'true' ? 'Début de recherche d\'emploi' : 'Prise de poste actuel';
       });
+    }
+
+    // --- CV Import logic ---
+    if (!isEdit) {
+      const btnImport = document.getElementById('btn-import-cv');
+      const btnConfig = document.getElementById('btn-config-openai');
+      const fileInput = document.getElementById('cv-file-input');
+      const idleDiv = document.getElementById('cv-import-idle');
+      const loadingDiv = document.getElementById('cv-import-loading');
+      const resultDiv = document.getElementById('cv-import-result');
+
+      if (btnImport && fileInput) {
+        btnImport.addEventListener('click', () => {
+          if (!CVParser.getOpenAIKey()) {
+            CVParser.showKeyConfigModal(() => {
+              UI.toast('Clé enregistrée. Vous pouvez maintenant importer un CV.');
+            });
+            return;
+          }
+          fileInput.click();
+        });
+
+        btnConfig.addEventListener('click', () => {
+          CVParser.showKeyConfigModal();
+        });
+
+        fileInput.addEventListener('change', async () => {
+          const file = fileInput.files[0];
+          if (!file) return;
+
+          idleDiv.style.display = 'none';
+          loadingDiv.style.display = 'block';
+          resultDiv.style.display = 'none';
+
+          try {
+            const extracted = await CVParser.parseCV(file);
+            fillFormFromCV(extracted);
+
+            const filledCount = Object.values(extracted).filter(v => v && v !== '').length;
+            resultDiv.style.color = '#059669';
+            resultDiv.innerHTML = `<svg style="width:18px;height:18px;vertical-align:middle;margin-right:6px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>${filledCount} champs pré-remplis depuis <strong>${UI.escHtml(file.name)}</strong>`;
+            resultDiv.style.display = 'block';
+            loadingDiv.style.display = 'none';
+
+            UI.toast(`CV importé : ${filledCount} champs remplis`, 'success');
+          } catch (err) {
+            resultDiv.style.color = '#dc2626';
+            resultDiv.textContent = err.message;
+            resultDiv.style.display = 'block';
+            loadingDiv.style.display = 'none';
+            idleDiv.style.display = 'block';
+            UI.toast(err.message, 'error');
+          }
+
+          // Reset file input pour permettre de re-sélectionner le même fichier
+          fileInput.value = '';
+        });
+      }
+    }
+
+    function fillFormFromCV(data) {
+      const overlay = document.getElementById('modal-overlay');
+      if (!overlay) return;
+
+      const fieldMap = {
+        prenom: 'f-prenom',
+        nom: 'f-nom',
+        email: 'f-email',
+        telephone: 'f-telephone',
+        linkedin: 'f-linkedin',
+        adresse_ligne1: 'f-adresse-ligne1',
+        code_postal: 'f-code-postal',
+        ville: 'f-ville',
+        localisation: 'f-localisation',
+        poste_actuel: 'f-poste-actuel',
+        date_naissance: 'f-date-naissance',
+        debut_carriere: 'f-debut-carriere',
+        debut_poste_actuel: 'f-debut-poste',
+        notes: 'f-notes'
+      };
+
+      for (const [key, inputId] of Object.entries(fieldMap)) {
+        if (data[key]) {
+          const el = overlay.querySelector('#' + inputId);
+          if (el) el.value = data[key];
+        }
+      }
+
+      // Entreprise : remplir le champ texte de recherche (pas l'ID)
+      if (data.entreprise_nom) {
+        const searchEl = overlay.querySelector('#f-entreprise-search');
+        if (searchEl) searchEl.value = data.entreprise_nom;
+      }
+
+      // Diplôme : sélectionner l'option correspondante
+      if (data.diplome) {
+        const diplomeSelect = overlay.querySelector('#f-diplome');
+        if (diplomeSelect) {
+          const option = Array.from(diplomeSelect.options).find(o => o.value === data.diplome);
+          if (option) diplomeSelect.value = data.diplome;
+        }
+      }
+
+      // Synthèse 30s et notes : concaténer si notes contient déjà quelque chose
+      if (data.synthese_30s) {
+        const notesEl = overlay.querySelector('#f-notes');
+        if (notesEl) {
+          const existingNotes = notesEl.value.trim();
+          const prefix = data.synthese_30s;
+          const skills = data.notes || '';
+          const parts = [prefix, skills, existingNotes].filter(Boolean);
+          notesEl.value = parts.join('\n\n');
+        }
+      }
     }
   }
 
