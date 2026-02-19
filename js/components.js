@@ -602,6 +602,43 @@ const UI = (() => {
     });
   }
 
+  // Rich text rendering — converts plain text with bullet points to formatted HTML
+  function renderRichText(text) {
+    if (!text) return '';
+    const escaped = escHtml(text);
+    const lines = escaped.split('\n');
+    let html = '';
+    let inUl = false;
+    let inOl = false;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const bulletMatch = trimmed.match(/^[-*•]\s+(.*)/);
+      const numberedMatch = trimmed.match(/^(\d+)[.)]\s+(.*)/);
+
+      if (bulletMatch) {
+        if (inOl) { html += '</ol>'; inOl = false; }
+        if (!inUl) { html += '<ul style="margin:4px 0;padding-left:20px;">'; inUl = true; }
+        html += `<li>${bulletMatch[1]}</li>`;
+      } else if (numberedMatch) {
+        if (inUl) { html += '</ul>'; inUl = false; }
+        if (!inOl) { html += '<ol style="margin:4px 0;padding-left:20px;">'; inOl = true; }
+        html += `<li>${numberedMatch[2]}</li>`;
+      } else {
+        if (inUl) { html += '</ul>'; inUl = false; }
+        if (inOl) { html += '</ol>'; inOl = false; }
+        if (trimmed === '') {
+          html += '<div style="height:8px;"></div>';
+        } else {
+          html += `<div>${line}</div>`;
+        }
+      }
+    }
+    if (inUl) html += '</ul>';
+    if (inOl) html += '</ol>';
+    return html;
+  }
+
   // Utility functions
   function escHtml(str) {
     if (!str) return '';
@@ -945,7 +982,7 @@ const UI = (() => {
         const display = f.render ? f.render(value, record) : escHtml(value || '');
         return `
           <div class="inline-field" data-field="${f.key}" data-type="${f.type || 'text'}">
-            <div class="inline-field-label">${f.label}</div>
+            ${f.label ? `<div class="inline-field-label">${f.label}</div>` : ''}
             <div class="inline-field-value" data-field-key="${f.key}" title="Cliquer pour modifier">${display || '<span class="inline-field-empty">—</span>'}</div>
           </div>
         `;
@@ -1060,7 +1097,7 @@ const UI = (() => {
           renderFields();
         };
         input.addEventListener('blur', finish);
-        input.addEventListener('change', finish);
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') { el.classList.remove('editing'); renderFields(); } });
       } else if (fieldDef.type === 'autocomplete' && fieldDef.options) {
         // Autocomplete with referentiel suggestions
         const wrapper = document.createElement('div');
@@ -1641,7 +1678,7 @@ const UI = (() => {
     candidatDecideurLink,
     inlineEdit, statusBadge, showStatusPicker,
     documentsSection, drawer,
-    escHtml, normalizeUrl, formatDate, formatMonthYear, formatCurrency, getParam
+    escHtml, renderRichText, normalizeUrl, formatDate, formatMonthYear, formatCurrency, getParam
   };
 })();
 

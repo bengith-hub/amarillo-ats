@@ -419,36 +419,57 @@
       renderEntretienNotes(filtered);
     });
 
-    // Inline edit bindings (unchanged)
+    // Consolidate old separate fields into single textarea fields (one-time migration)
+    const motivationParts = [candidat.motivation_changement, candidat.motivation_drivers].filter(Boolean);
+    if (candidat.motivation_changement && motivationParts.length > 0) {
+      const combined = motivationParts.join('\n\n');
+      candidat.motivation_drivers = combined;
+      candidat.motivation_changement = '';
+      Store.update('candidats', id, { motivation_drivers: combined, motivation_changement: '' });
+    }
+
+    const lectureParts = [
+      candidat.fit_poste ? `Fit poste : ${candidat.fit_poste}` : '',
+      candidat.fit_culture ? `Fit culture : ${candidat.fit_culture}` : '',
+      candidat.risques ? `Risques : ${candidat.risques}` : '',
+      candidat.lecture_recruteur || ''
+    ].filter(Boolean);
+    if (candidat.fit_poste || candidat.fit_culture || candidat.risques) {
+      const combined = lectureParts.join('\n');
+      candidat.lecture_recruteur = combined;
+      candidat.fit_poste = '';
+      candidat.fit_culture = '';
+      candidat.risques = '';
+      Store.update('candidats', id, { lecture_recruteur: combined, fit_poste: '', fit_culture: '', risques: '' });
+    }
+
+    const richRender = (v) => v ? UI.renderRichText(v) : '';
+
     UI.inlineEdit('entretien-synthese', {
       entity: 'candidats', recordId: id,
       fields: [
-        { key: 'synthese_30s', label: 'Synthèse', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' }
+        { key: 'synthese_30s', label: '', type: 'textarea', render: richRender }
       ]
     });
 
     UI.inlineEdit('entretien-parcours', {
       entity: 'candidats', recordId: id,
       fields: [
-        { key: 'parcours_cible', label: 'Parcours cible', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' }
+        { key: 'parcours_cible', label: '', type: 'textarea', render: richRender }
       ]
     });
 
     UI.inlineEdit('entretien-motivation', {
       entity: 'candidats', recordId: id,
       fields: [
-        { key: 'motivation_changement', label: 'Motivation changement', type: 'text' },
-        { key: 'motivation_drivers', label: 'Drivers', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' }
+        { key: 'motivation_drivers', label: '', type: 'textarea', render: richRender }
       ]
     });
 
     UI.inlineEdit('entretien-lecture', {
       entity: 'candidats', recordId: id,
       fields: [
-        { key: 'fit_poste', label: 'Fit poste', type: 'text' },
-        { key: 'fit_culture', label: 'Fit culture', type: 'text' },
-        { key: 'risques', label: 'Risques', type: 'text' },
-        { key: 'lecture_recruteur', label: 'Lecture recruteur', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' }
+        { key: 'lecture_recruteur', label: '', type: 'textarea', render: richRender }
       ]
     });
   }
