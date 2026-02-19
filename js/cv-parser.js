@@ -97,25 +97,37 @@ Format JSON attendu :
 }
 
 Pour "synthese_30s", rédige un résumé professionnel de 2-3 phrases.
-Pour "notes", liste les compétences clés et technologies mentionnées.
+Pour "notes", reprends le paragraphe de présentation/profil/à propos du candidat tel qu'il apparaît dans le CV (l'accroche ou le résumé en haut du CV). Si aucun paragraphe de ce type n'existe, laisse vide.
 Pour "localisation", indique la région ou grande ville (ex: "Paris", "Lyon", "Île-de-France").`;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.1,
-        max_tokens: 2000
-      })
+    const requestBody = JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: 0.1,
+      max_tokens: 2000
     });
+
+    const maxRetries = 3;
+    let response;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: requestBody
+      });
+
+      if (response.status !== 429 || attempt === maxRetries) break;
+
+      // Backoff exponentiel : 2s, 4s, 8s
+      const wait = Math.pow(2, attempt + 1) * 1000;
+      await new Promise(r => setTimeout(r, wait));
+    }
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
@@ -123,7 +135,7 @@ Pour "localisation", indique la région ou grande ville (ex: "Paris", "Lyon", "�
         throw new Error('Clé API OpenAI invalide. Vérifiez votre clé dans la configuration.');
       }
       if (response.status === 429) {
-        throw new Error('Limite de requêtes OpenAI atteinte. Réessayez dans quelques secondes.');
+        throw new Error('Limite de requêtes OpenAI atteinte. Réessayez dans 30 secondes. Si le problème persiste, vérifiez votre quota sur platform.openai.com.');
       }
       throw new Error(`Erreur OpenAI (${response.status}): ${err.error?.message || 'Erreur inconnue'}`);
     }

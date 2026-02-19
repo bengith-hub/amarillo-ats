@@ -235,7 +235,7 @@
             <button type="button" class="btn btn-secondary" id="btn-config-openai" style="font-size:0.75rem;" title="Configurer la clé API OpenAI">Clé OpenAI</button>
             <button type="button" class="btn btn-secondary" id="btn-config-gdrive" style="font-size:0.75rem;" title="Configurer Google Drive">Drive</button>
           </div>
-          <p style="margin:8px 0 0;font-size:0.75rem;color:#64748b;">PDF ou fichier texte — les champs seront pré-remplis automatiquement via IA</p>
+          <p style="margin:8px 0 0;font-size:0.75rem;color:#64748b;">PDF ou fichier texte — glissez-déposez ou cliquez pour importer</p>
         </div>
         <div id="cv-import-loading" style="display:none;">
           <div style="display:inline-flex;align-items:center;gap:10px;color:#3b82f6;font-weight:500;">
@@ -551,6 +551,8 @@
       const loadingDiv = document.getElementById('cv-import-loading');
       const resultDiv = document.getElementById('cv-import-result');
 
+      const dropZone = document.getElementById('cv-import-section');
+
       if (btnImport && fileInput) {
         btnImport.addEventListener('click', () => {
           if (!CVParser.getOpenAIKey()) {
@@ -561,6 +563,59 @@
           }
           fileInput.click();
         });
+
+        // --- Drag & Drop sur la zone CV ---
+        if (dropZone) {
+          dropZone.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.style.background = '#dbeafe';
+            dropZone.style.borderColor = '#2563eb';
+          });
+
+          dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.style.background = '#dbeafe';
+            dropZone.style.borderColor = '#2563eb';
+          });
+
+          dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.style.background = '#f0f9ff';
+            dropZone.style.borderColor = '#3b82f6';
+          });
+
+          dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.style.background = '#f0f9ff';
+            dropZone.style.borderColor = '#3b82f6';
+
+            const file = e.dataTransfer.files[0];
+            if (!file) return;
+
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (!['pdf', 'txt', 'text', 'md'].includes(ext)) {
+              UI.toast('Format non supporté. Utilisez un fichier PDF, TXT ou MD.', 'error');
+              return;
+            }
+
+            if (!CVParser.getOpenAIKey()) {
+              CVParser.showKeyConfigModal(() => {
+                UI.toast('Clé enregistrée. Glissez à nouveau votre CV.');
+              });
+              return;
+            }
+
+            // Simuler la sélection de fichier via le file input
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            fileInput.files = dataTransfer.files;
+            fileInput.dispatchEvent(new Event('change'));
+          });
+        }
 
         btnConfig.addEventListener('click', () => {
           CVParser.showKeyConfigModal();
@@ -644,10 +699,35 @@
         }
       }
 
-      // Entreprise : remplir le champ texte de recherche (pas l'ID)
+      // Entreprise : chercher dans la DB ou créer automatiquement
       if (data.entreprise_nom) {
         const searchEl = overlay.querySelector('#f-entreprise-search');
+        const hiddenEl = overlay.querySelector('#f-entreprise');
         if (searchEl) searchEl.value = data.entreprise_nom;
+
+        if (hiddenEl) {
+          const entreprises = Store.get('entreprises');
+          const nomLower = data.entreprise_nom.toLowerCase().trim();
+          const match = entreprises.find(e => (e.nom || '').toLowerCase().trim() === nomLower);
+
+          if (match) {
+            hiddenEl.value = match.id;
+          } else {
+            // Créer l'entreprise automatiquement
+            const newEnt = {
+              id: API.generateId('ent'),
+              nom: data.entreprise_nom.trim(),
+              secteur: '', taille: '', ca: '', localisation: data.localisation || '',
+              priorite: '', statut: 'À cibler',
+              site_web: '', telephone: '', angle_approche: '', source: '', notes: '',
+              dernier_contact: null, prochaine_relance: null,
+              created_at: new Date().toISOString(),
+            };
+            Store.add('entreprises', newEnt);
+            hiddenEl.value = newEnt.id;
+            UI.toast('Entreprise créée depuis le CV : ' + newEnt.nom, 'info');
+          }
+        }
       }
 
       // Diplôme : sélectionner l'option correspondante
