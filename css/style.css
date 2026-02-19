@@ -933,6 +933,10 @@ body {
   box-shadow: 0 0 0 3px rgba(254, 204, 2, 0.12);
 }
 
+.inline-field[data-type="textarea"] .inline-field-value {
+  display: block;
+}
+
 .inline-field-empty {
   color: #94a3b8;
   font-style: italic;
