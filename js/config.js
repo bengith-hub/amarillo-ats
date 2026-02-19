@@ -18,5 +18,10 @@ const ATS_CONFIG = {
   orsApiKey: 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjBkMTlhODQyNDhmOTRjZGM4ZDZiMGRmMDBkZGZjN2Q5IiwiaCI6Im11cm11cjY0In0=',
   // Clé API OpenAI pour l'extraction de CV
   // Renseignez votre clé ici ou via localStorage.setItem('ats_openai_key', 'sk-...')
-  openaiApiKey: ''
+  openaiApiKey: '',
+  // Google Drive — Client ID OAuth2 (GCP)
+  // Créez-le dans https://console.cloud.google.com/apis/credentials (type: Application Web)
+  googleClientId: '',
+  // ID du dossier Drive parent pour les candidats (optionnel, vide = racine)
+  googleDriveParentFolder: ''
 };

@@ -215,10 +215,14 @@
     showCandidatModal();
   });
 
+  // Fichier CV stocké temporairement pendant la création
+  let _pendingCVFile = null;
+
   function showCandidatModal(existing = null) {
     const isEdit = !!existing;
     const c = existing || {};
     const entreprises = Store.get('entreprises');
+    _pendingCVFile = null;
 
     const bodyHtml = `
       ${!isEdit ? `
@@ -228,7 +232,8 @@
           <div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;">
             <svg style="width:22px;height:22px;color:#3b82f6;flex-shrink:0;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
             <button type="button" class="btn btn-primary" id="btn-import-cv" style="font-size:0.875rem;">Importer un CV</button>
-            <button type="button" class="btn btn-secondary" id="btn-config-openai" style="font-size:0.75rem;" title="Configurer la clé API OpenAI">Clé API</button>
+            <button type="button" class="btn btn-secondary" id="btn-config-openai" style="font-size:0.75rem;" title="Configurer la clé API OpenAI">Clé OpenAI</button>
+            <button type="button" class="btn btn-secondary" id="btn-config-gdrive" style="font-size:0.75rem;" title="Configurer Google Drive">Drive</button>
           </div>
           <p style="margin:8px 0 0;font-size:0.75rem;color:#64748b;">PDF ou fichier texte — les champs seront pré-remplis automatiquement via IA</p>
         </div>
@@ -492,9 +497,31 @@
           data.motivation_drivers = '';
           data.lecture_recruteur = '';
           data.nb_rtt = 0;
+          data.documents = [];
+          data.google_drive_url = '';
           data.created_at = new Date().toISOString();
           await Store.add('candidats', data);
           UI.toast('Candidat créé');
+
+          // --- Google Drive : créer dossier + uploader CV ---
+          if (_pendingCVFile && GoogleDrive.isConfigured()) {
+            try {
+              UI.toast('Upload du CV sur Google Drive...', 'info');
+              const candidatName = `${data.prenom} ${data.nom}`.trim();
+              const driveResult = await GoogleDrive.createCandidatFolderAndUploadCV(candidatName, _pendingCVFile);
+
+              await Store.update('candidats', data.id, {
+                google_drive_url: driveResult.folderUrl,
+                documents: [driveResult.document]
+              });
+
+              UI.toast('Dossier Drive créé et CV uploadé');
+            } catch (driveErr) {
+              console.error('Erreur Google Drive:', driveErr);
+              UI.toast('Candidat créé, mais erreur Drive : ' + driveErr.message, 'error');
+            }
+            _pendingCVFile = null;
+          }
         }
 
         location.reload();
@@ -539,9 +566,19 @@
           CVParser.showKeyConfigModal();
         });
 
+        const btnDrive = document.getElementById('btn-config-gdrive');
+        if (btnDrive) {
+          btnDrive.addEventListener('click', () => {
+            GoogleDrive.showConfigModal();
+          });
+        }
+
         fileInput.addEventListener('change', async () => {
           const file = fileInput.files[0];
           if (!file) return;
+
+          // Stocker le fichier pour l'upload Drive après création
+          _pendingCVFile = file;
 
           idleDiv.style.display = 'none';
           loadingDiv.style.display = 'block';
@@ -552,8 +589,13 @@
             fillFormFromCV(extracted);
 
             const filledCount = Object.values(extracted).filter(v => v && v !== '').length;
+            const driveReady = GoogleDrive.isConfigured();
             resultDiv.style.color = '#059669';
-            resultDiv.innerHTML = `<svg style="width:18px;height:18px;vertical-align:middle;margin-right:6px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>${filledCount} champs pré-remplis depuis <strong>${UI.escHtml(file.name)}</strong>`;
+            resultDiv.innerHTML = `
+              <svg style="width:18px;height:18px;vertical-align:middle;margin-right:6px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+              ${filledCount} champs pré-remplis depuis <strong>${UI.escHtml(file.name)}</strong>
+              ${driveReady ? '<br><small style="color:#3b82f6;">Le CV sera uploadé sur Google Drive à l\'enregistrement</small>' : '<br><small style="color:#94a3b8;">Configurez Google Drive pour uploader le CV automatiquement</small>'}
+            `;
             resultDiv.style.display = 'block';
             loadingDiv.style.display = 'none';
 
@@ -565,6 +607,7 @@
             loadingDiv.style.display = 'none';
             idleDiv.style.display = 'block';
             UI.toast(err.message, 'error');
+            _pendingCVFile = null;
           }
 
           // Reset file input pour permettre de re-sélectionner le même fichier
