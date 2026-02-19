@@ -4,7 +4,7 @@
 
 const GoogleDrive = (function() {
 
-  const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+  const SCOPES = 'https://www.googleapis.com/auth/drive';
   let _tokenClient = null;
   let _accessToken = null;
   let _tokenExpiry = 0;
@@ -170,7 +170,15 @@ const GoogleDrive = (function() {
     const parentId = getParentFolderId();
 
     // 2. Créer le dossier du candidat
-    const folder = await createFolder(candidatName, parentId || undefined);
+    let folder;
+    try {
+      folder = await createFolder(candidatName, parentId || undefined);
+    } catch (e) {
+      if (parentId && e.message.includes('404')) {
+        throw new Error(`Dossier parent Drive introuvable (ID: ${parentId}). Vérifiez l'ID dans la configuration Google Drive.`);
+      }
+      throw e;
+    }
 
     // 3. Uploader le CV
     const uploaded = await uploadFile(file, folder.id);

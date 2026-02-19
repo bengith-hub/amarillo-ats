@@ -97,7 +97,7 @@ Format JSON attendu :
 }
 
 Pour "synthese_30s", rédige un résumé professionnel de 2-3 phrases.
-Pour "notes", liste les compétences clés et technologies mentionnées.
+Pour "notes", reprends le paragraphe de présentation/profil/à propos du candidat tel qu'il apparaît dans le CV (l'accroche ou le résumé en haut du CV). Si aucun paragraphe de ce type n'existe, laisse vide.
 Pour "localisation", indique la région ou grande ville (ex: "Paris", "Lyon", "Île-de-France").`;
 
     const requestBody = JSON.stringify({

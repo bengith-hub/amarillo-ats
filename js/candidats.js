@@ -699,10 +699,35 @@
         }
       }
 
-      // Entreprise : remplir le champ texte de recherche (pas l'ID)
+      // Entreprise : chercher dans la DB ou créer automatiquement
       if (data.entreprise_nom) {
         const searchEl = overlay.querySelector('#f-entreprise-search');
+        const hiddenEl = overlay.querySelector('#f-entreprise');
         if (searchEl) searchEl.value = data.entreprise_nom;
+
+        if (hiddenEl) {
+          const entreprises = Store.get('entreprises');
+          const nomLower = data.entreprise_nom.toLowerCase().trim();
+          const match = entreprises.find(e => (e.nom || '').toLowerCase().trim() === nomLower);
+
+          if (match) {
+            hiddenEl.value = match.id;
+          } else {
+            // Créer l'entreprise automatiquement
+            const newEnt = {
+              id: API.generateId('ent'),
+              nom: data.entreprise_nom.trim(),
+              secteur: '', taille: '', ca: '', localisation: data.localisation || '',
+              priorite: '', statut: 'À cibler',
+              site_web: '', telephone: '', angle_approche: '', source: '', notes: '',
+              dernier_contact: null, prochaine_relance: null,
+              created_at: new Date().toISOString(),
+            };
+            Store.add('entreprises', newEnt);
+            hiddenEl.value = newEnt.id;
+            UI.toast('Entreprise créée depuis le CV : ' + newEnt.nom, 'info');
+          }
+        }
       }
 
       // Diplôme : sélectionner l'option correspondante
