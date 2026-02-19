@@ -15,5 +15,8 @@ const ATS_CONFIG = {
     notes: '698a4df143b1c97be9727ea2',
     dsi_sessions: '698880c7ae596e708f1a6944'
   },
-  orsApiKey: 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjBkMTlhODQyNDhmOTRjZGM4ZDZiMGRmMDBkZGZjN2Q5IiwiaCI6Im11cm11cjY0In0='
+  orsApiKey: 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjBkMTlhODQyNDhmOTRjZGM4ZDZiMGRmMDBkZGZjN2Q5IiwiaCI6Im11cm11cjY0In0=',
+  // Clé API OpenAI pour l'extraction de CV
+  // Renseignez votre clé ici ou via localStorage.setItem('ats_openai_key', 'sk-...')
+  openaiApiKey: ''
 };
