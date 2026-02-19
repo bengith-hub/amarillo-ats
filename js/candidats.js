@@ -478,6 +478,31 @@
           throw new Error('validation');
         }
 
+        // --- Entreprise : résoudre ou créer si le champ texte est rempli mais pas l'ID ---
+        const entSearchVal = overlay.querySelector('#f-entreprise-search')?.value.trim();
+        if (entSearchVal && !data.entreprise_actuelle_id) {
+          const entreprises = Store.get('entreprises');
+          const nomLower = entSearchVal.toLowerCase();
+          const match = entreprises.find(e => (e.nom || '').toLowerCase().trim() === nomLower);
+
+          if (match) {
+            data.entreprise_actuelle_id = match.id;
+          } else {
+            const newEnt = {
+              id: API.generateId('ent'),
+              nom: entSearchVal,
+              secteur: '', taille: '', ca: '', localisation: data.localisation || '',
+              priorite: '', statut: 'À cibler',
+              site_web: '', telephone: '', angle_approche: '', source: '', notes: '',
+              dernier_contact: null, prochaine_relance: null,
+              created_at: new Date().toISOString(),
+            };
+            await Store.add('entreprises', newEnt);
+            data.entreprise_actuelle_id = newEnt.id;
+            UI.toast('Entreprise créée : ' + newEnt.nom, 'info');
+          }
+        }
+
         if (isEdit) {
           await Store.update('candidats', c.id, data);
           UI.toast('Candidat mis à jour');
@@ -643,7 +668,7 @@
 
           try {
             const extracted = await CVParser.parseCV(file);
-            await fillFormFromCV(extracted);
+            fillFormFromCV(extracted);
 
             const filledCount = Object.values(extracted).filter(v => v && v !== '').length;
             const driveReady = GoogleDrive.isConfigured();
@@ -673,7 +698,7 @@
       }
     }
 
-    async function fillFormFromCV(data) {
+    function fillFormFromCV(data) {
       const overlay = document.getElementById('modal-overlay');
       if (!overlay) return;
 
@@ -709,35 +734,10 @@
         if (notesEl) notesEl.value = data.notes;
       }
 
-      // Entreprise : chercher dans la DB ou créer automatiquement
+      // Entreprise : remplir le champ texte (l'ID sera résolu à la sauvegarde)
       if (data.entreprise_nom) {
         const searchEl = overlay.querySelector('#f-entreprise-search');
-        const hiddenEl = overlay.querySelector('#f-entreprise');
         if (searchEl) searchEl.value = data.entreprise_nom;
-
-        if (hiddenEl) {
-          const entreprises = Store.get('entreprises');
-          const nomLower = data.entreprise_nom.toLowerCase().trim();
-          const match = entreprises.find(e => (e.nom || '').toLowerCase().trim() === nomLower);
-
-          if (match) {
-            hiddenEl.value = match.id;
-          } else {
-            // Créer l'entreprise automatiquement
-            const newEnt = {
-              id: API.generateId('ent'),
-              nom: data.entreprise_nom.trim(),
-              secteur: '', taille: '', ca: '', localisation: data.localisation || '',
-              priorite: '', statut: 'À cibler',
-              site_web: '', telephone: '', angle_approche: '', source: '', notes: '',
-              dernier_contact: null, prochaine_relance: null,
-              created_at: new Date().toISOString(),
-            };
-            await Store.add('entreprises', newEnt);
-            hiddenEl.value = newEnt.id;
-            UI.toast('Entreprise créée depuis le CV : ' + newEnt.nom, 'info');
-          }
-        }
       }
 
       // Diplôme : sélectionner l'option correspondante
