@@ -217,12 +217,14 @@
 
   // Fichier CV stocké temporairement pendant la création
   let _pendingCVFile = null;
+  let _pendingCVData = null;
 
   function showCandidatModal(existing = null) {
     const isEdit = !!existing;
     const c = existing || {};
     const entreprises = Store.get('entreprises');
     _pendingCVFile = null;
+    _pendingCVData = null;
 
     const bodyHtml = `
       ${!isEdit ? `
@@ -491,7 +493,7 @@
           data.fit_poste = '';
           data.fit_culture = '';
           data.risques = '';
-          data.synthese_30s = '';
+          data.synthese_30s = _pendingCVData?.synthese_30s || '';
           data.parcours_cible = '';
           data.package_attentes = '';
           data.motivation_drivers = '';
@@ -641,7 +643,7 @@
 
           try {
             const extracted = await CVParser.parseCV(file);
-            fillFormFromCV(extracted);
+            await fillFormFromCV(extracted);
 
             const filledCount = Object.values(extracted).filter(v => v && v !== '').length;
             const driveReady = GoogleDrive.isConfigured();
@@ -671,9 +673,12 @@
       }
     }
 
-    function fillFormFromCV(data) {
+    async function fillFormFromCV(data) {
       const overlay = document.getElementById('modal-overlay');
       if (!overlay) return;
+
+      // Stocker pour accès dans onSave (synthese_30s)
+      _pendingCVData = data;
 
       const fieldMap = {
         prenom: 'f-prenom',
@@ -689,7 +694,6 @@
         date_naissance: 'f-date-naissance',
         debut_carriere: 'f-debut-carriere',
         debut_poste_actuel: 'f-debut-poste',
-        notes: 'f-notes'
       };
 
       for (const [key, inputId] of Object.entries(fieldMap)) {
@@ -697,6 +701,12 @@
           const el = overlay.querySelector('#' + inputId);
           if (el) el.value = data[key];
         }
+      }
+
+      // Notes : uniquement le paragraphe de profil/présentation du CV
+      if (data.notes) {
+        const notesEl = overlay.querySelector('#f-notes');
+        if (notesEl) notesEl.value = data.notes;
       }
 
       // Entreprise : chercher dans la DB ou créer automatiquement
@@ -723,7 +733,7 @@
               dernier_contact: null, prochaine_relance: null,
               created_at: new Date().toISOString(),
             };
-            Store.add('entreprises', newEnt);
+            await Store.add('entreprises', newEnt);
             hiddenEl.value = newEnt.id;
             UI.toast('Entreprise créée depuis le CV : ' + newEnt.nom, 'info');
           }
@@ -736,18 +746,6 @@
         if (diplomeSelect) {
           const option = Array.from(diplomeSelect.options).find(o => o.value === data.diplome);
           if (option) diplomeSelect.value = data.diplome;
-        }
-      }
-
-      // Synthèse 30s et notes : concaténer si notes contient déjà quelque chose
-      if (data.synthese_30s) {
-        const notesEl = overlay.querySelector('#f-notes');
-        if (notesEl) {
-          const existingNotes = notesEl.value.trim();
-          const prefix = data.synthese_30s;
-          const skills = data.notes || '';
-          const parts = [prefix, skills, existingNotes].filter(Boolean);
-          notesEl.value = parts.join('\n\n');
         }
       }
     }
