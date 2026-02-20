@@ -387,6 +387,8 @@ const PDFEngine = (() => {
       title,
     } = options;
 
+    if (!data || data.length < 3) return y; // Need at least 3 data points
+
     const chartY = y + radius + 8;
 
     if (chartY + radius + 10 > PAGE.maxY) {
@@ -1373,7 +1375,7 @@ const PDFEngine = (() => {
         y = addHeader(doc, 'Profil DSI \u2014 Radar', '');
       }
       y = addRadarChart(doc, y, {
-        scores: dsiResult.pillarScoresNorm,
+        data: dsiResult.pillarScoresNorm,
         labels: ['Leadership & Influence', 'Excellence Op\u00E9rationnelle', 'Innovation & Posture'],
         colors: [BRAND.pillarLeadership, BRAND.pillarOps, BRAND.pillarInnovation],
       });
