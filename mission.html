@@ -84,6 +84,7 @@
         <div style="display:flex;gap:8px;align-items:center;">
           ${UI.badge(m.statut)} ${UI.badge(m.niveau)}
           <button class="btn btn-secondary btn-sm" id="btn-jd-pdf" title="Exporter la fiche de poste en PDF" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">JD PDF</button>
+          ${candidats.length > 0 ? '<button class="btn btn-secondary btn-sm" id="btn-shortlist-pdf" title="Shortlist comparative PDF" style="background:#2D6A4F;color:#fff;border-color:#2D6A4F;">Shortlist PDF</button>' : ''}
           <span class="autosave-indicator saved"><span class="sync-dot"></span> Auto-save</span>
           <button class="btn btn-primary btn-sm" id="btn-add-candidat-mission">+ Candidat</button>
           <button class="btn btn-danger btn-sm" id="btn-delete-mission" title="Supprimer cette mission">🗑️</button>
@@ -274,6 +275,28 @@
       } catch (e) {
         console.error('JD PDF generation error:', e);
         UI.toast('Erreur lors de la génération du PDF : ' + e.message, 'error');
+      }
+    });
+
+    // Shortlist PDF export
+    document.getElementById('btn-shortlist-pdf')?.addEventListener('click', async () => {
+      try {
+        UI.toast('Chargement des profils DSI...');
+        // Fetch DSI profiles for all candidates
+        const dsiResults = {};
+        for (const c of candidats) {
+          if (c.profile_code) {
+            dsiResults[c.id] = await DSIProfile.fetchProfile(c.profile_code);
+          }
+        }
+        UI.toast('G\u00E9n\u00E9ration de la shortlist...');
+        const doc = PDFEngine.generateShortlistPDF(m, candidats, { dsiResults });
+        const filename = `Shortlist_${(m.ref || '').replace(/\s/g, '_')}_${(m.nom || 'Mission').replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '_')}.pdf`;
+        PDFEngine.download(doc, filename);
+        UI.toast('Shortlist PDF t\u00E9l\u00E9charg\u00E9e');
+      } catch (e) {
+        console.error('Shortlist PDF generation error:', e);
+        UI.toast('Erreur lors de la g\u00E9n\u00E9ration : ' + e.message, 'error');
       }
     });
 

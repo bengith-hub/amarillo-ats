@@ -1279,6 +1279,450 @@ const PDFEngine = (() => {
   }
 
   // ============================================================
+  // PRÉSENTATION LONGUE CANDIDAT — dossier complet multi-pages
+  // ============================================================
+
+  function generateCandidatPresentation(candidat, options = {}) {
+    const dsiResult = options.dsiResult || null;
+    const entreprise = options.entreprise || null;
+    const missions = options.missions || [];
+    const actions = options.actions || [];
+
+    const fullName = `${candidat.prenom || ''} ${candidat.nom || ''}`.trim();
+
+    const doc = createDocument({
+      title: `Pr\u00E9sentation \u2014 ${fullName}`,
+      subject: candidat.poste_actuel || '',
+    });
+
+    // --- Page de couverture ---
+    addCoverPage(doc, {
+      title: fullName || 'Candidat',
+      subtitle: candidat.poste_actuel || '',
+      reference: candidat.profile_code ? `Profiling ${candidat.profile_code}` : '',
+      confidential: true,
+    });
+
+    // --- PAGE 2 : Identité & contexte ---
+    let y = addHeader(doc, 'Pr\u00E9sentation candidat', formatDate(new Date().toISOString()));
+
+    y = addSection(doc, y, 'Identit\u00E9');
+    y = addFieldRow(doc, y, [
+      { label: 'Nom', value: fullName },
+      { label: 'Poste actuel', value: candidat.poste_actuel },
+    ]);
+    y = addFieldRow(doc, y, [
+      { label: 'Entreprise', value: entreprise ? (entreprise.displayName || entreprise.nom) : candidat.entreprise_nom },
+      { label: 'Localisation', value: candidat.localisation || candidat.ville },
+    ]);
+    y = addFieldRow(doc, y, [
+      { label: 'Poste cible', value: candidat.poste_cible },
+      { label: 'Open to work', value: candidat.open_to_work ? 'Oui' : 'Non' },
+    ]);
+    y = addFieldRow(doc, y, [
+      { label: 'Dipl\u00F4me', value: candidat.diplome },
+      { label: 'Exp\u00E9rience', value: experienceYears(candidat.debut_carriere) },
+    ]);
+    if (candidat.debut_poste_actuel) {
+      const posteMs = Date.now() - new Date(candidat.debut_poste_actuel).getTime();
+      const posteMois = Math.floor(posteMs / (30.44 * 24 * 60 * 60 * 1000));
+      const posteAns = Math.floor(posteMois / 12);
+      const resteMois = posteMois % 12;
+      let dureePoste = '';
+      if (posteAns > 0 && resteMois > 0) dureePoste = `${posteAns} an${posteAns > 1 ? 's' : ''} ${resteMois} mois`;
+      else if (posteAns > 0) dureePoste = `${posteAns} an${posteAns > 1 ? 's' : ''}`;
+      else dureePoste = `${resteMois} mois`;
+      y = addFieldRow(doc, y, [
+        { label: 'Anciennet\u00E9 poste', value: dureePoste },
+        { label: 'Disponibilit\u00E9', value: candidat.date_disponibilite ? formatDate(candidat.date_disponibilite) : (candidat.preavis || null) },
+      ]);
+    }
+    y = addFieldRow(doc, y, [
+      { label: 'Origine', value: candidat.origine },
+      { label: 'Recommand\u00E9 par', value: candidat.recommande_par_nom },
+    ]);
+
+    y = addSeparator(doc, y);
+
+    // --- Coordonnées ---
+    y = addSection(doc, y, 'Coordonn\u00E9es');
+    y = addFieldRow(doc, y, [
+      { label: 'Email', value: candidat.email },
+      { label: 'T\u00E9l\u00E9phone', value: candidat.telephone },
+    ]);
+    if (candidat.adresse_ligne1 || candidat.code_postal || candidat.ville) {
+      const adresse = [candidat.adresse_ligne1, `${candidat.code_postal || ''} ${candidat.ville || ''}`.trim()].filter(Boolean).join(', ');
+      y = addField(doc, y, 'Adresse', adresse);
+    }
+
+    y = addSeparator(doc, y);
+
+    // --- Profil DSI ---
+    if (dsiResult && dsiResult.status === 'completed') {
+      y = addSection(doc, y, 'Profil DSI Amarillo\u2122');
+      y = addDSIProfileCard(doc, y, {
+        profileName: dsiResult.profile,
+        avgScore: dsiResult.avgNorm,
+        pillarScores: dsiResult.pillarScoresNorm,
+      });
+      y += 4;
+
+      // Radar chart si on a la place
+      if (y + 65 > PAGE.maxY) {
+        y = newPage(doc);
+        y = addHeader(doc, 'Profil DSI \u2014 Radar', '');
+      }
+      y = addRadarChart(doc, y, {
+        scores: dsiResult.pillarScoresNorm,
+        labels: ['Leadership & Influence', 'Excellence Op\u00E9rationnelle', 'Innovation & Posture'],
+        colors: [BRAND.pillarLeadership, BRAND.pillarOps, BRAND.pillarInnovation],
+      });
+      y += 4;
+    }
+
+    // --- PAGE : Entretien (sections longues) ---
+    const entretienSections = [
+      { key: 'synthese_30s', title: 'Synth\u00E8se 30 secondes', accent: [245, 158, 11] },
+      { key: 'parcours_cible', title: 'Parcours & cible', accent: [59, 130, 246] },
+      { key: 'motivation_drivers', title: 'Motivation & Drivers', accent: [16, 185, 129] },
+      { key: 'lecture_recruteur', title: 'Lecture recruteur', accent: [139, 92, 246] },
+    ];
+
+    const hasEntretien = entretienSections.some(s => candidat[s.key]?.trim());
+
+    if (hasEntretien) {
+      // Nouvelle page pour l'entretien
+      doc.addPage();
+      y = addHeader(doc, 'Entretien \u2014 Analyse', fullName);
+
+      for (const section of entretienSections) {
+        const content = candidat[section.key]?.trim();
+        if (!content) continue;
+
+        if (y + 20 > PAGE.maxY) {
+          doc.addPage();
+          y = addHeader(doc, 'Entretien \u2014 Analyse', fullName);
+        }
+
+        y = addSection(doc, y, section.title, { color: section.accent });
+        y = addText(doc, y, content, {
+          headerTitle: 'Entretien \u2014 Analyse',
+          headerSubtitle: fullName,
+        });
+        y += 5;
+      }
+    }
+
+    // --- Rémunération ---
+    const hasRemu = candidat.salaire_fixe_actuel || candidat.variable_actuel || candidat.package_souhaite || candidat.package_souhaite_min;
+
+    if (hasRemu) {
+      if (y + 35 > PAGE.maxY) {
+        doc.addPage();
+        y = addHeader(doc, 'R\u00E9mun\u00E9ration & Conditions', fullName);
+      }
+
+      y = addSeparator(doc, y);
+      y = addSection(doc, y, 'R\u00E9mun\u00E9ration & conditions');
+      y = addFieldRow(doc, y, [
+        { label: 'Fixe actuel', value: candidat.salaire_fixe_actuel ? `${candidat.salaire_fixe_actuel} K\u20AC` : null },
+        { label: 'Variable actuel', value: candidat.variable_actuel ? `${candidat.variable_actuel} K\u20AC` : null },
+      ]);
+      const pkg = (candidat.salaire_fixe_actuel || 0) + (candidat.variable_actuel || 0);
+      y = addFieldRow(doc, y, [
+        { label: 'Package total actuel', value: pkg > 0 ? `${pkg} K\u20AC` : null },
+        { label: 'Package souhait\u00E9', value: candidat.package_souhaite ? `${candidat.package_souhaite} K\u20AC` : null },
+      ]);
+      if (candidat.package_souhaite_min) {
+        y = addField(doc, y, 'Package minimum', `${candidat.package_souhaite_min} K\u20AC`);
+      }
+      y = addFieldRow(doc, y, [
+        { label: 'T\u00E9l\u00E9travail', value: candidat.teletravail },
+        { label: 'RTT', value: candidat.rtt ? `Oui${candidat.nb_rtt ? ` (${candidat.nb_rtt} j)` : ''}` : null },
+      ]);
+      y += 3;
+    }
+
+    // --- Missions associées ---
+    if (missions.length > 0) {
+      if (y + 25 > PAGE.maxY) {
+        doc.addPage();
+        y = addHeader(doc, 'Missions associ\u00E9es', fullName);
+      }
+      y = addSeparator(doc, y);
+      y = addSection(doc, y, `Missions associ\u00E9es (${missions.length})`);
+      const mHeaders = ['Mission', 'R\u00E9f\u00E9rence', 'Statut', 'Niveau'];
+      const mRows = missions.map(m => [
+        m.nom || '\u2014',
+        m.ref || '\u2014',
+        m.statut || '\u2014',
+        m.niveau || '\u2014',
+      ]);
+      y = addTable(doc, y, mHeaders, mRows);
+      y += 3;
+    }
+
+    // --- Historique actions (dernières 10) ---
+    if (actions.length > 0) {
+      if (y + 25 > PAGE.maxY) {
+        doc.addPage();
+        y = addHeader(doc, 'Historique des actions', fullName);
+      }
+      y = addSeparator(doc, y);
+      const recentActions = actions.slice(0, 10);
+      y = addSection(doc, y, `Historique des actions (${recentActions.length}${actions.length > 10 ? ` / ${actions.length}` : ''})`);
+      const aHeaders = ['Date', 'Action', 'Canal', 'Statut'];
+      const aRows = recentActions.map(a => [
+        formatDate(a.date_action),
+        a.action || '\u2014',
+        a.canal || '\u2014',
+        a.statut || '\u2014',
+      ]);
+      y = addTable(doc, y, aHeaders, aRows);
+      y += 3;
+    }
+
+    // --- Notes ---
+    if (candidat.notes?.trim()) {
+      if (y + 20 > PAGE.maxY) {
+        doc.addPage();
+        y = addHeader(doc, 'Notes', fullName);
+      }
+      y = addSeparator(doc, y);
+      y = addSection(doc, y, 'Notes');
+      y = addText(doc, y, candidat.notes, {
+        headerTitle: 'Notes',
+        headerSubtitle: fullName,
+      });
+    }
+
+    // --- Confidentialité ---
+    if (y + 15 > PAGE.maxY) {
+      doc.addPage();
+      y = PAGE.marginTop;
+    }
+    y += 5;
+    addCallout(doc, y,
+      'Ce document est strictement confidentiel. Il est \u00E9tabli par Amarillo Search '
+      + 'dans le cadre d\'un mandat de recherche. Toute reproduction ou diffusion sans autorisation est interdite.',
+      { color: BRAND.dark, fontSize: 7 }
+    );
+
+    addWatermark(doc, 'CONFIDENTIEL');
+
+    return doc;
+  }
+
+  // ============================================================
+  // SHORTLIST COMPARATIVE PDF
+  // ============================================================
+
+  function generateShortlistPDF(mission, candidats, options = {}) {
+    const dsiResults = options.dsiResults || {}; // { candidatId: { profile, avgNorm, pillarScoresNorm } }
+
+    const doc = createDocument({
+      title: `Shortlist \u2014 ${mission.nom || mission.ref || ''}`,
+      subject: mission.jd_entreprise || '',
+    });
+
+    // --- Page de couverture ---
+    addCoverPage(doc, {
+      title: mission.nom || mission.ref || 'Shortlist',
+      subtitle: `${candidats.length} candidat${candidats.length > 1 ? 's' : ''} pr\u00E9sent\u00E9${candidats.length > 1 ? 's' : ''}`,
+      reference: mission.ref ? `R\u00E9f. ${mission.ref}` : '',
+      confidential: true,
+    });
+
+    // --- Page 2 : Tableau comparatif synthétique ---
+    let y = addHeader(doc, 'Shortlist comparative', formatDate(new Date().toISOString()));
+
+    y = addSection(doc, y, `Mission : ${mission.nom || mission.ref || ''}`);
+    if (mission.jd_entreprise) {
+      y = addFieldRow(doc, y, [
+        { label: 'Entreprise', value: mission.jd_entreprise },
+        { label: 'Niveau', value: mission.niveau },
+      ]);
+    }
+    y += 3;
+
+    // Tableau comparatif
+    const tableHeaders = ['Candidat', 'Poste actuel', 'Localisation', 'Package (K\u20AC)', 'DSI Profile', 'Score'];
+
+    const tableRows = candidats.map(c => {
+      const dsi = dsiResults[c.id];
+      const pkg = (c.salaire_fixe_actuel || 0) + (c.variable_actuel || 0);
+      return [
+        `${c.prenom || ''} ${c.nom || ''}`.trim(),
+        c.poste_actuel || '\u2014',
+        c.localisation || '\u2014',
+        pkg > 0 ? `${pkg} K\u20AC` : '\u2014',
+        dsi && dsi.profile ? dsi.profile.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*/u, '') : '\u2014',
+        dsi && dsi.avgNorm != null ? `${dsi.avgNorm}/100` : '\u2014',
+      ];
+    });
+
+    y = addTable(doc, y, tableHeaders, tableRows);
+    y += 6;
+
+    // Légende
+    doc.setFont(BRAND.font, 'italic');
+    doc.setFontSize(7);
+    doc.setTextColor(...BRAND.textLight);
+    doc.text('Package = Fixe + Variable actuels. Score DSI = score global normalis\u00E9 (0-100).', PAGE.marginLeft, y);
+    y += 6;
+
+    // --- Fiches individuelles (2 par page) ---
+    let slotIndex = 0; // 0 = haut de page, 1 = bas de page
+
+    for (let i = 0; i < candidats.length; i++) {
+      const c = candidats[i];
+      const dsi = dsiResults[c.id];
+
+      // Nouvelle page si nécessaire
+      if (slotIndex === 0) {
+        doc.addPage();
+        y = addHeader(doc, 'Fiches candidats', `${i + 1}/${candidats.length}`);
+      }
+
+      const slotStartY = y;
+      const slotMaxY = slotIndex === 0 ? (PAGE.height / 2) - 5 : PAGE.maxY;
+
+      // --- Nom + badge ---
+      doc.setFont(BRAND.font, 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(...BRAND.dark);
+      const fullName = `${c.prenom || ''} ${c.nom || ''}`.trim();
+      doc.text(fullName, PAGE.marginLeft, y);
+
+      if (c.statut) {
+        const badgeX = PAGE.marginLeft + doc.getTextWidth(fullName) + 4;
+        y = addBadge(doc, y - 3, c.statut, badgeX);
+      }
+      y += 2;
+
+      // Poste actuel
+      if (c.poste_actuel) {
+        doc.setFont(BRAND.font, 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(...BRAND.textLight);
+        doc.text(c.poste_actuel, PAGE.marginLeft, y);
+        y += 5;
+      }
+
+      y += 1;
+
+      // Champs clés en 2 colonnes
+      y = addFieldRow(doc, y, [
+        { label: 'Localisation', value: c.localisation },
+        { label: 'Disponibilit\u00E9', value: c.date_disponibilite ? formatDate(c.date_disponibilite) : (c.preavis || null) },
+      ]);
+
+      const pkg = (c.salaire_fixe_actuel || 0) + (c.variable_actuel || 0);
+      const pkgSouhaite = c.package_souhaite;
+      y = addFieldRow(doc, y, [
+        { label: 'Package actuel', value: pkg > 0 ? `${pkg} K\u20AC` : null },
+        { label: 'Package souhait\u00E9', value: pkgSouhaite ? `${pkgSouhaite} K\u20AC` : null },
+      ]);
+
+      y = addFieldRow(doc, y, [
+        { label: 'Dipl\u00F4me', value: c.diplome },
+        { label: 'Exp\u00E9rience', value: experienceYears(c.debut_carriere) },
+      ]);
+
+      // DSI Profile si disponible
+      if (dsi && dsi.status === 'completed' && dsi.pillarScoresNorm) {
+        y += 2;
+        // Profile card inline
+        doc.setFont(BRAND.font, 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(...BRAND.dark);
+        doc.text('DSI Profile :', PAGE.marginLeft, y);
+
+        doc.setFont(BRAND.font, 'normal');
+        doc.setFontSize(8);
+        const profileLabel = dsi.profile || '\u2014';
+        doc.text(`${profileLabel}  |  Score global : ${dsi.avgNorm}/100`, PAGE.marginLeft + 25, y);
+        y += 5;
+
+        // Mini barres de progression pour les 3 piliers
+        const pillarNames = ['Leadership', 'Ops', 'Innovation'];
+        const pillarColors = [BRAND.pillarLeadership, BRAND.pillarOps, BRAND.pillarInnovation];
+        for (let p = 0; p < 3; p++) {
+          const score = dsi.pillarScoresNorm[p] || 0;
+          doc.setFont(BRAND.font, 'normal');
+          doc.setFontSize(7);
+          doc.setTextColor(...BRAND.textLight);
+          doc.text(pillarNames[p], PAGE.marginLeft, y);
+
+          const barX = PAGE.marginLeft + 22;
+          const barW = 50;
+          const barH = 3;
+          // Fond
+          doc.setFillColor(...BRAND.lightGray);
+          doc.roundedRect(barX, y - 2.5, barW, barH, 1, 1, 'F');
+          // Barre
+          const fillW = Math.max(0, Math.min(barW, barW * score / 100));
+          if (fillW > 0) {
+            doc.setFillColor(...pillarColors[p]);
+            doc.roundedRect(barX, y - 2.5, fillW, barH, 1, 1, 'F');
+          }
+          // Valeur
+          doc.setFont(BRAND.font, 'bold');
+          doc.setFontSize(7);
+          doc.setTextColor(...scoreColor(score));
+          doc.text(`${score}`, barX + barW + 3, y);
+          y += 4.5;
+        }
+      }
+
+      // Synthèse 30s si disponible
+      if (c.synthese_30s) {
+        y += 1;
+        doc.setFont(BRAND.font, 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...BRAND.dark);
+        doc.text('Synth\u00E8se :', PAGE.marginLeft, y);
+        y += 3.5;
+
+        doc.setFont(BRAND.font, 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(...BRAND.text);
+        const maxWidth = PAGE.contentWidth;
+        const lines = doc.splitTextToSize(c.synthese_30s.substring(0, 300), maxWidth);
+        const maxLines = 4;
+        const displayLines = lines.slice(0, maxLines);
+        if (lines.length > maxLines) displayLines[maxLines - 1] += '...';
+        doc.text(displayLines, PAGE.marginLeft, y);
+        y += displayLines.length * 3.2;
+      }
+
+      y += 3;
+      y = addSeparator(doc, y);
+      y += 5;
+
+      slotIndex++;
+      if (slotIndex >= 2) {
+        slotIndex = 0;
+      }
+    }
+
+    // --- Mention de confidentialité ---
+    if (slotIndex !== 0) {
+      // On est en milieu de page, pas besoin de nouvelle page
+    }
+    y += 3;
+    addCallout(doc, y,
+      'Ce document est strictement confidentiel. Il est destin\u00E9 au client dans le cadre d\'un mandat Amarillo Search. '
+      + 'La reproduction ou diffusion de ce document sans autorisation est interdite.',
+      { color: BRAND.dark, fontSize: 7 }
+    );
+
+    addWatermark(doc, 'CONFIDENTIEL');
+
+    return doc;
+  }
+
+  // ============================================================
   // PUBLIC API
   // ============================================================
 
@@ -1313,6 +1757,8 @@ const PDFEngine = (() => {
     generateCandidatSummary,
     generateTeaserApproche,
     generateJDDocument,
+    generateCandidatPresentation,
+    generateShortlistPDF,
 
     // Helpers
     scoreColor,
