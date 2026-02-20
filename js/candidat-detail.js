@@ -58,7 +58,7 @@
           ${UI.statusBadge(candidat.statut || 'To call', CANDIDAT_STATUTS, { entity: 'candidats', recordId: id, fieldName: 'statut', onUpdate: (s) => { candidat.statut = s; } })}
           ${UI.statusBadge(candidat.niveau || 'Middle', CANDIDAT_NIVEAUX, { entity: 'candidats', recordId: id, fieldName: 'niveau', onUpdate: (s) => { candidat.niveau = s; } })}
           <button class="btn btn-secondary btn-sm" id="btn-export-pdf" title="Exporter la fiche en PDF">PDF</button>
-          <button class="btn btn-secondary btn-sm" id="btn-teaser-pdf" title="G\u00E9n\u00E9rer le teaser d'approche anonymis\u00E9" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">Teaser</button>
+          <button class="btn btn-secondary btn-sm" id="btn-teaser-pdf" title="G\u00E9n\u00E9rer le document Talent \u00E0 Impact (anonymis\u00E9)" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">Talent</button>
           <button class="btn btn-secondary btn-sm" id="btn-dossier-pdf" title="Dossier complet de pr\u00E9sentation" style="background:#2D6A4F;color:#fff;border-color:#2D6A4F;">Dossier</button>
           <button class="btn btn-secondary btn-sm" id="btn-templates">Trames</button>
           <button class="btn btn-danger btn-sm" id="btn-delete-candidat" title="Supprimer ce candidat">Suppr.</button>
@@ -84,16 +84,63 @@
 
     document.getElementById('btn-teaser-pdf')?.addEventListener('click', async () => {
       try {
-        UI.toast('G\u00E9n\u00E9ration du teaser en cours...');
+        UI.toast('Pr\u00E9paration du Talent \u00E0 Impact...');
+
+        // Fetch DSI + company names
         const dsiResult = candidat.profile_code ? await DSIProfile.fetchProfile(candidat.profile_code) : null;
         const companyNames = Store.get('entreprises').map(e => e.nom).filter(Boolean);
-        const doc = PDFEngine.generateTeaserApproche(candidat, { dsiResult, companyNames });
-        const filename = `Teaser_${(candidat.poste_actuel || 'Candidat').replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+
+        // Réécriture IA des notes internes (avec fallback silencieux)
+        let aiPitch = null;
+        const hasNotes = candidat.synthese_30s || candidat.parcours_cible || candidat.motivation_drivers;
+        const apiKey = typeof CVParser !== 'undefined' && CVParser.getOpenAIKey ? CVParser.getOpenAIKey() : null;
+
+        if (apiKey && hasNotes && typeof InterviewAnalyzer !== 'undefined') {
+          try {
+            UI.toast('R\u00E9\u00E9criture IA en cours...');
+            const systemPrompt = `Tu es un consultant senior en executive search chez Amarillo Search.
+On te donne des notes internes de recruteur sur un candidat.
+R\u00E9\u00E9cris-les en 2 sections pour un document client professionnel ("Talent \u00E0 Impact").
+
+R\u00E9ponds UNIQUEMENT avec un JSON :
+{
+  "synthese": "...",
+  "projet": "..."
+}
+
+synthese (3-4 phrases max) : Pitch percutant du profil. Mets en avant les forces, l'exp\u00E9rience cl\u00E9, et la valeur ajout\u00E9e. Ton positif et vendeur. Ne mentionne AUCUN nom de personne ni d'entreprise.
+
+projet (3-4 phrases max) : Ce que le candidat recherche et ce qui le motive, formul\u00E9 de mani\u00E8re \u00E0 rassurer un client. Ton professionnel. Ne mentionne AUCUN nom de personne ni d'entreprise.
+
+R\u00E8gles :
+- Texte brut, pas de markdown, pas de tirets, pas de listes
+- Fran\u00E7ais professionnel
+- JAMAIS de nom de candidat, d'entreprise ou de coordonn\u00E9es
+- Si les notes sont vides ou insuffisantes, retourne des cha\u00EEnes vides`;
+
+            const notesConcat = [
+              candidat.synthese_30s || '',
+              candidat.parcours_cible || '',
+              candidat.motivation_drivers || ''
+            ].filter(Boolean).join('\n\n');
+
+            const userPrompt = `Notes d'entretien :\n${notesConcat.substring(0, 6000)}\n\nPoste actuel : ${candidat.poste_actuel || 'Non renseign\u00E9'}`;
+
+            aiPitch = await InterviewAnalyzer._callOpenAI(systemPrompt, userPrompt);
+          } catch (aiErr) {
+            console.warn('AI rewriting failed, using raw notes:', aiErr.message);
+            aiPitch = null;
+          }
+        }
+
+        UI.toast('G\u00E9n\u00E9ration du PDF...');
+        const doc = PDFEngine.generateTalentAImpact(candidat, { dsiResult, companyNames, aiPitch });
+        const filename = `Talent_a_Impact_${(candidat.poste_actuel || 'Candidat').replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
         PDFEngine.download(doc, filename);
-        UI.toast('Teaser PDF t\u00E9l\u00E9charg\u00E9');
+        UI.toast('Talent \u00E0 Impact PDF t\u00E9l\u00E9charg\u00E9');
       } catch (e) {
-        console.error('Teaser PDF generation error:', e);
-        UI.toast('Erreur lors de la g\u00E9n\u00E9ration du teaser : ' + e.message, 'error');
+        console.error('Talent PDF generation error:', e);
+        UI.toast('Erreur lors de la g\u00E9n\u00E9ration du Talent \u00E0 Impact : ' + e.message, 'error');
       }
     });
 

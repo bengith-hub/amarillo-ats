@@ -147,6 +147,104 @@ const PDFEngine = (() => {
   }
 
   // ============================================================
+  // TALENT HEADER — branding DSI Profiling (bande jaune + logo)
+  // ============================================================
+
+  function addTalentHeader(doc, title) {
+    // Bande jaune pleine largeur (12mm)
+    doc.setFillColor(...BRAND.primary);
+    doc.rect(0, 0, PAGE.width, 12, 'F');
+
+    // Cercle blanc pour le logo "A"
+    doc.setFillColor(...BRAND.white);
+    doc.circle(25, 6, 4, 'F');
+
+    // Lettre "A" dans le cercle
+    doc.setFont(BRAND.font, 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...BRAND.dark);
+    doc.text('A', 25, 7.5, { align: 'center' });
+
+    // "Amarillo Search" à droite du logo
+    doc.setFont(BRAND.font, 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(...BRAND.dark);
+    doc.text(BRAND.companyName, 32, 7.5);
+
+    // Titre du document sous la bande, centré
+    if (title) {
+      doc.setFont(BRAND.font, 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(...BRAND.dark);
+      // Espacement entre lettres via caractères espaces
+      const spaced = title.split('').join(' ');
+      doc.text(spaced, PAGE.width / 2, 19, { align: 'center' });
+    }
+
+    // Ligne séparatrice fine
+    doc.setDrawColor(...BRAND.border);
+    doc.setLineWidth(0.3);
+    doc.line(PAGE.marginLeft, 23, PAGE.width - PAGE.marginRight, 23);
+
+    return 27; // Y position après le header
+  }
+
+  // ============================================================
+  // TALENT FOOTER — branding DSI Profiling (fond dark + description)
+  // ============================================================
+
+  function addTalentFooter(doc) {
+    const footerH1 = 18; // Zone 1 : dark
+    const footerH2 = 8;  // Zone 2 : plus dark
+    const totalH = footerH1 + footerH2;
+    const y1 = PAGE.height - totalH;
+    const y2 = PAGE.height - footerH2;
+
+    // Zone 1 : fond dark
+    doc.setFillColor(...BRAND.dark);
+    doc.rect(0, y1, PAGE.width, footerH1, 'F');
+
+    // Ligne jaune en haut de la zone
+    doc.setFillColor(...BRAND.primary);
+    doc.rect(0, y1, PAGE.width, 0.5, 'F');
+
+    // "Amarillo Search" bold jaune
+    doc.setFont(BRAND.font, 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(...BRAND.primary);
+    doc.text(BRAND.companyName, PAGE.marginLeft, y1 + 5);
+
+    // Description
+    doc.setFont(BRAND.font, 'normal');
+    doc.setFontSize(5.5);
+    doc.setTextColor(148, 163, 184); // #94a3b8
+    const desc = 'Cabinet de search et d\'approche directe sp\u00E9cialis\u00E9 dans le recrutement de profils middle et top management pour des r\u00F4les \u00E0 enjeu strat\u00E9gique.';
+    doc.text(desc, PAGE.marginLeft, y1 + 9);
+
+    // Email jaune
+    doc.setFont(BRAND.font, 'normal');
+    doc.setFontSize(5.5);
+    doc.setTextColor(...BRAND.primary);
+    doc.text('contact@amarillosearch.com', PAGE.marginLeft, y1 + 13);
+
+    // Zone 2 : fond encore plus dark
+    doc.setFillColor(17, 24, 39); // #111827
+    doc.rect(0, y2, PAGE.width, footerH2, 'F');
+
+    // Logo "A" centré
+    doc.setFont(BRAND.font, 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(...BRAND.primary);
+    doc.text('A', PAGE.width / 2 - 15, y2 + 5, { align: 'center' });
+
+    // "Talent à Impact · Document confidentiel"
+    doc.setFont(BRAND.font, 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(148, 163, 184);
+    doc.text('Talent \u00E0 Impact \u00B7 Document confidentiel', PAGE.width / 2 - 5, y2 + 5);
+  }
+
+  // ============================================================
   // FOOTER (bas de chaque page)
   // ============================================================
 
@@ -974,6 +1072,11 @@ const PDFEngine = (() => {
     return `${years} ans d'exp\u00E9rience`;
   }
 
+  function _stripEmojis(text) {
+    if (!text) return '';
+    return text.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu, '').replace(/\s{2,}/g, ' ').trim();
+  }
+
   // ============================================================
   // FICHE CANDIDAT PDF — export complet de la fiche candidat
   // ============================================================
@@ -1177,6 +1280,121 @@ const PDFEngine = (() => {
 
     // --- Watermark ---
     addWatermark(doc, 'CONFIDENTIEL');
+
+    return doc;
+  }
+
+  // ============================================================
+  // TALENT À IMPACT — PDF 1 page compact anonymisé
+  // ============================================================
+
+  function generateTalentAImpact(candidat, options = {}) {
+    const dsiResult = options.dsiResult || null;
+    const companyNames = [...(options.companyNames || [])];
+    const aiPitch = options.aiPitch || null;
+
+    // Ajouter le nom de l'entreprise du candidat à la liste d'anonymisation
+    if (candidat.entreprise_nom) companyNames.push(candidat.entreprise_nom);
+    if (candidat.entreprise_actuel) companyNames.push(candidat.entreprise_actuel);
+
+    const doc = createDocument({
+      title: 'Talent \u00E0 Impact \u2014 Amarillo Search',
+      subject: `Profil anonymis\u00E9 \u2014 ${_stripEmojis(candidat.poste_actuel) || 'Candidat'}`,
+    });
+
+    // --- Header DSI Profiling ---
+    let y = addTalentHeader(doc, 'TALENT \u00C0 IMPACT');
+
+    // --- Profil en bref (uniquement champs non vides) ---
+    y = addSection(doc, y, 'Profil en bref');
+
+    // Construire la liste des champs avec valeurs non vides
+    const briefFields = [];
+    if (candidat.poste_actuel) briefFields.push({ label: 'Poste actuel', value: _stripEmojis(candidat.poste_actuel) });
+    if (candidat.poste_cible) briefFields.push({ label: 'Poste cible', value: _stripEmojis(candidat.poste_cible) });
+    if (candidat.localisation) briefFields.push({ label: 'R\u00E9gion', value: _stripEmojis(candidat.localisation) });
+    const exp = experienceYears(candidat.debut_carriere);
+    if (exp) briefFields.push({ label: 'Exp\u00E9rience', value: exp });
+    if (candidat.diplome) briefFields.push({ label: 'Formation', value: _stripEmojis(candidat.diplome) });
+    if (candidat.niveau) briefFields.push({ label: 'Niveau', value: _stripEmojis(candidat.niveau) });
+
+    // Disponibilité
+    let dispoLabel = null;
+    if (candidat.open_to_work) {
+      dispoLabel = candidat.date_disponibilite
+        ? 'Disponible \u2014 ' + new Date(candidat.date_disponibilite).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+        : 'Disponible';
+    } else if (candidat.date_disponibilite) {
+      dispoLabel = new Date(candidat.date_disponibilite).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    }
+    if (dispoLabel) briefFields.push({ label: 'Disponibilit\u00E9', value: dispoLabel });
+    if (candidat.teletravail) briefFields.push({ label: 'T\u00E9l\u00E9travail', value: _stripEmojis(candidat.teletravail) });
+
+    // Grouper par paires de 2
+    for (let i = 0; i < briefFields.length; i += 2) {
+      const pair = briefFields.slice(i, i + 2);
+      y = addFieldRow(doc, y, pair);
+    }
+
+    // --- Synthèse (conditionnel) ---
+    const syntheseText = aiPitch?.synthese
+      || anonymizeText(_stripEmojis(candidat.synthese_30s), companyNames);
+    if (syntheseText) {
+      y = addSection(doc, y, 'Synth\u00E8se');
+      y = addText(doc, y, _stripEmojis(syntheseText), { fontSize: 8 });
+      y += 2;
+    }
+
+    // --- Projet professionnel (conditionnel) ---
+    const projetText = aiPitch?.projet
+      || [
+        anonymizeText(_stripEmojis(candidat.parcours_cible), companyNames),
+        anonymizeText(_stripEmojis(candidat.motivation_drivers), companyNames),
+      ].filter(Boolean).join('\n');
+    if (projetText) {
+      y = addSection(doc, y, 'Projet professionnel');
+      y = addText(doc, y, _stripEmojis(projetText), { fontSize: 8 });
+      y += 2;
+    }
+
+    // --- Conditions (conditionnel, uniquement champs non vides) ---
+    const packageBand = salaryBand(candidat.package_souhaite_min, candidat.package_souhaite);
+    const condFields = [];
+    if (packageBand) condFields.push({ label: 'Package souhait\u00E9', value: packageBand });
+    if (candidat.preavis) condFields.push({ label: 'Pr\u00E9avis', value: _stripEmojis(candidat.preavis) });
+
+    if (condFields.length > 0) {
+      y = addSection(doc, y, 'Conditions');
+      for (let i = 0; i < condFields.length; i += 2) {
+        const pair = condFields.slice(i, i + 2);
+        y = addFieldRow(doc, y, pair);
+      }
+    }
+
+    // --- Carte DSI (conditionnel, PAS de radar chart) ---
+    if (dsiResult && dsiResult.status === 'completed') {
+      y = addSection(doc, y, 'Profil DSI Amarillo\u2122');
+      y = addDSIProfileCard(doc, y, {
+        profileName: _stripEmojis(dsiResult.profile),
+        avgScore: dsiResult.avgNorm,
+        pillarScores: dsiResult.pillarScoresNorm,
+      });
+    }
+
+    // --- Mention de confidentialité (compact) ---
+    y += 2;
+    doc.setFont(BRAND.font, 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...BRAND.textLight);
+    const confText = 'Ce document est confidentiel. L\'identit\u00E9 du candidat sera communiqu\u00E9e apr\u00E8s accord mutuel pour poursuivre le processus.';
+    const confLines = doc.splitTextToSize(confText, PAGE.contentWidth);
+    doc.text(confLines, PAGE.marginLeft, y);
+
+    // --- Watermark ---
+    addWatermark(doc, 'CONFIDENTIEL');
+
+    // --- Footer DSI Profiling (appliqué manuellement, pas via finalize standard) ---
+    addTalentFooter(doc);
 
     return doc;
   }
@@ -1768,6 +1986,7 @@ const PDFEngine = (() => {
     // Pre-built documents
     generateCandidatSummary,
     generateTeaserApproche,
+    generateTalentAImpact,
     generateJDDocument,
     generateCandidatPresentation,
     generateShortlistPDF,
