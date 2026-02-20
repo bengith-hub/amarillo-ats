@@ -57,10 +57,20 @@ const PDFEngine = (() => {
   // ============================================================
 
   function createDocument(options = {}) {
-    if (typeof jspdf === 'undefined' && typeof jsPDF === 'undefined') {
+    // Résolution robuste : essayer toutes les variantes d'exposition de jsPDF
+    const JsPDF = (typeof jspdf !== 'undefined' && jspdf.jsPDF)
+      ? jspdf.jsPDF
+      : (typeof window !== 'undefined' && window.jspdf && window.jspdf.jsPDF)
+        ? window.jspdf.jsPDF
+        : (typeof jsPDF !== 'undefined')
+          ? jsPDF
+          : (typeof window !== 'undefined' && window.jsPDF)
+            ? window.jsPDF
+            : null;
+
+    if (!JsPDF) {
       throw new Error('jsPDF non chargé. Ajoutez le script CDN jsPDF à la page.');
     }
-    const JsPDF = (typeof jspdf !== 'undefined') ? jspdf.jsPDF : jsPDF;
 
     const doc = new JsPDF({
       orientation: 'portrait',
@@ -387,6 +397,8 @@ const PDFEngine = (() => {
       title,
     } = options;
 
+    if (!data || data.length < 3) return y; // Need at least 3 data points
+
     const chartY = y + radius + 8;
 
     if (chartY + radius + 10 > PAGE.maxY) {
@@ -441,7 +453,7 @@ const PDFEngine = (() => {
 
     // Remplissage semi-transparent
     try {
-      const GState = (typeof jspdf !== 'undefined') ? jspdf.GState : (typeof GState !== 'undefined' ? GState : null);
+      const GState = (typeof jspdf !== 'undefined' && jspdf.GState) ? jspdf.GState : (typeof window !== 'undefined' && window.jspdf && window.jspdf.GState) ? window.jspdf.GState : null;
       if (GState) {
         doc.saveGraphicsState();
         doc.setGState(new GState({ opacity: 0.15 }));
@@ -773,7 +785,7 @@ const PDFEngine = (() => {
     for (let i = 1; i <= totalPages; i++) {
       doc.setPage(i);
       try {
-        const GState = (typeof jspdf !== 'undefined') ? jspdf.GState : null;
+        const GState = (typeof jspdf !== 'undefined' && jspdf.GState) ? jspdf.GState : (typeof window !== 'undefined' && window.jspdf && window.jspdf.GState) ? window.jspdf.GState : null;
         if (GState) {
           doc.saveGraphicsState();
           doc.setGState(new GState({ opacity: 0.06 }));
@@ -1373,7 +1385,7 @@ const PDFEngine = (() => {
         y = addHeader(doc, 'Profil DSI \u2014 Radar', '');
       }
       y = addRadarChart(doc, y, {
-        scores: dsiResult.pillarScoresNorm,
+        data: dsiResult.pillarScoresNorm,
         labels: ['Leadership & Influence', 'Excellence Op\u00E9rationnelle', 'Innovation & Posture'],
         colors: [BRAND.pillarLeadership, BRAND.pillarOps, BRAND.pillarInnovation],
       });
