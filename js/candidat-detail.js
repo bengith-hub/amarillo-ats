@@ -59,6 +59,7 @@
           ${UI.statusBadge(candidat.niveau || 'Middle', CANDIDAT_NIVEAUX, { entity: 'candidats', recordId: id, fieldName: 'niveau', onUpdate: (s) => { candidat.niveau = s; } })}
           <button class="btn btn-secondary btn-sm" id="btn-export-pdf" title="Exporter la fiche en PDF">PDF</button>
           <button class="btn btn-secondary btn-sm" id="btn-teaser-pdf" title="G\u00E9n\u00E9rer le teaser d'approche anonymis\u00E9" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">Teaser</button>
+          <button class="btn btn-secondary btn-sm" id="btn-dossier-pdf" title="Dossier complet de pr\u00E9sentation" style="background:#2D6A4F;color:#fff;border-color:#2D6A4F;">Dossier</button>
           <button class="btn btn-secondary btn-sm" id="btn-templates">Trames</button>
           <button class="btn btn-danger btn-sm" id="btn-delete-candidat" title="Supprimer ce candidat">Suppr.</button>
           <span class="autosave-indicator saved"><span class="sync-dot"></span> Auto-save</span>
@@ -93,6 +94,25 @@
       } catch (e) {
         console.error('Teaser PDF generation error:', e);
         UI.toast('Erreur lors de la g\u00E9n\u00E9ration du teaser : ' + e.message, 'error');
+      }
+    });
+
+    document.getElementById('btn-dossier-pdf')?.addEventListener('click', async () => {
+      try {
+        UI.toast('G\u00E9n\u00E9ration du dossier complet...');
+        const dsiResult = candidat.profile_code ? await DSIProfile.fetchProfile(candidat.profile_code) : null;
+        const entreprise = candidat.entreprise_actuelle_id ? Store.resolve('entreprises', candidat.entreprise_actuelle_id) : null;
+        const missionIds = candidat.missions_ids || [];
+        const missions = missionIds.map(mid => Store.findById('missions', mid)).filter(Boolean);
+        const actions = Store.filter('actions', a => a.candidat_id === id)
+          .sort((a, b) => (b.date_action || '').localeCompare(a.date_action || ''));
+        const doc = PDFEngine.generateCandidatPresentation(candidat, { dsiResult, entreprise, missions, actions });
+        const filename = `Dossier_${(candidat.prenom || '').replace(/\s/g, '_')}_${(candidat.nom || '').replace(/\s/g, '_')}.pdf`;
+        PDFEngine.download(doc, filename);
+        UI.toast('Dossier PDF t\u00E9l\u00E9charg\u00E9');
+      } catch (e) {
+        console.error('Dossier PDF generation error:', e);
+        UI.toast('Erreur lors de la g\u00E9n\u00E9ration du dossier : ' + e.message, 'error');
       }
     });
 
