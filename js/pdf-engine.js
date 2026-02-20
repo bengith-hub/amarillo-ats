@@ -930,6 +930,39 @@ const PDFEngine = (() => {
   }
 
   // ============================================================
+  // HELPERS D'ANONYMISATION (privés)
+  // ============================================================
+
+  function anonymizeText(text, companyNames = []) {
+    if (!text) return '';
+    let result = text;
+    const sorted = [...companyNames].filter(n => n && n.length >= 2).sort((a, b) => b.length - a.length);
+    for (const name of sorted) {
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      result = result.replace(new RegExp(escaped, 'gi'), '[entreprise confidentielle]');
+    }
+    return result;
+  }
+
+  function salaryBand(minK, maxK) {
+    const min = parseFloat(minK);
+    const max = parseFloat(maxK);
+    const roundTo5 = (v) => Math.round(v / 5) * 5;
+    if (!isNaN(min) && !isNaN(max)) return `${roundTo5(min)} \u2013 ${roundTo5(max)} K\u20AC`;
+    if (!isNaN(max)) return `~${roundTo5(max)} K\u20AC`;
+    if (!isNaN(min)) return `\u00E0 partir de ${roundTo5(min)} K\u20AC`;
+    return null;
+  }
+
+  function experienceYears(dateStr) {
+    if (!dateStr) return null;
+    const years = Math.floor((Date.now() - new Date(dateStr).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+    if (years < 1) return "Moins d'1 an";
+    if (years === 1) return "1 an d'exp\u00E9rience";
+    return `${years} ans d'exp\u00E9rience`;
+  }
+
+  // ============================================================
   // FICHE CANDIDAT PDF — export complet de la fiche candidat
   // ============================================================
 
@@ -1012,6 +1045,131 @@ const PDFEngine = (() => {
   }
 
   // ============================================================
+  // TEASER D'APPROCHE — profil candidat anonymisé
+  // ============================================================
+
+  function generateTeaserApproche(candidat, options = {}) {
+    const dsiResult = options.dsiResult || null;
+    const companyNames = [...(options.companyNames || [])];
+    const missionRef = options.missionRef || null;
+
+    // Ajouter le nom de l'entreprise du candidat à la liste d'anonymisation
+    if (candidat.entreprise_nom) companyNames.push(candidat.entreprise_nom);
+    if (candidat.entreprise_actuel) companyNames.push(candidat.entreprise_actuel);
+
+    const doc = createDocument({
+      title: "Teaser d'approche \u2014 Amarillo Search",
+      subject: `Profil anonymis\u00E9 \u2014 ${candidat.poste_actuel || 'Candidat'}`,
+    });
+
+    // --- Header ---
+    const dateStr = formatDate(new Date().toISOString());
+    let y = addHeader(doc, "Teaser d'approche", dateStr);
+
+    // --- Bloc titre ---
+    y = addText(doc, y, 'PROFIL CANDIDAT \u2014 APPROCHE CONFIDENTIELLE', {
+      bold: true, fontSize: 12, color: BRAND.dark,
+    });
+    y += 1;
+    if (missionRef) {
+      y = addText(doc, y, `Mission : ${missionRef}`, { fontSize: 9, color: BRAND.textLight });
+    }
+    y = addSeparator(doc, y);
+
+    // --- Profil en bref ---
+    y = addSection(doc, y, 'Profil en bref');
+    y = addFieldRow(doc, y, [
+      { label: 'Poste actuel', value: candidat.poste_actuel },
+      { label: 'Niveau', value: candidat.niveau },
+    ]);
+    y = addFieldRow(doc, y, [
+      { label: 'Poste cible', value: candidat.poste_cible },
+      { label: 'R\u00E9gion', value: candidat.localisation },
+    ]);
+    y = addFieldRow(doc, y, [
+      { label: 'Exp\u00E9rience', value: experienceYears(candidat.debut_carriere) },
+      { label: 'Formation', value: candidat.diplome },
+    ]);
+
+    // --- Synthèse du profil ---
+    const synthese = anonymizeText(candidat.synthese_30s, companyNames);
+    if (synthese) {
+      y = addSection(doc, y, 'Synth\u00E8se du profil');
+      y = addText(doc, y, synthese);
+      y += 2;
+    }
+
+    // --- Projet professionnel ---
+    const parcours = anonymizeText(candidat.parcours_cible, companyNames);
+    const motivation = anonymizeText(candidat.motivation_drivers, companyNames);
+    if (parcours || motivation) {
+      y = addSection(doc, y, 'Projet professionnel');
+      if (parcours) {
+        y = addText(doc, y, parcours);
+        y += 2;
+      }
+      if (motivation) {
+        y = addCallout(doc, y, motivation, { color: BRAND.primary });
+      }
+    }
+
+    // --- Conditions & disponibilité ---
+    let disponibiliteLabel = null;
+    if (candidat.open_to_work) {
+      if (candidat.date_disponibilite) {
+        disponibiliteLabel = 'Disponible \u2014 ' + new Date(candidat.date_disponibilite).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+      } else {
+        disponibiliteLabel = 'Disponible';
+      }
+    } else if (candidat.date_disponibilite) {
+      disponibiliteLabel = new Date(candidat.date_disponibilite).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    }
+
+    const packageBand = salaryBand(candidat.package_souhaite_min, candidat.package_souhaite);
+
+    if (disponibiliteLabel || candidat.preavis || packageBand || candidat.teletravail) {
+      y = addSection(doc, y, 'Conditions & disponibilit\u00E9');
+      y = addFieldRow(doc, y, [
+        { label: 'Disponibilit\u00E9', value: disponibiliteLabel },
+        { label: 'Pr\u00E9avis', value: candidat.preavis },
+      ]);
+      y = addFieldRow(doc, y, [
+        { label: 'Package souhait\u00E9', value: packageBand },
+        { label: 'T\u00E9l\u00E9travail', value: candidat.teletravail },
+      ]);
+    }
+
+    // --- Profil DSI Amarillo™ (conditionnel) ---
+    if (dsiResult && dsiResult.status === 'completed') {
+      y = addSection(doc, y, 'Profil DSI Amarillo\u2122');
+      y = addDSIProfileCard(doc, y, {
+        profileName: dsiResult.profile,
+        avgScore: dsiResult.avgNorm,
+        pillarScores: dsiResult.pillarScoresNorm,
+      });
+      y = addRadarChart(doc, y, {
+        data: dsiResult.pillarScoresNorm,
+        labels: ['Leadership & Influence', 'Excellence Op\u00E9rationnelle', 'Innovation & Posture'],
+        colors: [BRAND.pillarLeadership, BRAND.pillarOps, BRAND.pillarInnovation],
+        title: '\u00C9quilibre des 3 piliers',
+      });
+    }
+
+    // --- Mention de confidentialité ---
+    y = addCallout(doc, y,
+      'Ce document est strictement confidentiel et destin\u00E9 uniquement au client destinataire. '
+      + 'Il ne peut \u00EAtre diffus\u00E9, copi\u00E9 ou transmis \u00E0 un tiers sans l\'accord pr\u00E9alable \u00E9crit d\'Amarillo Search. '
+      + 'L\'identit\u00E9 du candidat sera communiqu\u00E9e apr\u00E8s accord mutuel pour poursuivre le processus.',
+      { color: BRAND.dark, fontSize: 7 }
+    );
+
+    // --- Watermark ---
+    addWatermark(doc, 'CONFIDENTIEL');
+
+    return doc;
+  }
+
+  // ============================================================
   // PUBLIC API
   // ============================================================
 
@@ -1044,6 +1202,7 @@ const PDFEngine = (() => {
 
     // Pre-built documents
     generateCandidatSummary,
+    generateTeaserApproche,
 
     // Helpers
     scoreColor,
