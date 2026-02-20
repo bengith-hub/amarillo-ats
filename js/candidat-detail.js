@@ -57,12 +57,44 @@
         <div style="display:flex;gap:8px;align-items:center;">
           ${UI.statusBadge(candidat.statut || 'To call', CANDIDAT_STATUTS, { entity: 'candidats', recordId: id, fieldName: 'statut', onUpdate: (s) => { candidat.statut = s; } })}
           ${UI.statusBadge(candidat.niveau || 'Middle', CANDIDAT_NIVEAUX, { entity: 'candidats', recordId: id, fieldName: 'niveau', onUpdate: (s) => { candidat.niveau = s; } })}
-          <button class="btn btn-secondary btn-sm" id="btn-templates">📋 Trames</button>
-          <button class="btn btn-danger btn-sm" id="btn-delete-candidat" title="Supprimer ce candidat">🗑️</button>
+          <button class="btn btn-secondary btn-sm" id="btn-export-pdf" title="Exporter la fiche en PDF">PDF</button>
+          <button class="btn btn-secondary btn-sm" id="btn-teaser-pdf" title="G\u00E9n\u00E9rer le teaser d'approche anonymis\u00E9" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">Teaser</button>
+          <button class="btn btn-secondary btn-sm" id="btn-templates">Trames</button>
+          <button class="btn btn-danger btn-sm" id="btn-delete-candidat" title="Supprimer ce candidat">Suppr.</button>
           <span class="autosave-indicator saved"><span class="sync-dot"></span> Auto-save</span>
         </div>
       </div>
     `;
+
+    document.getElementById('btn-export-pdf')?.addEventListener('click', async () => {
+      try {
+        UI.toast('Generation du PDF en cours...');
+        const dsiResult = candidat.profile_code ? await DSIProfile.fetchProfile(candidat.profile_code) : null;
+        const entreprise = candidat.entreprise_actuelle_id ? Store.resolve('entreprises', candidat.entreprise_actuelle_id) : null;
+        const doc = PDFEngine.generateCandidatSummary(candidat, { dsiResult, entreprise });
+        const filename = `Fiche_${(candidat.prenom||'').replace(/\s/g,'_')}_${(candidat.nom||'').replace(/\s/g,'_')}.pdf`;
+        PDFEngine.download(doc, filename);
+        UI.toast('PDF telecharge');
+      } catch (e) {
+        console.error('PDF generation error:', e);
+        UI.toast('Erreur lors de la generation du PDF : ' + e.message, 'error');
+      }
+    });
+
+    document.getElementById('btn-teaser-pdf')?.addEventListener('click', async () => {
+      try {
+        UI.toast('G\u00E9n\u00E9ration du teaser en cours...');
+        const dsiResult = candidat.profile_code ? await DSIProfile.fetchProfile(candidat.profile_code) : null;
+        const companyNames = Store.get('entreprises').map(e => e.nom).filter(Boolean);
+        const doc = PDFEngine.generateTeaserApproche(candidat, { dsiResult, companyNames });
+        const filename = `Teaser_${(candidat.poste_actuel || 'Candidat').replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+        PDFEngine.download(doc, filename);
+        UI.toast('Teaser PDF t\u00E9l\u00E9charg\u00E9');
+      } catch (e) {
+        console.error('Teaser PDF generation error:', e);
+        UI.toast('Erreur lors de la g\u00E9n\u00E9ration du teaser : ' + e.message, 'error');
+      }
+    });
 
     document.getElementById('btn-templates').addEventListener('click', () => {
       showTemplatesModal({ candidatId: id });
