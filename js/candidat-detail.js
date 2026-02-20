@@ -58,7 +58,7 @@
           ${UI.statusBadge(candidat.statut || 'To call', CANDIDAT_STATUTS, { entity: 'candidats', recordId: id, fieldName: 'statut', onUpdate: (s) => { candidat.statut = s; } })}
           ${UI.statusBadge(candidat.niveau || 'Middle', CANDIDAT_NIVEAUX, { entity: 'candidats', recordId: id, fieldName: 'niveau', onUpdate: (s) => { candidat.niveau = s; } })}
           <button class="btn btn-secondary btn-sm" id="btn-export-pdf" title="Exporter la fiche en PDF">PDF</button>
-          <button class="btn btn-secondary btn-sm" id="btn-teaser-pdf" title="G\u00E9n\u00E9rer le document Talent \u00E0 Impact (anonymis\u00E9)" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">Talent</button>
+          <button class="btn btn-secondary btn-sm" id="btn-teaser-pdf" title="G\u00E9n\u00E9rer le Teaser Talent \u00E0 Impact (anonymis\u00E9)" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">Teaser</button>
           <button class="btn btn-secondary btn-sm" id="btn-dossier-pdf" title="Dossier complet de pr\u00E9sentation" style="background:#2D6A4F;color:#fff;border-color:#2D6A4F;">Dossier</button>
           <button class="btn btn-secondary btn-sm" id="btn-templates">Trames</button>
           <button class="btn btn-danger btn-sm" id="btn-delete-candidat" title="Supprimer ce candidat">Suppr.</button>
@@ -84,11 +84,13 @@
 
     document.getElementById('btn-teaser-pdf')?.addEventListener('click', async () => {
       try {
-        UI.toast('Pr\u00E9paration du Talent \u00E0 Impact...');
+        UI.toast('Pr\u00E9paration du Teaser...');
 
-        // Fetch DSI + company names
-        const dsiResult = candidat.profile_code ? await DSIProfile.fetchProfile(candidat.profile_code) : null;
-        const companyNames = Store.get('entreprises').map(e => e.nom).filter(Boolean);
+        // Fetch DSI + company names en parallèle
+        const [dsiResult, companyNames] = await Promise.all([
+          candidat.profile_code ? DSIProfile.fetchProfile(candidat.profile_code) : null,
+          Promise.resolve(Store.get('entreprises').map(e => e.nom).filter(Boolean)),
+        ]);
 
         // Réécriture IA des notes internes (avec fallback silencieux)
         let aiPitch = null;
@@ -133,14 +135,60 @@ R\u00E8gles :
           }
         }
 
-        UI.toast('G\u00E9n\u00E9ration du PDF...');
-        const doc = PDFEngine.generateTalentAImpact(candidat, { dsiResult, companyNames, aiPitch });
-        const filename = `Talent_a_Impact_${(candidat.poste_actuel || 'Candidat').replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
-        PDFEngine.download(doc, filename);
-        UI.toast('Talent \u00E0 Impact PDF t\u00E9l\u00E9charg\u00E9');
+        // Préparer les textes pour le modal d'édition
+        const allCompanyNames = [...companyNames];
+        if (candidat.entreprise_nom) allCompanyNames.push(candidat.entreprise_nom);
+        if (candidat.entreprise_actuel) allCompanyNames.push(candidat.entreprise_actuel);
+
+        const _anon = (t) => {
+          if (!t) return '';
+          let r = t;
+          const sorted = [...allCompanyNames].filter(n => n && n.length >= 2).sort((a, b) => b.length - a.length);
+          for (const name of sorted) {
+            const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            r = r.replace(new RegExp(esc, 'gi'), '[entreprise confidentielle]');
+          }
+          return r;
+        };
+
+        const defaultSynthese = aiPitch?.synthese
+          || _anon(candidat.synthese_30s || '');
+        const defaultProjet = aiPitch?.projet
+          || [_anon(candidat.parcours_cible || ''), _anon(candidat.motivation_drivers || '')].filter(Boolean).join('\n\n');
+
+        // Afficher le modal d'édition avant génération
+        const bodyHtml = `
+          <p style="font-size:0.8125rem;color:#64748b;margin-bottom:16px;">
+            Relisez et corrigez le contenu avant de g\u00E9n\u00E9rer le PDF. ${aiPitch ? '<span style="color:#16a36a;font-weight:600;">Texte retravaillé par IA.</span>' : '<span style="color:#e8a838;font-weight:600;">Texte brut (pas de cl\u00E9 IA configur\u00E9e).</span>'}
+          </p>
+          <div class="form-group">
+            <label style="font-weight:600;">Synth\u00E8se <span style="font-weight:400;color:#94a3b8;font-size:0.75rem;">(pitch vendeur du profil)</span></label>
+            <textarea id="teaser-synthese" rows="5" style="width:100%;resize:vertical;font-size:0.875rem;line-height:1.5;padding:10px;border:1px solid #e2e8f0;border-radius:8px;">${UI.escHtml(defaultSynthese)}</textarea>
+          </div>
+          <div class="form-group" style="margin-top:12px;">
+            <label style="font-weight:600;">Projet professionnel <span style="font-weight:400;color:#94a3b8;font-size:0.75rem;">(motivations et recherche)</span></label>
+            <textarea id="teaser-projet" rows="5" style="width:100%;resize:vertical;font-size:0.875rem;line-height:1.5;padding:10px;border:1px solid #e2e8f0;border-radius:8px;">${UI.escHtml(defaultProjet)}</textarea>
+          </div>
+        `;
+
+        UI.modal('Teaser \u2014 Talent \u00E0 Impact', bodyHtml, {
+          saveLabel: 'G\u00E9n\u00E9rer le PDF',
+          width: 680,
+          onSave: (overlay) => {
+            const synthese = overlay.querySelector('#teaser-synthese').value.trim();
+            const projet = overlay.querySelector('#teaser-projet').value.trim();
+
+            const finalPitch = { synthese, projet };
+            const doc = PDFEngine.generateTalentAImpact(candidat, { dsiResult, companyNames, aiPitch: finalPitch });
+            const filename = `Talent_a_Impact_${(candidat.poste_actuel || 'Candidat').replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+            PDFEngine.download(doc, filename);
+            UI.toast('Teaser PDF t\u00E9l\u00E9charg\u00E9');
+          }
+        });
+
       } catch (e) {
-        console.error('Talent PDF generation error:', e);
-        UI.toast('Erreur lors de la g\u00E9n\u00E9ration du Talent \u00E0 Impact : ' + e.message, 'error');
+        console.error('Teaser PDF generation error:', e);
+        UI.toast('Erreur lors de la g\u00E9n\u00E9ration du teaser : ' + e.message, 'error');
       }
     });
 
