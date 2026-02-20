@@ -69,8 +69,9 @@ const DSIProfile = (() => {
     const scores = {};
     DIMENSIONS.forEach(dim => {
       const arr = answers[dim.id] || [];
-      scores[dim.id] = arr.length > 0
-        ? arr.reduce((a, b) => a + b, 0) / arr.length
+      const nums = arr.map(v => Number(v)).filter(v => !isNaN(v));
+      scores[dim.id] = nums.length > 0
+        ? nums.reduce((a, b) => a + b, 0) / nums.length
         : 0;
     });
     return scores;
@@ -82,7 +83,7 @@ const DSIProfile = (() => {
       return dims.reduce((s, d) => s + (scores[d.id] || 0), 0) / dims.length;
     });
 
-    const avg = Object.values(scores).reduce((a, b) => a + b, 0) / DIMENSIONS.length;
+    const avg = Object.values(scores).reduce((a, b) => a + (b || 0), 0) / DIMENSIONS.length;
 
     // Profile matching: first eligible in priority order wins
     let matchedProfile = PROFILES[PROFILES.length - 1];
