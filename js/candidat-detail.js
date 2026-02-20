@@ -329,11 +329,72 @@
     const actionTypes = [...new Set(actionsWithNotes.map(a => a.type_action).filter(Boolean))];
     const typeOptions = actionTypes.map(t => `<option value="${UI.escHtml(t)}">${UI.escHtml(t)}</option>`).join('');
 
+    // Check if candidate has a CV in documents (for Drive fetch)
+    const cvDoc = (candidat.documents || []).find(d => d.type === 'CV' && d.url);
+    const hasDriveCv = cvDoc && typeof GoogleDrive !== 'undefined' && GoogleDrive.isConfigured();
+    const hasExistingContent = [candidat.synthese_30s, candidat.parcours_cible, candidat.motivation_drivers, candidat.lecture_recruteur].some(f => f && f.trim());
+
     document.getElementById('tab-entretien').innerHTML = `
       <div class="entretien-toolbar">
         <button class="btn btn-sm btn-secondary" id="btn-toggle-notes-panel" title="Afficher les notes d'actions à côté">
           Notes d'actions (${notesCount})
         </button>
+      </div>
+
+      <div class="card" data-accent="orange" id="ia-analysis-section" style="margin-bottom:16px;">
+        <div class="card-header" style="cursor:pointer;" id="ia-toggle-header">
+          <h2>Analyse IA</h2>
+          <span style="font-size:0.7rem;color:#94a3b8;display:flex;align-items:center;gap:8px;">
+            gpt-4o-mini
+            <svg id="ia-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.2s;"><path d="M6 9l6 6 6-6"/></svg>
+          </span>
+        </div>
+        <div class="card-body" id="ia-body" style="padding:16px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div>
+              <label style="font-size:0.8125rem;font-weight:600;color:#475569;display:block;margin-bottom:6px;">Notes d'entretien</label>
+              ${notesCount > 0
+                ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;font-size:0.8125rem;color:#166534;">
+                    ${notesCount} note${notesCount > 1 ? 's' : ''} d'actions collect\u00e9e${notesCount > 1 ? 's' : ''} automatiquement
+                    <button class="btn btn-sm btn-secondary" id="ia-show-notes" style="margin-left:8px;font-size:0.6875rem;">Voir</button>
+                  </div>`
+                : `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;font-size:0.8125rem;color:#991b1b;">
+                    Aucune note d'action trouv\u00e9e. Cr\u00e9ez des actions avec des notes avant d'analyser.
+                  </div>`
+              }
+            </div>
+            <div>
+              <label style="font-size:0.8125rem;font-weight:600;color:#475569;display:block;margin-bottom:6px;">CV (optionnel)</label>
+              <div id="ia-cv-drop-zone" style="border:2px dashed #e2e8f0;border-radius:8px;padding:16px;text-align:center;cursor:pointer;transition:all 0.15s;">
+                <div style="font-size:0.8125rem;color:#64748b;">Glissez un CV ici ou cliquez</div>
+                <div style="font-size:0.75rem;color:#94a3b8;">PDF, TXT</div>
+                <input type="file" id="ia-cv-file" accept=".pdf,.txt,.text,.md" style="display:none;" />
+              </div>
+              ${hasDriveCv ? `
+              <button class="btn btn-sm btn-secondary" id="ia-fetch-cv-drive" style="width:100%;margin-top:6px;font-size:0.75rem;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                R\u00e9cup\u00e9rer le CV depuis Google Drive
+              </button>` : ''}
+              <div id="ia-cv-status" style="margin-top:6px;font-size:0.75rem;"></div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:16px;padding-top:12px;border-top:1px solid #f1f5f9;">
+            <button class="btn btn-primary" id="ia-analyze-btn" ${notesCount === 0 ? 'disabled' : ''} title="${notesCount === 0 ? 'Ajoutez des notes d\'actions d\'abord' : ''}">
+              G\u00e9n\u00e9rer
+            </button>
+            <button class="btn btn-secondary" id="ia-enrich-btn" style="display:none;">
+              Enrichir avec le CV
+            </button>
+            <div id="ia-loading" style="display:none;font-size:0.8125rem;color:#64748b;">
+              <span class="ia-spinner"></span>
+              Analyse en cours...
+            </div>
+            <div id="ia-error" style="display:none;font-size:0.8125rem;color:#dc2626;max-width:400px;"></div>
+            <div style="margin-left:auto;">
+              <button class="btn btn-sm btn-secondary" id="ia-config-key" style="font-size:0.6875rem;">Cl\u00e9 OpenAI</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="entretien-layout" id="entretien-layout">
@@ -472,6 +533,226 @@
         { key: 'lecture_recruteur', label: '', type: 'textarea', render: richRender }
       ]
     });
+
+    // =============================================
+    // Analyse IA — event handlers
+    // =============================================
+
+    let _iaCvText = null;
+
+    // Collapse/expand toggle
+    const iaBody = document.getElementById('ia-body');
+    const iaChevron = document.getElementById('ia-chevron');
+    const iaSavedOpen = localStorage.getItem('ats_ia_section_open');
+    if (iaSavedOpen === '0') {
+      iaBody.style.display = 'none';
+      iaChevron.style.transform = 'rotate(-90deg)';
+    }
+    document.getElementById('ia-toggle-header').addEventListener('click', () => {
+      const isHidden = iaBody.style.display === 'none';
+      iaBody.style.display = isHidden ? '' : 'none';
+      iaChevron.style.transform = isHidden ? '' : 'rotate(-90deg)';
+      localStorage.setItem('ats_ia_section_open', isHidden ? '1' : '0');
+    });
+
+    // "Voir" notes button → open the notes panel
+    document.getElementById('ia-show-notes')?.addEventListener('click', () => {
+      document.getElementById('entretien-layout').classList.add('notes-open');
+      localStorage.setItem('ats_entretien_notes_open', '1');
+    });
+
+    // Build concatenated notes text
+    function buildNotesText() {
+      return actionsWithNotes.map(a => {
+        const header = `[${a.type_action || 'Action'}${a.canal ? ' - ' + a.canal : ''} - ${UI.formatDate(a.date_action)}]`;
+        return `${header}\n${a.message_notes}`;
+      }).join('\n\n---\n\n');
+    }
+
+    // Update enrich button visibility
+    function updateEnrichBtn() {
+      const enrichBtn = document.getElementById('ia-enrich-btn');
+      if (enrichBtn) {
+        enrichBtn.style.display = (hasExistingContent && _iaCvText) ? '' : 'none';
+      }
+    }
+
+    // CV drop zone
+    const cvDropZone = document.getElementById('ia-cv-drop-zone');
+    const cvFileInput = document.getElementById('ia-cv-file');
+    const cvStatus = document.getElementById('ia-cv-status');
+
+    cvDropZone.addEventListener('click', () => cvFileInput.click());
+    cvDropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      cvDropZone.style.borderColor = '#3b82f6';
+      cvDropZone.style.background = '#eff6ff';
+    });
+    cvDropZone.addEventListener('dragleave', () => {
+      cvDropZone.style.borderColor = '#e2e8f0';
+      cvDropZone.style.background = '';
+    });
+    cvDropZone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      cvDropZone.style.borderColor = '#e2e8f0';
+      cvDropZone.style.background = '';
+      const file = e.dataTransfer.files[0];
+      if (file) await loadCVFile(file);
+    });
+    cvFileInput.addEventListener('change', async () => {
+      if (cvFileInput.files[0]) await loadCVFile(cvFileInput.files[0]);
+      cvFileInput.value = '';
+    });
+
+    async function loadCVFile(file) {
+      cvStatus.innerHTML = '<span style="color:#64748b;">Extraction du texte...</span>';
+      cvDropZone.style.display = 'none';
+      try {
+        const text = await CVParser.parseFile(file);
+        if (!text || text.trim().length < 20) throw new Error('Fichier vide ou illisible');
+        _iaCvText = text;
+        cvStatus.innerHTML = `<span style="color:#059669;">CV charg\u00e9 : ${UI.escHtml(file.name)} (${text.length} car.)</span>
+          <button class="btn btn-sm btn-secondary" id="ia-cv-clear" style="margin-left:6px;font-size:0.625rem;">Retirer</button>`;
+        document.getElementById('ia-cv-clear')?.addEventListener('click', () => {
+          _iaCvText = null;
+          cvDropZone.style.display = '';
+          cvStatus.innerHTML = '';
+          updateEnrichBtn();
+        });
+        updateEnrichBtn();
+      } catch (err) {
+        cvDropZone.style.display = '';
+        cvStatus.innerHTML = `<span style="color:#dc2626;">Erreur : ${UI.escHtml(err.message)}</span>`;
+        _iaCvText = null;
+      }
+    }
+
+    // Google Drive CV fetch
+    document.getElementById('ia-fetch-cv-drive')?.addEventListener('click', async () => {
+      const match = cvDoc.url.match(/\/d\/([^/]+)/);
+      if (!match) { UI.toast('URL Drive invalide', 'error'); return; }
+      cvStatus.innerHTML = '<span style="color:#64748b;">T\u00e9l\u00e9chargement depuis Drive...</span>';
+      try {
+        await GoogleDrive.authenticate();
+        const downloaded = await GoogleDrive.downloadFile(match[1]);
+        const file = new File([downloaded.blob], downloaded.name, { type: downloaded.mimeType });
+        await loadCVFile(file);
+      } catch (err) {
+        cvStatus.innerHTML = `<span style="color:#dc2626;">Erreur Drive : ${UI.escHtml(err.message)}</span>`;
+      }
+    });
+
+    // OpenAI key config
+    document.getElementById('ia-config-key').addEventListener('click', () => {
+      CVParser.showKeyConfigModal();
+    });
+
+    // Review modal
+    function showReviewModal(result) {
+      const fields = [
+        { key: 'synthese_30s', label: 'Synth\u00e8se 30 secondes', accent: '#f59e0b' },
+        { key: 'parcours_cible', label: 'Parcours cible', accent: '#3b82f6' },
+        { key: 'motivation_drivers', label: 'Motivation & Drivers', accent: '#10b981' },
+        { key: 'lecture_recruteur', label: 'Lecture recruteur', accent: '#8b5cf6' },
+      ];
+
+      const bodyHtml = `
+        ${hasExistingContent ? '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:0.8125rem;color:#92400e;">Des contenus existent d\u00e9j\u00e0 dans certains champs. L\'analyse les remplacera.</div>' : ''}
+        ${fields.map(f => `
+          <div style="margin-bottom:16px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <div style="width:4px;height:16px;border-radius:2px;background:${f.accent};"></div>
+              <label style="font-size:0.8125rem;font-weight:600;color:#1e293b;">${f.label}</label>
+              ${candidat[f.key]?.trim() ? '<span style="font-size:0.6875rem;color:#f59e0b;">remplace le contenu existant</span>' : ''}
+            </div>
+            <textarea id="review-${f.key}" style="width:100%;min-height:100px;font-size:0.8125rem;border:1px solid #e2e8f0;border-radius:8px;padding:10px;resize:vertical;font-family:inherit;">${UI.escHtml(result[f.key] || '')}</textarea>
+          </div>
+        `).join('')}
+      `;
+
+      UI.modal('R\u00e9sultat de l\'analyse IA', bodyHtml, {
+        width: 700,
+        saveLabel: 'Appliquer les 4 champs',
+        onSave: async (overlay) => {
+          const updates = {};
+          fields.forEach(f => {
+            updates[f.key] = overlay.querySelector(`#review-${f.key}`).value.trim();
+          });
+          await Store.update('candidats', id, updates);
+          Object.assign(candidat, updates);
+          UI.toast('Analyse appliqu\u00e9e aux 4 champs');
+          renderEntretien();
+        }
+      });
+    }
+
+    // Generate button
+    document.getElementById('ia-analyze-btn').addEventListener('click', async () => {
+      if (!CVParser.getOpenAIKey()) { CVParser.showKeyConfigModal(); return; }
+      if (notesCount === 0) { UI.toast('Aucune note d\'action \u00e0 analyser', 'error'); return; }
+
+      const analyzeBtn = document.getElementById('ia-analyze-btn');
+      const enrichBtn = document.getElementById('ia-enrich-btn');
+      const loading = document.getElementById('ia-loading');
+      const errorDiv = document.getElementById('ia-error');
+
+      analyzeBtn.disabled = true;
+      if (enrichBtn) enrichBtn.disabled = true;
+      loading.style.display = 'inline-flex';
+      errorDiv.style.display = 'none';
+
+      try {
+        const result = await InterviewAnalyzer.analyze(buildNotesText(), _iaCvText);
+        loading.style.display = 'none';
+        analyzeBtn.disabled = false;
+        if (enrichBtn) enrichBtn.disabled = false;
+        showReviewModal(result);
+      } catch (err) {
+        loading.style.display = 'none';
+        analyzeBtn.disabled = false;
+        if (enrichBtn) enrichBtn.disabled = false;
+        errorDiv.textContent = err.message;
+        errorDiv.style.display = 'block';
+      }
+    });
+
+    // Enrich button
+    document.getElementById('ia-enrich-btn').addEventListener('click', async () => {
+      if (!CVParser.getOpenAIKey()) { CVParser.showKeyConfigModal(); return; }
+      if (!_iaCvText) { UI.toast('Chargez un CV d\'abord', 'error'); return; }
+
+      const analyzeBtn = document.getElementById('ia-analyze-btn');
+      const enrichBtn = document.getElementById('ia-enrich-btn');
+      const loading = document.getElementById('ia-loading');
+      const errorDiv = document.getElementById('ia-error');
+
+      analyzeBtn.disabled = true;
+      enrichBtn.disabled = true;
+      loading.style.display = 'inline-flex';
+      errorDiv.style.display = 'none';
+
+      try {
+        const existingFields = {
+          synthese_30s: candidat.synthese_30s || '',
+          parcours_cible: candidat.parcours_cible || '',
+          motivation_drivers: candidat.motivation_drivers || '',
+          lecture_recruteur: candidat.lecture_recruteur || '',
+        };
+        const result = await InterviewAnalyzer.enrich(existingFields, _iaCvText, buildNotesText());
+        loading.style.display = 'none';
+        analyzeBtn.disabled = false;
+        enrichBtn.disabled = false;
+        showReviewModal(result);
+      } catch (err) {
+        loading.style.display = 'none';
+        analyzeBtn.disabled = false;
+        enrichBtn.disabled = false;
+        errorDiv.textContent = err.message;
+        errorDiv.style.display = 'block';
+      }
+    });
+
+    updateEnrichBtn();
   }
 
   function renderEntretienNotes(actions) {
