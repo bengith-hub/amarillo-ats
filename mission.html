@@ -83,6 +83,7 @@
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           ${UI.badge(m.statut)} ${UI.badge(m.niveau)}
+          <button class="btn btn-secondary btn-sm" id="btn-jd-pdf" title="Exporter la fiche de poste en PDF" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">JD PDF</button>
           <span class="autosave-indicator saved"><span class="sync-dot"></span> Auto-save</span>
           <button class="btn btn-primary btn-sm" id="btn-add-candidat-mission">+ Candidat</button>
           <button class="btn btn-danger btn-sm" id="btn-delete-mission" title="Supprimer cette mission">🗑️</button>
@@ -106,6 +107,17 @@
               <span class="edit-hint">cliquer pour modifier</span>
             </div>
             <div class="card-body" id="mission-notes-fields"></div>
+          </div>
+
+          <div class="card" data-accent="yellow">
+            <div class="card-header">
+              <h2>Fiche de poste (JD)</h2>
+              <span class="edit-hint">cliquer sur un champ pour modifier</span>
+            </div>
+            <div class="card-body">
+              <div class="inline-fields-grid" id="jd-info-fields"></div>
+              <div id="jd-text-fields" style="margin-top:12px;"></div>
+            </div>
           </div>
 
           <div class="card">
@@ -222,6 +234,47 @@
       fields: [
         { key: 'notes', label: 'Notes', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
       ]
+    });
+
+    // Inline editable — Fiche de poste (JD) info fields
+    UI.inlineEdit('jd-info-fields', {
+      entity: 'missions', recordId: id,
+      fields: [
+        { key: 'jd_entreprise', label: 'Entreprise (JD)', type: 'text' },
+        { key: 'jd_localisation', label: 'Localisation', type: 'text' },
+        { key: 'jd_type_contrat', label: 'Type de contrat', type: 'select', options: ['CDI', 'CDD', 'Freelance', 'Transition'] },
+        { key: 'jd_teletravail', label: 'Télétravail', type: 'text' },
+      ]
+    });
+
+    // Inline editable — Fiche de poste (JD) text fields
+    UI.inlineEdit('jd-text-fields', {
+      entity: 'missions', recordId: id,
+      fields: [
+        { key: 'jd_contexte', label: 'Contexte de la mission', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
+        { key: 'jd_responsabilites', label: 'Responsabilités clés', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
+        { key: 'jd_profil_recherche', label: 'Profil recherché', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
+        { key: 'jd_remuneration', label: 'Rémunération & avantages', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
+        { key: 'jd_environnement', label: 'Environnement de travail', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
+        { key: 'jd_processus', label: 'Processus de sélection', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
+      ]
+    });
+
+    // JD PDF export
+    document.getElementById('btn-jd-pdf')?.addEventListener('click', () => {
+      try {
+        UI.toast('Génération de la fiche de poste...');
+        const entreprise = decideurs.length > 0 && decideurs[0].entreprise_id
+          ? Store.findById('entreprises', decideurs[0].entreprise_id)
+          : null;
+        const doc = PDFEngine.generateJDDocument(m, { entreprise, decideurs });
+        const filename = `JD_${(m.ref || '').replace(/\s/g, '_')}_${(m.nom || 'Mission').replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '_')}.pdf`;
+        PDFEngine.download(doc, filename);
+        UI.toast('Fiche de poste PDF téléchargée');
+      } catch (e) {
+        console.error('JD PDF generation error:', e);
+        UI.toast('Erreur lors de la génération du PDF : ' + e.message, 'error');
+      }
     });
 
     // Add candidat to mission

@@ -1170,6 +1170,115 @@ const PDFEngine = (() => {
   }
 
   // ============================================================
+  // JD BUILDER — Fiche de poste avec export PDF
+  // ============================================================
+
+  function generateJDDocument(mission, options = {}) {
+    const entreprise = options.entreprise || null;
+    const decideurs = options.decideurs || [];
+
+    const doc = createDocument({
+      title: `Fiche de poste \u2014 ${mission.nom || mission.ref || ''}`,
+      subject: mission.jd_entreprise || '',
+    });
+
+    // --- Page de couverture ---
+    addCoverPage(doc, {
+      title: mission.nom || mission.ref || 'Fiche de poste',
+      subtitle: mission.jd_entreprise || '',
+      reference: mission.ref ? `R\u00E9f. ${mission.ref}` : '',
+      confidential: true,
+    });
+
+    // --- Page 2 : contenu principal ---
+    let y = addHeader(doc, 'Fiche de poste', formatDate(new Date().toISOString()));
+
+    // Identification
+    y = addSection(doc, y, 'Identification du poste');
+    y = addFieldRow(doc, y, [
+      { label: 'Intitul\u00E9 du poste', value: mission.nom },
+      { label: 'R\u00E9f\u00E9rence', value: mission.ref },
+    ]);
+    y = addFieldRow(doc, y, [
+      { label: 'Entreprise', value: mission.jd_entreprise || (entreprise ? entreprise.displayName || entreprise.nom : null) },
+      { label: 'Secteur', value: entreprise ? entreprise.secteur : null },
+    ]);
+    y = addFieldRow(doc, y, [
+      { label: 'Localisation', value: mission.jd_localisation },
+      { label: 'Niveau', value: mission.niveau },
+    ]);
+    if (mission.jd_type_contrat || mission.jd_teletravail) {
+      y = addFieldRow(doc, y, [
+        { label: 'Type de contrat', value: mission.jd_type_contrat },
+        { label: 'T\u00E9l\u00E9travail', value: mission.jd_teletravail },
+      ]);
+    }
+
+    // Décideurs / interlocuteurs
+    if (decideurs.length > 0) {
+      y += 2;
+      y = addField(doc, y, 'Interlocuteurs cl\u00E9s',
+        decideurs.map(d => `${d.prenom || ''} ${d.nom || ''} \u2014 ${d.fonction || ''}`).join('\n'));
+    }
+
+    y = addSeparator(doc, y);
+
+    // Contexte
+    if (mission.jd_contexte) {
+      y = addSection(doc, y, 'Contexte de la mission');
+      y = addText(doc, y, mission.jd_contexte);
+      y += 3;
+    }
+
+    // Responsabilités
+    if (mission.jd_responsabilites) {
+      y = addSection(doc, y, 'Responsabilit\u00E9s cl\u00E9s');
+      y = addText(doc, y, mission.jd_responsabilites);
+      y += 3;
+    }
+
+    // Profil recherché
+    if (mission.jd_profil_recherche) {
+      y = addSection(doc, y, 'Profil recherch\u00E9');
+      y = addText(doc, y, mission.jd_profil_recherche);
+      y += 3;
+    }
+
+    // Rémunération
+    if (mission.jd_remuneration) {
+      y = addSection(doc, y, 'R\u00E9mun\u00E9ration & avantages');
+      y = addText(doc, y, mission.jd_remuneration);
+      y += 3;
+    }
+
+    // Environnement
+    if (mission.jd_environnement) {
+      y = addSection(doc, y, 'Environnement de travail');
+      y = addText(doc, y, mission.jd_environnement);
+      y += 3;
+    }
+
+    // Processus de sélection
+    if (mission.jd_processus) {
+      y = addSection(doc, y, 'Processus de s\u00E9lection');
+      y = addText(doc, y, mission.jd_processus);
+      y += 3;
+    }
+
+    // Mention de confidentialité
+    y = addCallout(doc, y,
+      'Ce document est \u00E9tabli par Amarillo Search dans le cadre d\'un mandat de recherche exclusif. '
+      + 'Les informations contenues sont strictement confidentielles et destin\u00E9es uniquement aux candidats approch\u00E9s.',
+      { color: BRAND.dark, fontSize: 7 }
+    );
+
+    // Watermark
+    addWatermark(doc, 'CONFIDENTIEL');
+
+    return doc;
+  }
+
+  // ============================================================
   // PUBLIC API
   // ============================================================
 
@@ -1203,6 +1312,7 @@ const PDFEngine = (() => {
     // Pre-built documents
     generateCandidatSummary,
     generateTeaserApproche,
+    generateJDDocument,
 
     // Helpers
     scoreColor,
