@@ -57,12 +57,28 @@
         <div style="display:flex;gap:8px;align-items:center;">
           ${UI.statusBadge(candidat.statut || 'To call', CANDIDAT_STATUTS, { entity: 'candidats', recordId: id, fieldName: 'statut', onUpdate: (s) => { candidat.statut = s; } })}
           ${UI.statusBadge(candidat.niveau || 'Middle', CANDIDAT_NIVEAUX, { entity: 'candidats', recordId: id, fieldName: 'niveau', onUpdate: (s) => { candidat.niveau = s; } })}
-          <button class="btn btn-secondary btn-sm" id="btn-templates">📋 Trames</button>
-          <button class="btn btn-danger btn-sm" id="btn-delete-candidat" title="Supprimer ce candidat">🗑️</button>
+          <button class="btn btn-secondary btn-sm" id="btn-export-pdf" title="Exporter la fiche en PDF">PDF</button>
+          <button class="btn btn-secondary btn-sm" id="btn-templates">Trames</button>
+          <button class="btn btn-danger btn-sm" id="btn-delete-candidat" title="Supprimer ce candidat">Suppr.</button>
           <span class="autosave-indicator saved"><span class="sync-dot"></span> Auto-save</span>
         </div>
       </div>
     `;
+
+    document.getElementById('btn-export-pdf')?.addEventListener('click', async () => {
+      try {
+        UI.toast('Generation du PDF en cours...');
+        const dsiResult = candidat.profile_code ? await DSIProfile.fetchProfile(candidat.profile_code) : null;
+        const entreprise = candidat.entreprise_actuelle_id ? Store.resolve('entreprises', candidat.entreprise_actuelle_id) : null;
+        const doc = PDFEngine.generateCandidatSummary(candidat, { dsiResult, entreprise });
+        const filename = `Fiche_${(candidat.prenom||'').replace(/\s/g,'_')}_${(candidat.nom||'').replace(/\s/g,'_')}.pdf`;
+        PDFEngine.download(doc, filename);
+        UI.toast('PDF telecharge');
+      } catch (e) {
+        console.error('PDF generation error:', e);
+        UI.toast('Erreur lors de la generation du PDF : ' + e.message, 'error');
+      }
+    });
 
     document.getElementById('btn-templates').addEventListener('click', () => {
       showTemplatesModal({ candidatId: id });
