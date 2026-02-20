@@ -53,6 +53,13 @@ const DSIProfile = (() => {
   // SCORING FUNCTIONS
   // ============================================================
 
+  // Extract numeric score from answer value.
+  // Answers are stored as { s: weightedScore, r: rankString } objects,
+  // with legacy fallback for plain numbers.
+  function answerScore(val) {
+    return typeof val === 'object' && val !== null ? val.s : val;
+  }
+
   function normalizeScore(raw) {
     const linear01 = Math.max(0, Math.min(1,
       (raw - SCORE_THEORETICAL_MIN) / (SCORE_THEORETICAL_MAX - SCORE_THEORETICAL_MIN)
@@ -69,10 +76,8 @@ const DSIProfile = (() => {
     const scores = {};
     DIMENSIONS.forEach(dim => {
       const arr = answers[dim.id] || [];
-      const nums = arr.map(v => Number(v)).filter(v => !isNaN(v));
-      scores[dim.id] = nums.length > 0
-        ? nums.reduce((a, b) => a + b, 0) / nums.length
-        : 0;
+      if (arr.length === 0) { scores[dim.id] = 0; return; }
+      scores[dim.id] = arr.reduce((a, v) => a + answerScore(v), 0) / arr.length;
     });
     return scores;
   }
