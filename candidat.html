@@ -9,11 +9,11 @@
   <link rel="stylesheet" href="css/style.css" />
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <!-- Leaflet (for driving time drawer map) -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- jsPDF (PDF generation) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js"></script>
+  <link rel="stylesheet" href="css/leaflet.css" />
+  <script src="js/vendor/leaflet.js"></script>
+  <!-- jsPDF (PDF generation) — local vendor -->
+  <script src="js/vendor/jspdf.umd.min.js"></script>
+  <script src="js/vendor/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 
@@ -86,8 +86,8 @@
   <script src="js/routing.js"></script>
   <script src="js/dsi-scoring.js"></script>
   <script src="js/pdf-engine.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script>if (typeof pdfjsLib !== 'undefined') pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+  <script src="js/vendor/pdf.min.js"></script>
+  <script>if (typeof pdfjsLib !== 'undefined') pdfjsLib.GlobalWorkerOptions.workerSrc = 'js/vendor/pdf.worker.min.js';</script>
   <script src="js/cv-parser.js"></script>
   <script src="js/google-drive.js"></script>
   <script src="js/interview-analyzer.js"></script>
