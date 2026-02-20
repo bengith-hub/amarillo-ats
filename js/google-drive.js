@@ -161,6 +161,30 @@ const GoogleDrive = (function() {
     };
   }
 
+  // Télécharger un fichier depuis Google Drive (retourne un Blob)
+  async function downloadFile(fileId) {
+    const token = _accessToken;
+    if (!token) throw new Error('Non authentifié. Appelez authenticate() d\'abord.');
+
+    const meta = await _driveRequest(`/files/${fileId}?fields=name,mimeType`);
+
+    const response = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      { headers: { 'Authorization': `Bearer ${token}` } }
+    );
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(`Erreur téléchargement Drive (${response.status}): ${err.error?.message || 'Erreur inconnue'}`);
+    }
+
+    return {
+      name: meta.name,
+      mimeType: meta.mimeType,
+      blob: await response.blob()
+    };
+  }
+
   // --- Flow complet : créer dossier + uploader CV ---
 
   async function createCandidatFolderAndUploadCV(candidatName, file) {
@@ -249,6 +273,7 @@ const GoogleDrive = (function() {
     authenticate,
     createFolder,
     uploadFile,
+    downloadFile,
     createCandidatFolderAndUploadCV,
     showConfigModal
   };
