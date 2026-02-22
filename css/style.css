@@ -808,8 +808,8 @@ body {
   display: flex; align-items: center; gap: 10px;
 }
 .sidebar-logo-icon {
-  width: 32px; height: 32px; border-radius: 8px;
-  object-fit: contain;
+  width: 32px; height: 32px; border-radius: 50%;
+  object-fit: cover; background: transparent;
 }
 
 /* Better table row alternation */
