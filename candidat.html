@@ -58,6 +58,7 @@
             <button class="tab-btn" data-tab="tab-presentations">Présentations</button>
             <button class="tab-btn" data-tab="tab-references">Références</button>
             <button class="tab-btn" data-tab="tab-documents">Documents</button>
+            <button class="tab-btn" data-tab="tab-teaser">Teaser</button>
           </div>
 
           <div id="tab-profil" class="tab-content active"></div>
@@ -67,6 +68,7 @@
           <div id="tab-presentations" class="tab-content"></div>
           <div id="tab-references" class="tab-content"></div>
           <div id="tab-documents" class="tab-content"></div>
+          <div id="tab-teaser" class="tab-content"></div>
         </div>
 
         <div class="detail-sidebar">
@@ -90,6 +92,7 @@
   <script>if (typeof pdfjsLib !== 'undefined') pdfjsLib.GlobalWorkerOptions.workerSrc = 'js/vendor/pdf.worker.min.js';</script>
   <script src="js/cv-parser.js"></script>
   <script src="js/google-auth.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="js/google-drive.js"></script>
   <script src="js/gmail.js"></script>
   <script src="js/interview-analyzer.js"></script>

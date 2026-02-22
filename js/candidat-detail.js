@@ -29,6 +29,7 @@
   renderPresentations();
   renderReferences();
   renderDocuments();
+  renderTeaser();
   renderSidebar();
   renderEntreprisesCibles();
   renderDSIProfile();
@@ -86,114 +87,12 @@
       }
     });
 
-    document.getElementById('btn-teaser-pdf')?.addEventListener('click', async () => {
-      try {
-        UI.toast('Pr\u00E9paration du Teaser...');
-
-        // Fetch DSI + company names en parallèle
-        const [dsiResult, companyNames] = await Promise.all([
-          candidat.profile_code ? DSIProfile.fetchProfile(candidat.profile_code) : null,
-          Promise.resolve(Store.get('entreprises').map(e => e.nom).filter(Boolean)),
-        ]);
-
-        // Réécriture IA des notes internes (avec fallback silencieux)
-        let aiPitch = null;
-        const hasNotes = candidat.synthese_30s || candidat.parcours_cible || candidat.motivation_drivers;
-        const apiKey = typeof CVParser !== 'undefined' && CVParser.getOpenAIKey ? CVParser.getOpenAIKey() : null;
-
-        if (apiKey && hasNotes && typeof InterviewAnalyzer !== 'undefined') {
-          try {
-            UI.toast('R\u00E9\u00E9criture IA en cours...');
-            const systemPrompt = `Tu es un consultant senior en executive search chez Amarillo Search.
-On te donne des notes internes de recruteur sur un candidat.
-R\u00E9\u00E9cris-les en 2 sections pour un document client professionnel ("Talent \u00E0 Impact").
-
-R\u00E9ponds UNIQUEMENT avec un JSON :
-{
-  "synthese": "...",
-  "projet": "..."
-}
-
-synthese (3-4 phrases max) : Pitch percutant du profil. Mets en avant les forces, l'exp\u00E9rience cl\u00E9, et la valeur ajout\u00E9e. Ton positif et vendeur. Ne mentionne AUCUN nom de personne ni d'entreprise.
-
-projet (3-4 phrases max) : Ce que le candidat recherche et ce qui le motive, formul\u00E9 de mani\u00E8re \u00E0 rassurer un client. Ton professionnel. Ne mentionne AUCUN nom de personne ni d'entreprise.
-
-R\u00E8gles :
-- Texte brut, pas de markdown, pas de tirets, pas de listes
-- Fran\u00E7ais professionnel
-- JAMAIS de nom de candidat, d'entreprise ou de coordonn\u00E9es
-- Si les notes sont vides ou insuffisantes, retourne des cha\u00EEnes vides`;
-
-            const notesConcat = [
-              candidat.synthese_30s || '',
-              candidat.parcours_cible || '',
-              candidat.motivation_drivers || ''
-            ].filter(Boolean).join('\n\n');
-
-            const userPrompt = `Notes d'entretien :\n${notesConcat.substring(0, 6000)}\n\nPoste actuel : ${candidat.poste_actuel || 'Non renseign\u00E9'}`;
-
-            aiPitch = await InterviewAnalyzer._callOpenAI(systemPrompt, userPrompt);
-          } catch (aiErr) {
-            console.warn('AI rewriting failed, using raw notes:', aiErr.message);
-            aiPitch = null;
-          }
-        }
-
-        // Préparer les textes pour le modal d'édition
-        const allCompanyNames = [...companyNames];
-        if (candidat.entreprise_nom) allCompanyNames.push(candidat.entreprise_nom);
-        if (candidat.entreprise_actuel) allCompanyNames.push(candidat.entreprise_actuel);
-
-        const _anon = (t) => {
-          if (!t) return '';
-          let r = t;
-          const sorted = [...allCompanyNames].filter(n => n && n.length >= 2).sort((a, b) => b.length - a.length);
-          for (const name of sorted) {
-            const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            r = r.replace(new RegExp(esc, 'gi'), '[entreprise confidentielle]');
-          }
-          return r;
-        };
-
-        const defaultSynthese = aiPitch?.synthese
-          || _anon(candidat.synthese_30s || '');
-        const defaultProjet = aiPitch?.projet
-          || [_anon(candidat.parcours_cible || ''), _anon(candidat.motivation_drivers || '')].filter(Boolean).join('\n\n');
-
-        // Afficher le modal d'édition avant génération
-        const bodyHtml = `
-          <p style="font-size:0.8125rem;color:#64748b;margin-bottom:16px;">
-            Relisez et corrigez le contenu avant de g\u00E9n\u00E9rer le PDF. ${aiPitch ? '<span style="color:#16a36a;font-weight:600;">Texte retravaillé par IA.</span>' : '<span style="color:#e8a838;font-weight:600;">Texte brut (pas de cl\u00E9 IA configur\u00E9e).</span>'}
-          </p>
-          <div class="form-group">
-            <label style="font-weight:600;">Synth\u00E8se <span style="font-weight:400;color:#94a3b8;font-size:0.75rem;">(pitch vendeur du profil)</span></label>
-            <textarea id="teaser-synthese" rows="5" style="width:100%;resize:vertical;font-size:0.875rem;line-height:1.5;padding:10px;border:1px solid #e2e8f0;border-radius:8px;">${UI.escHtml(defaultSynthese)}</textarea>
-          </div>
-          <div class="form-group" style="margin-top:12px;">
-            <label style="font-weight:600;">Projet professionnel <span style="font-weight:400;color:#94a3b8;font-size:0.75rem;">(motivations et recherche)</span></label>
-            <textarea id="teaser-projet" rows="5" style="width:100%;resize:vertical;font-size:0.875rem;line-height:1.5;padding:10px;border:1px solid #e2e8f0;border-radius:8px;">${UI.escHtml(defaultProjet)}</textarea>
-          </div>
-        `;
-
-        UI.modal('Teaser \u2014 Talent \u00E0 Impact', bodyHtml, {
-          saveLabel: 'G\u00E9n\u00E9rer le PDF',
-          width: 680,
-          onSave: (overlay) => {
-            const synthese = overlay.querySelector('#teaser-synthese').value.trim();
-            const projet = overlay.querySelector('#teaser-projet').value.trim();
-
-            const finalPitch = { synthese, projet };
-            const doc = PDFEngine.generateTalentAImpact(candidat, { dsiResult, companyNames, aiPitch: finalPitch });
-            const filename = `Talent_a_Impact_${(candidat.poste_actuel || 'Candidat').replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
-            PDFEngine.download(doc, filename);
-            UI.toast('Teaser PDF t\u00E9l\u00E9charg\u00E9');
-          }
-        });
-
-      } catch (e) {
-        console.error('Teaser PDF generation error:', e);
-        UI.toast('Erreur lors de la g\u00E9n\u00E9ration du teaser : ' + e.message, 'error');
-      }
+    document.getElementById('btn-teaser-pdf')?.addEventListener('click', () => {
+      // Navigate to Teaser tab
+      document.querySelectorAll('#candidat-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.querySelector('[data-tab="tab-teaser"]')?.classList.add('active');
+      document.getElementById('tab-teaser')?.classList.add('active');
     });
 
     document.getElementById('btn-dossier-pdf')?.addEventListener('click', async () => {
@@ -290,7 +189,36 @@ R\u00E8gles :
     const durePoste = computeDuration(candidat.debut_poste_actuel);
     const totalExp = computeDuration(candidat.debut_carriere);
 
+    // Check if CV completion feature is available
+    const cvDoc = (candidat.documents || []).find(d => d.type === 'CV' && d.url);
+    const hasDriveCv = cvDoc && typeof GoogleDrive !== 'undefined' && GoogleDrive.isConfigured();
+    const hasOpenAI = typeof CVParser !== 'undefined' && CVParser.getOpenAIKey && CVParser.getOpenAIKey();
+    const showCvCompletion = hasDriveCv || hasOpenAI;
+
     document.getElementById('tab-profil').innerHTML = `
+      ${showCvCompletion ? `
+      <div class="card" data-accent="blue" id="cv-completion-section" style="margin-bottom:16px;">
+        <div class="card-header">
+          <h2>Compléter le profil depuis le CV</h2>
+          <span style="font-size:0.7rem;color:#94a3b8;">gpt-4o-mini</span>
+        </div>
+        <div class="card-body" style="padding:16px;">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            ${hasDriveCv ? `
+            <button class="btn btn-primary" id="btn-cv-complete-drive">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              Compléter depuis le CV (Drive)
+            </button>` : ''}
+            <div id="cv-complete-drop-zone" style="border:2px dashed #e2e8f0;border-radius:8px;padding:10px 16px;text-align:center;cursor:pointer;transition:all 0.15s;display:inline-block;">
+              <span style="font-size:0.8125rem;color:#64748b;">Ou glissez un CV ici</span>
+              <input type="file" id="cv-complete-file" accept=".pdf,.txt,.text,.md" style="display:none;" />
+            </div>
+            ${!hasOpenAI ? `
+            <button class="btn btn-sm btn-secondary" id="btn-cv-complete-config" style="font-size:0.6875rem;">Configurer clé OpenAI</button>` : ''}
+          </div>
+          <div id="cv-complete-status" style="margin-top:8px;font-size:0.8125rem;"></div>
+        </div>
+      </div>` : ''}
       <div class="card" data-accent="green">
         <div class="card-header">
           <h2>Informations générales</h2>
@@ -471,6 +399,255 @@ R\u00E8gles :
         { key: 'notes', label: 'Notes', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' }
       ]
     });
+
+    // =============================================
+    // CV Profile Completion — event handlers
+    // =============================================
+
+    if (showCvCompletion) {
+      const cvCompleteStatus = document.getElementById('cv-complete-status');
+      const cvCompleteDropZone = document.getElementById('cv-complete-drop-zone');
+      const cvCompleteFileInput = document.getElementById('cv-complete-file');
+
+      // Process a CV file: extract text, call OpenAI, show review modal
+      async function processCvForCompletion(file) {
+        const driveBtn = document.getElementById('btn-cv-complete-drive');
+        if (driveBtn) driveBtn.disabled = true;
+        cvCompleteDropZone.style.pointerEvents = 'none';
+        cvCompleteStatus.innerHTML = '<span style="color:#64748b;"><span class="ia-spinner"></span> Analyse du CV en cours...</span>';
+
+        try {
+          if (!CVParser.getOpenAIKey()) {
+            CVParser.showKeyConfigModal(() => {
+              // Retry after key is set
+              processCvForCompletion(file);
+            });
+            cvCompleteStatus.innerHTML = '';
+            if (driveBtn) driveBtn.disabled = false;
+            cvCompleteDropZone.style.pointerEvents = '';
+            return;
+          }
+
+          const text = await CVParser.parseFile(file);
+          if (!text || text.trim().length < 20) throw new Error('Fichier vide ou illisible');
+
+          const extracted = await CVParser.extractWithOpenAI(text);
+          showProfileReviewModal(extracted);
+
+          cvCompleteStatus.innerHTML = '';
+        } catch (err) {
+          cvCompleteStatus.innerHTML = `<span style="color:#dc2626;">Erreur : ${UI.escHtml(err.message)}</span>`;
+        } finally {
+          const driveBtn2 = document.getElementById('btn-cv-complete-drive');
+          if (driveBtn2) driveBtn2.disabled = false;
+          if (cvCompleteDropZone) cvCompleteDropZone.style.pointerEvents = '';
+        }
+      }
+
+      // Drive button
+      document.getElementById('btn-cv-complete-drive')?.addEventListener('click', async () => {
+        const match = cvDoc.url.match(/\/d\/([^/]+)/);
+        if (!match) { UI.toast('URL Drive invalide', 'error'); return; }
+
+        const driveBtn = document.getElementById('btn-cv-complete-drive');
+        driveBtn.disabled = true;
+        cvCompleteStatus.innerHTML = '<span style="color:#64748b;"><span class="ia-spinner"></span> Téléchargement depuis Drive...</span>';
+
+        try {
+          await GoogleDrive.authenticate();
+          const downloaded = await GoogleDrive.downloadFile(match[1]);
+          const file = new File([downloaded.blob], downloaded.name, { type: downloaded.mimeType });
+          await processCvForCompletion(file);
+        } catch (err) {
+          cvCompleteStatus.innerHTML = `<span style="color:#dc2626;">Erreur Drive : ${UI.escHtml(err.message)}</span>`;
+          driveBtn.disabled = false;
+        }
+      });
+
+      // Drop zone
+      cvCompleteDropZone.addEventListener('click', () => cvCompleteFileInput.click());
+      cvCompleteDropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        cvCompleteDropZone.style.borderColor = '#3b82f6';
+        cvCompleteDropZone.style.background = '#eff6ff';
+      });
+      cvCompleteDropZone.addEventListener('dragleave', () => {
+        cvCompleteDropZone.style.borderColor = '#e2e8f0';
+        cvCompleteDropZone.style.background = '';
+      });
+      cvCompleteDropZone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        cvCompleteDropZone.style.borderColor = '#e2e8f0';
+        cvCompleteDropZone.style.background = '';
+        const file = e.dataTransfer.files[0];
+        if (file) await processCvForCompletion(file);
+      });
+      cvCompleteFileInput.addEventListener('change', async () => {
+        if (cvCompleteFileInput.files[0]) await processCvForCompletion(cvCompleteFileInput.files[0]);
+        cvCompleteFileInput.value = '';
+      });
+
+      // OpenAI key config button
+      document.getElementById('btn-cv-complete-config')?.addEventListener('click', () => {
+        CVParser.showKeyConfigModal();
+      });
+    }
+
+    // Profile review modal — shows extracted CV data vs current values
+    function showProfileReviewModal(extracted) {
+      const PROFILE_FIELDS = [
+        { key: 'prenom', label: 'Prénom' },
+        { key: 'nom', label: 'Nom' },
+        { key: 'email', label: 'Email' },
+        { key: 'telephone', label: 'Téléphone' },
+        { key: 'linkedin', label: 'LinkedIn' },
+        { key: 'adresse_ligne1', label: 'Adresse' },
+        { key: 'code_postal', label: 'Code postal' },
+        { key: 'ville', label: 'Ville' },
+        { key: 'localisation', label: 'Localisation' },
+        { key: 'poste_actuel', label: 'Poste actuel' },
+        { key: 'poste_cible', label: 'Poste cible' },
+        { key: 'entreprise_nom', label: 'Entreprise actuelle', candidatKey: 'entreprise_actuelle_id', isEntreprise: true },
+        { key: 'diplome', label: 'Diplôme' },
+        { key: 'date_naissance', label: 'Date de naissance' },
+        { key: 'debut_carriere', label: 'Début de carrière' },
+        { key: 'debut_poste_actuel', label: 'Prise de poste actuel' },
+        { key: 'salaire_fixe_actuel', label: 'Salaire fixe actuel (K€)', isNumeric: true },
+        { key: 'variable_actuel', label: 'Variable actuel (K€)', isNumeric: true },
+        { key: 'preavis', label: 'Préavis' },
+        { key: 'synthese_30s', label: 'Synthèse 30 secondes' },
+        { key: 'notes', label: 'Notes (profil CV)' },
+      ];
+
+      // Resolve current entreprise name for display
+      const currentEntreprise = candidat.entreprise_actuelle_id
+        ? Store.resolve('entreprises', candidat.entreprise_actuelle_id)
+        : null;
+      const currentEntrepriseNom = currentEntreprise ? (currentEntreprise.nom || currentEntreprise.displayName || '') : '';
+
+      // Build list of all extracted fields
+      const changes = [];
+      for (const f of PROFILE_FIELDS) {
+        const extractedVal = (extracted[f.key] || '').toString().trim();
+        if (!extractedVal) continue; // Skip if CV didn't extract anything
+
+        let currentVal;
+        if (f.isEntreprise) {
+          currentVal = currentEntrepriseNom;
+        } else {
+          const raw = candidat[f.candidatKey || f.key];
+          // Treat 0 as empty for numeric fields
+          currentVal = (f.isNumeric && raw === 0) ? '' : (raw || '').toString().trim();
+        }
+
+        const isSame = extractedVal === currentVal;
+
+        changes.push({
+          ...f,
+          currentVal,
+          extractedVal,
+          isEmpty: !currentVal,
+          isSame,
+        });
+      }
+
+      if (changes.length === 0) {
+        UI.toast('Aucun champ extrait du CV', 'info');
+        return;
+      }
+
+      const bodyHtml = `
+        <div style="margin-bottom:12px;font-size:0.8125rem;color:#475569;">
+          Cochez les champs à mettre à jour. Les valeurs proposées sont éditables.
+        </div>
+        ${changes.map((c, i) => `
+          <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #f1f5f9;${c.isSame ? 'opacity:0.55;' : ''}">
+            <input type="checkbox" id="cv-field-check-${i}" ${c.isEmpty ? 'checked' : ''} ${c.isSame ? 'disabled' : ''} style="margin-top:4px;accent-color:#3b82f6;" />
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                <label for="cv-field-check-${i}" style="font-size:0.8125rem;font-weight:600;color:#1e293b;cursor:pointer;">${c.label}</label>
+                ${c.isSame
+                  ? '<span style="font-size:0.6875rem;color:#6b7280;background:#f3f4f6;padding:1px 6px;border-radius:4px;">identique</span>'
+                  : c.isEmpty
+                    ? '<span style="font-size:0.6875rem;color:#059669;background:#ecfdf5;padding:1px 6px;border-radius:4px;">nouveau</span>'
+                    : '<span style="font-size:0.6875rem;color:#d97706;background:#fffbeb;padding:1px 6px;border-radius:4px;">modification</span>'}
+              </div>
+              ${c.currentVal && !c.isSame ? `<div style="font-size:0.75rem;color:#94a3b8;text-decoration:line-through;margin-bottom:4px;">${UI.escHtml(c.currentVal)}</div>` : ''}
+              <input type="text" id="cv-field-val-${i}" value="${UI.escHtml(c.extractedVal)}" ${c.isSame ? 'disabled' : ''} style="width:100%;font-size:0.8125rem;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-family:inherit;${c.isSame ? 'background:#f9fafb;color:#9ca3af;' : ''}" />
+            </div>
+          </div>
+        `).join('')}
+      `;
+
+      UI.modal('Compléter le profil depuis le CV', bodyHtml, {
+        width: 600,
+        saveLabel: 'Appliquer les modifications',
+        onSave: async (overlay) => {
+          const updates = {};
+          let entrepriseNom = null;
+
+          for (let i = 0; i < changes.length; i++) {
+            const checkbox = overlay.querySelector(`#cv-field-check-${i}`);
+            if (!checkbox || !checkbox.checked) continue;
+
+            const val = overlay.querySelector(`#cv-field-val-${i}`).value.trim();
+            if (!val) continue;
+
+            const field = changes[i];
+
+            if (field.isEntreprise) {
+              entrepriseNom = val;
+            } else if (field.key === 'diplome') {
+              // Validate diploma against allowed values
+              const allowedDiplomes = Referentiels.get('candidat_diplomes');
+              if (allowedDiplomes.includes(val)) {
+                updates[field.candidatKey || field.key] = val;
+              }
+            } else if (field.isNumeric) {
+              const num = parseInt(val);
+              if (!isNaN(num)) updates[field.candidatKey || field.key] = num;
+            } else {
+              updates[field.candidatKey || field.key] = val;
+            }
+          }
+
+          // Resolve entreprise
+          if (entrepriseNom) {
+            const entreprises = Store.get('entreprises');
+            const nomLower = entrepriseNom.toLowerCase().trim();
+            const match = entreprises.find(e => (e.nom || '').toLowerCase().trim() === nomLower);
+
+            if (match) {
+              updates.entreprise_actuelle_id = match.id;
+            } else {
+              const newEnt = {
+                id: API.generateId('ent'),
+                nom: entrepriseNom,
+                secteur: '', taille: '', ca: '', localisation: updates.localisation || candidat.localisation || '',
+                priorite: '', statut: 'À cibler',
+                site_web: '', telephone: '', angle_approche: '', source: '', notes: '',
+                dernier_contact: null, prochaine_relance: null,
+                created_at: new Date().toISOString(),
+              };
+              await Store.add('entreprises', newEnt);
+              updates.entreprise_actuelle_id = newEnt.id;
+              UI.toast('Entreprise créée : ' + newEnt.nom, 'info');
+            }
+          }
+
+          if (Object.keys(updates).length === 0) {
+            UI.toast('Aucune modification sélectionnée', 'info');
+            return;
+          }
+
+          await Store.update('candidats', id, updates);
+          Object.assign(candidat, updates);
+          UI.toast(`${Object.keys(updates).length} champ(s) mis à jour depuis le CV`);
+          renderProfil();
+          refreshDependentViews();
+        }
+      });
+    }
   }
 
   function renderEntretien() {
@@ -2552,5 +2729,218 @@ R\u00E8gles :
 
     // Start workflow
     renderModal();
+  }
+
+  // ============================================================
+  // TEASER TAB — Editable content + AI generation + PDF download
+  // ============================================================
+  function renderTeaser() {
+    const container = document.getElementById('tab-teaser');
+    if (!container) return;
+
+    // Helper to anonymize text
+    const allCompanyNames = Store.get('entreprises').map(e => e.nom).filter(Boolean);
+    if (candidat.entreprise_nom) allCompanyNames.push(candidat.entreprise_nom);
+    if (candidat.entreprise_actuel) allCompanyNames.push(candidat.entreprise_actuel);
+    const _anon = (t) => PDFEngine.anonymizeText ? PDFEngine.anonymizeText(t, allCompanyNames) : (t || '');
+
+    // Pre-fill from saved teaser fields or raw data
+    const savedSynthese = candidat.teaser_synthese || '';
+    const savedProjet = candidat.teaser_projet || '';
+    const savedPosteCible = candidat.teaser_poste_cible || candidat.poste_cible || '';
+    const savedFormation = candidat.teaser_formation || candidat.diplome || '';
+    const savedPackage = candidat.teaser_package || PDFEngine.salaryBand(candidat.package_souhaite_min, candidat.package_souhaite) || '';
+    const savedPreavis = candidat.teaser_preavis || candidat.preavis || '';
+    const savedTeletravail = candidat.teaser_teletravail || candidat.teletravail || '';
+    const savedDispo = candidat.teaser_dispo || '';
+
+    container.innerHTML = `
+      <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" id="teaser-ai-btn" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          G\u00e9n\u00e9rer via IA
+        </button>
+        <button class="btn btn-secondary" id="teaser-download-btn" style="background:#2D6A4F;color:#fff;border-color:#2D6A4F;">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          T\u00e9l\u00e9charger le Teaser
+        </button>
+      </div>
+
+      <div class="card" data-accent="gold" style="margin-bottom:16px;">
+        <div class="card-header"><h2>Synth\u00e8se Teaser</h2><span class="edit-hint">pitch vendeur du profil</span></div>
+        <div class="card-body">
+          <textarea id="teaser-f-synthese" rows="5" style="width:100%;resize:vertical;font-size:0.875rem;line-height:1.6;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-family:inherit;">${UI.escHtml(savedSynthese)}</textarea>
+        </div>
+      </div>
+
+      <div class="card" data-accent="blue" style="margin-bottom:16px;">
+        <div class="card-header"><h2>Projet professionnel</h2><span class="edit-hint">motivations et recherche</span></div>
+        <div class="card-body">
+          <textarea id="teaser-f-projet" rows="5" style="width:100%;resize:vertical;font-size:0.875rem;line-height:1.6;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-family:inherit;">${UI.escHtml(savedProjet)}</textarea>
+        </div>
+      </div>
+
+      <div class="card" data-accent="green" style="margin-bottom:16px;">
+        <div class="card-header"><h2>Informations cl\u00e9s</h2><span class="edit-hint">encarts du PDF</span></div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group"><label>Poste cible</label><input type="text" id="teaser-f-poste-cible" value="${UI.escHtml(savedPosteCible)}" /></div>
+            <div class="form-group"><label>Formation</label><input type="text" id="teaser-f-formation" value="${UI.escHtml(savedFormation)}" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Package souhait\u00e9</label><input type="text" id="teaser-f-package" value="${UI.escHtml(savedPackage)}" /></div>
+            <div class="form-group"><label>Pr\u00e9avis</label><input type="text" id="teaser-f-preavis" value="${UI.escHtml(savedPreavis)}" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>T\u00e9l\u00e9travail</label><input type="text" id="teaser-f-teletravail" value="${UI.escHtml(savedTeletravail)}" /></div>
+            <div class="form-group"><label>Disponibilit\u00e9</label><input type="text" id="teaser-f-dispo" value="${UI.escHtml(savedDispo)}" /></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Auto-save on blur for all teaser fields
+    const fieldMap = {
+      'teaser-f-synthese': 'teaser_synthese',
+      'teaser-f-projet': 'teaser_projet',
+      'teaser-f-poste-cible': 'teaser_poste_cible',
+      'teaser-f-formation': 'teaser_formation',
+      'teaser-f-package': 'teaser_package',
+      'teaser-f-preavis': 'teaser_preavis',
+      'teaser-f-teletravail': 'teaser_teletravail',
+      'teaser-f-dispo': 'teaser_dispo',
+    };
+
+    for (const [elemId, fieldKey] of Object.entries(fieldMap)) {
+      const el = document.getElementById(elemId);
+      if (!el) continue;
+      el.addEventListener('blur', async () => {
+        const val = el.value.trim();
+        if (candidat[fieldKey] !== val) {
+          candidat[fieldKey] = val;
+          await Store.update('candidats', id, { [fieldKey]: val });
+        }
+      });
+    }
+
+    // AI generation button
+    document.getElementById('teaser-ai-btn')?.addEventListener('click', async () => {
+      const apiKey = typeof CVParser !== 'undefined' && CVParser.getOpenAIKey ? CVParser.getOpenAIKey() : null;
+      if (!apiKey) {
+        UI.toast('Cl\u00e9 OpenAI non configur\u00e9e. Allez dans Configuration.', 'error');
+        return;
+      }
+      const hasNotes = candidat.synthese_30s || candidat.parcours_cible || candidat.motivation_drivers;
+      if (!hasNotes) {
+        UI.toast('Aucune note d\'entretien \u00e0 r\u00e9\u00e9crire.', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('teaser-ai-btn');
+      btn.disabled = true;
+      btn.textContent = 'G\u00e9n\u00e9ration en cours...';
+
+      try {
+        const systemPrompt = `Tu es un consultant senior en executive search chez Amarillo Search.
+On te donne des notes internes de recruteur sur un candidat.
+Reecris-les en 2 sections pour un document client professionnel ("Talent a Impact").
+
+Reponds UNIQUEMENT avec un JSON :
+{
+  "synthese": "...",
+  "projet": "..."
+}
+
+synthese (3-4 phrases max) : Pitch percutant du profil. Mets en avant les forces, l'experience cle, et la valeur ajoutee. Ton positif et vendeur. Ne mentionne AUCUN nom de personne ni d'entreprise.
+
+projet (3-4 phrases max) : Ce que le candidat recherche et ce qui le motive, formule de maniere a rassurer un client. Ton professionnel. Ne mentionne AUCUN nom de personne ni d'entreprise.
+
+Regles :
+- Texte brut, pas de markdown, pas de tirets, pas de listes
+- Francais professionnel
+- JAMAIS de nom de candidat, d'entreprise ou de coordonnees
+- Si les notes sont vides ou insuffisantes, retourne des chaines vides`;
+
+        const notesConcat = [
+          candidat.synthese_30s || '',
+          candidat.parcours_cible || '',
+          candidat.motivation_drivers || ''
+        ].filter(Boolean).join('\n\n');
+
+        const userPrompt = `Notes d'entretien :\n${notesConcat.substring(0, 6000)}\n\nPoste actuel : ${candidat.poste_actuel || 'Non renseigne'}`;
+
+        const aiPitch = await InterviewAnalyzer._callOpenAI(systemPrompt, userPrompt);
+
+        if (aiPitch?.synthese) {
+          const synEl = document.getElementById('teaser-f-synthese');
+          synEl.value = _anon(aiPitch.synthese);
+          candidat.teaser_synthese = synEl.value;
+          await Store.update('candidats', id, { teaser_synthese: synEl.value });
+        }
+        if (aiPitch?.projet) {
+          const projEl = document.getElementById('teaser-f-projet');
+          projEl.value = _anon(aiPitch.projet);
+          candidat.teaser_projet = projEl.value;
+          await Store.update('candidats', id, { teaser_projet: projEl.value });
+        }
+
+        UI.toast('Texte g\u00e9n\u00e9r\u00e9 par IA et anonymis\u00e9');
+      } catch (e) {
+        console.error('AI generation error:', e);
+        UI.toast('Erreur IA : ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> G\u00e9n\u00e9rer via IA`;
+      }
+    });
+
+    // Download button
+    document.getElementById('teaser-download-btn')?.addEventListener('click', async () => {
+      try {
+        UI.toast('G\u00e9n\u00e9ration du PDF...');
+
+        // Read current field values (not saved yet perhaps)
+        const synthese = document.getElementById('teaser-f-synthese')?.value.trim() || '';
+        const projet = document.getElementById('teaser-f-projet')?.value.trim() || '';
+
+        // Build overrides for candidat fields used by the PDF
+        const overrides = {
+          poste_cible: document.getElementById('teaser-f-poste-cible')?.value.trim() || candidat.poste_cible,
+          diplome: document.getElementById('teaser-f-formation')?.value.trim() || candidat.diplome,
+          preavis: document.getElementById('teaser-f-preavis')?.value.trim() || candidat.preavis,
+          teletravail: document.getElementById('teaser-f-teletravail')?.value.trim() || candidat.teletravail,
+        };
+        const customPackage = document.getElementById('teaser-f-package')?.value.trim() || '';
+        const customDispo = document.getElementById('teaser-f-dispo')?.value.trim() || '';
+
+        // Build candidat copy with overrides
+        const pdfCandidat = { ...candidat, ...overrides };
+        if (customDispo) {
+          pdfCandidat._teaser_dispo = customDispo;
+        }
+        if (customPackage) {
+          pdfCandidat._teaser_package = customPackage;
+        }
+
+        const [dsiResult, logoDataUrl] = await Promise.all([
+          candidat.profile_code ? DSIProfile.fetchProfile(candidat.profile_code) : null,
+          typeof PDFEngine.loadTalentLogo === 'function' ? PDFEngine.loadTalentLogo() : null,
+        ]);
+
+        const doc = PDFEngine.generateTalentAImpact(pdfCandidat, {
+          dsiResult,
+          companyNames: allCompanyNames,
+          aiPitch: { synthese, projet },
+          logoDataUrl,
+        });
+
+        const filename = `Talent_a_Impact_${(candidat.poste_actuel || 'Candidat').replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+        PDFEngine.download(doc, filename);
+        UI.toast('Teaser PDF t\u00e9l\u00e9charg\u00e9');
+      } catch (e) {
+        console.error('Teaser PDF error:', e);
+        UI.toast('Erreur : ' + e.message, 'error');
+      }
+    });
   }
 })();
