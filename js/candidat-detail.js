@@ -66,7 +66,7 @@
           <button class="btn btn-secondary btn-sm" id="btn-send-teaser" title="Envoyer le profil en teaser par email" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">✈️ Envoyer</button>
           <button class="btn btn-secondary btn-sm" id="btn-dossier-pdf" title="Dossier complet de pr\u00E9sentation" style="background:#2D6A4F;color:#fff;border-color:#2D6A4F;">Dossier</button>
           <button class="btn btn-secondary btn-sm" id="btn-templates">Trames</button>
-          <button class="btn btn-danger btn-sm" id="btn-delete-candidat" title="Supprimer ce candidat">Suppr.</button>
+          <button class="btn btn-danger btn-sm" id="btn-delete-candidat" title="Supprimer ce candidat">🗑️</button>
           <span class="autosave-indicator saved"><span class="sync-dot"></span> Auto-save</span>
         </div>
       </div>

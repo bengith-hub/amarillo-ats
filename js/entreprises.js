@@ -197,6 +197,11 @@
       </div>
       <div class="form-group"><label>Site web</label><input type="url" id="e-site" value="${UI.escHtml(e.site_web||'')}" /></div>
       <div class="form-group"><label>Téléphone</label><input type="tel" id="e-tel" value="${UI.escHtml(e.telephone||'')}" /></div>
+      <div class="form-group"><label>Adresse siège social</label><textarea id="e-siege-adresse" placeholder="Rue, bâtiment...">${UI.escHtml(e.siege_adresse||'')}</textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Code postal</label><input type="text" id="e-siege-cp" value="${UI.escHtml(e.siege_code_postal||'')}" /></div>
+        <div class="form-group"><label>Ville</label><input type="text" id="e-siege-ville" value="${UI.escHtml(e.siege_ville||'')}" /></div>
+      </div>
       <div class="form-group"><label>Angle d'approche</label><textarea id="e-angle">${UI.escHtml(e.angle_approche||'')}</textarea></div>
       <div class="form-group"><label>Notes</label><textarea id="e-notes">${UI.escHtml(e.notes||'')}</textarea></div>
     `;
@@ -214,6 +219,9 @@
           statut: overlay.querySelector('#e-statut').value,
           site_web: overlay.querySelector('#e-site').value.trim(),
           telephone: overlay.querySelector('#e-tel').value.trim(),
+          siege_adresse: overlay.querySelector('#e-siege-adresse').value.trim(),
+          siege_code_postal: overlay.querySelector('#e-siege-cp').value.trim(),
+          siege_ville: overlay.querySelector('#e-siege-ville').value.trim(),
           angle_approche: overlay.querySelector('#e-angle').value.trim(),
           notes: overlay.querySelector('#e-notes').value.trim(),
         };
@@ -223,6 +231,7 @@
         } else {
           data.id = API.generateId('ent');
           data.source = '';
+          data.autres_sites = [];
           data.dernier_contact = null;
           data.prochaine_relance = null;
           data.created_at = new Date().toISOString();

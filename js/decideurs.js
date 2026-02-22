@@ -162,7 +162,7 @@
         { key: 'niveau_hierarchique', label: 'Niveau' },
         { key: 'role_decision', label: 'Rôle' },
         { key: 'priorite_prospection', label: 'Priorité', render: r => UI.badge(r.priorite_prospection) },
-        { key: 'niveau_relation', label: 'Relation' },
+        { key: 'niveau_relation', label: 'Relation', render: r => UI.badge(r.niveau_relation) },
         { key: 'dernier_contact', label: 'Dernier contact', render: r => UI.formatDate(r.dernier_contact) },
       ],
       data: data,
@@ -254,6 +254,7 @@
           data.dernier_contact = null;
           data.prochaine_relance = null;
           data.created_at = new Date().toISOString();
+          if (!data.niveau_relation) data.niveau_relation = 'À contacter';
           await Store.add('decideurs', data);
           UI.toast('Décideur créé');
         }

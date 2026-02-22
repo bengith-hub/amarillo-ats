@@ -11,7 +11,7 @@
 </head>
 <body>
   <nav class="sidebar">
-    <div class="sidebar-logo"><div class="sidebar-logo-icon">A</div>Amarillo ATS</div>
+    <div class="sidebar-logo"><img src="AS_logo_only.png" alt="Amarillo" class="sidebar-logo-icon" />Amarillo ATS</div>
     <div class="sidebar-nav">
       <a href="index.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>Dashboard</a>
       <a href="candidats.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Candidats</a>
@@ -112,6 +112,7 @@
             </div>
             <div class="card-body">
               <div class="inline-fields-grid" id="ent-info-fields"></div>
+              <div id="ent-autres-sites-container" style="margin-top:12px;"></div>
             </div>
           </div>
 
@@ -202,11 +203,14 @@
           ` : ''}
 
           <div class="card">
-            <div class="card-header"><h2>Actions (${actions.length})</h2></div>
+            <div class="card-header">
+              <h2>Actions (${actions.length})</h2>
+              <button class="btn btn-primary btn-sm" id="btn-new-ent-action">+ Action</button>
+            </div>
             <div class="card-body">
               ${actions.length === 0 ? '<div class="empty-state"><p>Aucune action</p></div>' :
-                actions.slice(0, 10).map(a => `
-                  <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+                actions.map(a => `
+                  <div class="ent-action-row" data-action-id="${a.id}" style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;cursor:pointer;">
                     <div>
                       <div style="font-weight:600;font-size:0.8125rem;">${UI.escHtml(a.action || '')}</div>
                       <div style="font-size:0.75rem;color:#64748b;">${UI.formatDate(a.date_action)} • ${UI.escHtml(a.canal || '')}</div>
@@ -286,8 +290,14 @@
         { key: 'telephone', label: 'Téléphone', type: 'text' },
         { key: 'site_web', label: 'Site web', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(v)}" target="_blank" class="entity-link">${UI.escHtml(v)}</a>` : '' },
         { key: 'source', label: 'Source', type: 'text' },
+        { key: 'siege_adresse', label: 'Adresse (siège)', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
+        { key: 'siege_code_postal', label: 'Code postal', type: 'text' },
+        { key: 'siege_ville', label: 'Ville', type: 'text' },
       ]
     });
+
+    // Autres sites (tag system)
+    renderAutresSites(e);
 
     // Inline editable — Notes & Strategy
     UI.inlineEdit('ent-notes-fields', {
@@ -314,8 +324,230 @@
         { key: 'prochaine_relance', label: 'Prochaine relance', type: 'date', render: (v) => UI.formatDate(v) },
       ]
     });
+
+    // Action row click handlers
+    document.querySelectorAll('.ent-action-row').forEach(row => {
+      row.addEventListener('click', () => showEntActionDetail(row.dataset.actionId));
+    });
+
+    // New action button
+    document.getElementById('btn-new-ent-action')?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      showNewEntAction();
+    });
   }
 
+
+  // --- Action management functions ---
+
+  function showEntActionDetail(actionId) {
+    const action = Store.findById('actions', actionId);
+    if (!action) return;
+    const missionName = action.mission_id ? (Store.resolve('missions', action.mission_id)?.displayName || '') : '';
+    const candidatName = action.candidat_id ? (Store.resolve('candidats', action.candidat_id)?.displayName || '') : '';
+
+    const bodyHtml = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Action</div><div style="font-size:0.875rem;">${UI.escHtml(action.action || '—')}</div></div>
+        <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Type</div><div style="font-size:0.875rem;">${UI.escHtml(action.type_action || '—')}</div></div>
+        <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Canal</div><div>${UI.badge(action.canal)}</div></div>
+        <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Statut</div><div>${UI.badge(action.statut)}</div></div>
+        <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Date</div><div style="font-size:0.875rem;">${UI.formatDate(action.date_action)}</div></div>
+        <div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Réponse</div><div style="font-size:0.875rem;">${action.reponse ? '<span style="color:#16a34a;font-weight:600;">Oui</span>' : 'Non'}</div></div>
+        ${missionName ? `<div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Mission</div><div style="font-size:0.875rem;">${UI.escHtml(missionName)}</div></div>` : ''}
+        ${candidatName ? `<div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Candidat</div><div style="font-size:0.875rem;">${UI.escHtml(candidatName)}</div></div>` : ''}
+        ${action.date_relance ? `<div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Relance</div><div style="font-size:0.875rem;">${UI.formatDate(action.date_relance)}</div></div>` : ''}
+      </div>
+      ${action.message_notes ? `<div style="margin-bottom:12px;"><div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:4px;">Message / Notes</div><div style="background:#f8fafc;border-radius:8px;padding:12px;font-size:0.8125rem;white-space:pre-wrap;max-height:300px;overflow-y:auto;border:1px solid #e2e8f0;">${UI.escHtml(action.message_notes)}</div></div>` : ''}
+      ${action.next_step ? `<div style="margin-bottom:16px;"><div style="font-size:0.75rem;font-weight:600;color:#c9a000;margin-bottom:4px;">→ Next step</div><div style="font-size:0.875rem;">${UI.escHtml(action.next_step)}</div></div>` : ''}
+      <div style="display:flex;gap:8px;border-top:1px solid #e2e8f0;padding-top:16px;">
+        <button class="btn btn-primary btn-sm" id="ent-action-edit-btn" style="flex:1;">✏️ Modifier</button>
+        <button class="btn btn-secondary btn-sm" id="ent-action-toggle-btn" style="flex:1;">${action.statut === 'Fait' ? '↩️ Remettre à faire' : '✅ Marquer fait'}</button>
+        <button class="btn btn-danger btn-sm" id="ent-action-delete-btn">🗑️ Supprimer</button>
+      </div>
+    `;
+
+    const { close } = UI.modal('Détail de l\'action', bodyHtml, { width: 560 });
+
+    setTimeout(() => {
+      document.getElementById('ent-action-edit-btn')?.addEventListener('click', () => {
+        close();
+        showEditEntAction(action);
+      });
+      document.getElementById('ent-action-toggle-btn')?.addEventListener('click', async () => {
+        const newStatut = action.statut === 'Fait' ? 'À faire' : 'Fait';
+        await Store.update('actions', actionId, { statut: newStatut });
+        UI.toast('Statut mis à jour');
+        close();
+        renderEntreprisePage();
+      });
+      document.getElementById('ent-action-delete-btn')?.addEventListener('click', () => {
+        close();
+        UI.modal('Confirmer la suppression', `<p style="color:#dc2626;">Supprimer l'action « ${UI.escHtml(action.action)} » ?</p>`, {
+          saveLabel: 'Supprimer',
+          onSave: async () => {
+            await Store.remove('actions', actionId);
+            UI.toast('Action supprimée');
+            renderEntreprisePage();
+          }
+        });
+      });
+    }, 50);
+  }
+
+  function showEditEntAction(a) {
+    const allMissions = Store.get('missions');
+    const allCandidats = Store.get('candidats');
+    const allDecideurs = Store.get('decideurs');
+
+    UI.modal('Modifier l\'action', `
+      <div class="form-group"><label>Action</label><input type="text" id="ea-action" value="${UI.escHtml(a.action || '')}" /></div>
+      <div class="form-row">
+        <div class="form-group"><label>Type</label><select id="ea-type">${Referentiels.get('action_types').map(s=>`<option value="${s}" ${a.type_action===s?'selected':''}>${s}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Canal</label><select id="ea-canal">${Referentiels.get('action_canaux').map(s=>`<option value="${s}" ${a.canal===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Statut</label><select id="ea-statut"><option value="À faire" ${(a.statut==='À faire'||a.statut==='A faire')?'selected':''}>À faire</option><option value="En cours" ${a.statut==='En cours'?'selected':''}>En cours</option><option value="Fait" ${a.statut==='Fait'?'selected':''}>Fait</option><option value="Annulé" ${a.statut==='Annulé'?'selected':''}>Annulé</option></select></div>
+        <div class="form-group"><label>Date</label><input type="date" id="ea-date" value="${a.date_action || ''}" /></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Candidat</label><select id="ea-candidat"><option value="">—</option>${allCandidats.map(c=>`<option value="${c.id}" ${a.candidat_id===c.id?'selected':''}>${UI.escHtml((c.prenom||'')+' '+(c.nom||''))}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Décideur</label><select id="ea-decideur"><option value="">—</option>${allDecideurs.map(d=>`<option value="${d.id}" ${a.decideur_id===d.id?'selected':''}>${UI.escHtml((d.prenom||'')+' '+(d.nom||''))}</option>`).join('')}</select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Mission</label><select id="ea-mission"><option value="">—</option>${allMissions.map(m=>`<option value="${m.id}" ${a.mission_id===m.id?'selected':''}>${UI.escHtml(m.nom||m.ref)}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Réponse</label><select id="ea-reponse"><option value="false" ${!a.reponse?'selected':''}>Non</option><option value="true" ${a.reponse?'selected':''}>Oui</option></select></div>
+      </div>
+      <div class="form-group"><label>Message / Notes</label><textarea id="ea-notes" style="min-height:120px;">${UI.escHtml(a.message_notes || '')}</textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Next step</label><input type="text" id="ea-next" value="${UI.escHtml(a.next_step || '')}" /></div>
+        <div class="form-group"><label>Relance</label><input type="date" id="ea-relance" value="${a.date_relance || ''}" /></div>
+      </div>
+    `, {
+      width: 640,
+      onSave: async (overlay) => {
+        await Store.update('actions', a.id, {
+          action: overlay.querySelector('#ea-action').value.trim(),
+          type_action: overlay.querySelector('#ea-type').value,
+          canal: overlay.querySelector('#ea-canal').value,
+          statut: overlay.querySelector('#ea-statut').value,
+          date_action: overlay.querySelector('#ea-date').value,
+          candidat_id: overlay.querySelector('#ea-candidat').value || null,
+          decideur_id: overlay.querySelector('#ea-decideur').value || null,
+          mission_id: overlay.querySelector('#ea-mission').value || null,
+          reponse: overlay.querySelector('#ea-reponse').value === 'true',
+          message_notes: overlay.querySelector('#ea-notes').value.trim(),
+          next_step: overlay.querySelector('#ea-next').value.trim(),
+          date_relance: overlay.querySelector('#ea-relance').value || null,
+        });
+        UI.toast('Action mise à jour');
+        renderEntreprisePage();
+      }
+    });
+  }
+
+  function showNewEntAction() {
+    const allMissions = Store.get('missions');
+    const allCandidats = Store.get('candidats');
+    const allDecideurs = Store.filter('decideurs', d => d.entreprise_id === entId);
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    UI.modal('Nouvelle action', `
+      <div class="form-group"><label>Action</label><input type="text" id="na-action" placeholder="Ex: Message LinkedIn, Appel..." /></div>
+      <div class="form-row">
+        <div class="form-group"><label>Type</label><select id="na-type">${Referentiels.get('action_types').map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Canal</label><select id="na-canal">${Referentiels.get('action_canaux').map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Statut</label><select id="na-statut"><option value="À faire">À faire</option><option value="En cours">En cours</option><option value="Fait">Fait</option><option value="Annulé">Annulé</option></select></div>
+        <div class="form-group"><label>Date</label><input type="date" id="na-date" value="${todayStr}" /></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Candidat</label><select id="na-candidat"><option value="">—</option>${allCandidats.map(c=>`<option value="${c.id}">${UI.escHtml((c.prenom||'')+' '+(c.nom||''))}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Décideur</label><select id="na-decideur"><option value="">—</option>${allDecideurs.map(d=>`<option value="${d.id}">${UI.escHtml((d.prenom||'')+' '+(d.nom||''))}</option>`).join('')}</select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Mission</label><select id="na-mission"><option value="">—</option>${allMissions.map(m=>`<option value="${m.id}">${UI.escHtml(m.nom||m.ref)}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Réponse</label><select id="na-reponse"><option value="false">Non</option><option value="true">Oui</option></select></div>
+      </div>
+      <div class="form-group"><label>Message / Notes</label><textarea id="na-notes" style="min-height:120px;"></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Next step</label><input type="text" id="na-next" /></div>
+        <div class="form-group"><label>Relance</label><input type="date" id="na-relance" /></div>
+      </div>
+    `, {
+      width: 640,
+      onSave: async (overlay) => {
+        const data = {
+          id: API.generateId('act'),
+          action: overlay.querySelector('#na-action').value.trim(),
+          type_action: overlay.querySelector('#na-type').value,
+          canal: overlay.querySelector('#na-canal').value,
+          statut: overlay.querySelector('#na-statut').value,
+          date_action: overlay.querySelector('#na-date').value,
+          candidat_id: overlay.querySelector('#na-candidat').value || null,
+          decideur_id: overlay.querySelector('#na-decideur').value || null,
+          mission_id: overlay.querySelector('#na-mission').value || null,
+          entreprise_id: entId,
+          reponse: overlay.querySelector('#na-reponse').value === 'true',
+          message_notes: overlay.querySelector('#na-notes').value.trim(),
+          next_step: overlay.querySelector('#na-next').value.trim(),
+          date_relance: overlay.querySelector('#na-relance').value || null,
+          priorite: null,
+          phase: '',
+          finalite: '',
+          objectif: '',
+          moment_suivi: '',
+        };
+        await Store.add('actions', data);
+        UI.toast('Action créée');
+        renderEntreprisePage();
+      }
+    });
+  }
+
+  function renderAutresSites(e) {
+    const sites = e.autres_sites || [];
+    const container = document.getElementById('ent-autres-sites-container');
+    if (!container) return;
+    container.innerHTML = `
+      <div style="padding:8px 0;border-top:1px solid #e2e8f0;">
+        <div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:8px;">Autres sites</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;" id="autres-sites-tags">
+          ${sites.map((s, i) => `<span class="badge" style="background:#e0e7ff;color:#4338ca;padding:4px 8px;font-size:0.8125rem;display:inline-flex;align-items:center;gap:4px;">${UI.escHtml(s)}<button data-idx="${i}" style="background:none;border:none;cursor:pointer;color:#4338ca;font-size:1rem;line-height:1;padding:0 2px;" title="Retirer">&times;</button></span>`).join('')}
+        </div>
+        <div style="display:flex;gap:6px;">
+          <input type="text" id="autre-site-input" placeholder="Ajouter un site..." style="flex:1;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.8125rem;" />
+          <button id="btn-add-site" class="btn btn-primary btn-sm">+</button>
+        </div>
+      </div>
+    `;
+    // Add site
+    const addSite = async () => {
+      const input = document.getElementById('autre-site-input');
+      const val = input.value.trim();
+      if (!val) return;
+      const updated = [...sites, val];
+      await Store.update('entreprises', entId, { autres_sites: updated });
+      e.autres_sites = updated;
+      renderAutresSites(e);
+    };
+    document.getElementById('btn-add-site')?.addEventListener('click', addSite);
+    document.getElementById('autre-site-input')?.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); addSite(); }
+    });
+    // Remove site
+    container.querySelectorAll('[data-idx]').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        const idx = parseInt(btn.dataset.idx);
+        const updated = sites.filter((_, i) => i !== idx);
+        await Store.update('entreprises', entId, { autres_sites: updated });
+        e.autres_sites = updated;
+        renderAutresSites(e);
+      });
+    });
+  }
 
   function showAddDecideurModal() {
     const body = `
