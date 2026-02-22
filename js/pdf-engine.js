@@ -34,7 +34,8 @@ const PDFEngine = (() => {
     // Identité
     companyName:  'Amarillo Search',
     tagline:      'Executive Search & IT Leadership',
-    font:         'helvetica',
+    font:         'Montserrat',
+    fontFallback: 'helvetica',
   };
 
   // ============================================================
@@ -78,7 +79,17 @@ const PDFEngine = (() => {
       format: 'a4',
     });
 
-    doc.setFont(BRAND.font);
+    // Register Montserrat font if available, fallback to helvetica
+    if (typeof MontserratFont !== 'undefined' && MontserratFont.register) {
+      try {
+        MontserratFont.register(doc);
+      } catch (_e) {
+        console.warn('Montserrat registration failed, using helvetica');
+        doc.setFont(BRAND.fontFallback);
+      }
+    } else {
+      doc.setFont(BRAND.fontFallback);
+    }
 
     // Metadata
     doc.setProperties({
@@ -1458,195 +1469,158 @@ const PDFEngine = (() => {
     });
 
     const contentMaxY = PAGE.height - TALENT_FOOTER_H - 4;
-    const leftColW = 115; // Colonne gauche = contenu principal
-    const rightColX = PAGE.marginLeft + leftColW + 5;
-    const rightColW = PAGE.contentWidth - leftColW - 5;
 
     // ─── HEADER ───
     let y = addTalentHeader(doc, 'TALENT \u00c0 IMPACT', logoDataUrl);
 
-    // ─── A) TITRE — Poste actuel en bold 14pt ───
-    if (candidat.poste_actuel) {
+    // ─── A) TITRE ACCROCHEUR — headline vendeur en bold 13pt ───
+    const titreAccrocheur = _stripEmojis(candidat.teaser_titre_accrocheur || candidat.poste_actuel || '');
+    if (titreAccrocheur) {
       doc.setFont(BRAND.font, 'bold');
-      doc.setFontSize(14);
+      doc.setFontSize(13);
       doc.setTextColor(...BRAND.dark);
-      const titleLines = doc.splitTextToSize(_stripEmojis(candidat.poste_actuel), leftColW);
+      const titleLines = doc.splitTextToSize(titreAccrocheur.substring(0, 100), PAGE.contentWidth);
       doc.text(titleLines.slice(0, 2), PAGE.marginLeft, y + 5);
-      y += titleLines.slice(0, 2).length * 6 + 4;
+      y += titleLines.slice(0, 2).length * 5.5 + 4;
     }
 
-    // ─── B) MÉTRIQUES — badges colorés répartis ───
-    const metrics = [];
-    const exp = experienceYears(candidat.debut_carriere);
-    if (exp) metrics.push({ label: 'Exp.', value: exp, color: [45, 106, 79] });
-    if (candidat.localisation) metrics.push({ label: 'Zone', value: _stripEmojis(candidat.localisation), color: [58, 91, 160] });
-    if (candidat.niveau) metrics.push({ label: 'Niveau', value: _stripEmojis(candidat.niveau), color: [139, 92, 246] });
-    let dispoLabel = candidat._teaser_dispo || null;
+    // ─── B) FICHE PROFIL (dark) + CONDITIONS & DISPONIBILITÉS (clair) ───
+    const ficheW = PAGE.contentWidth * 0.55;
+    const condW = PAGE.contentWidth - ficheW - 4;
+    const condX = PAGE.marginLeft + ficheW + 4;
+
+    // Fiche profil items
+    const ficheItems = [];
+    const tFonction = _stripEmojis(candidat.teaser_fonction || candidat.poste_actuel || '');
+    if (tFonction) ficheItems.push({ label: 'Fonction', value: tFonction });
+    const tPerimetre = _stripEmojis(candidat.teaser_perimetre || '');
+    if (tPerimetre) ficheItems.push({ label: 'P\u00e9rim\u00e8tre', value: tPerimetre });
+    const tEquipe = _stripEmojis(candidat.teaser_equipe || '');
+    if (tEquipe) ficheItems.push({ label: '\u00c9quipe', value: tEquipe });
+    const tBudget = _stripEmojis(candidat.teaser_budget || '');
+    if (tBudget) ficheItems.push({ label: 'Budget', value: tBudget });
+    const tZone = _stripEmojis(candidat.teaser_zone || candidat.localisation || '');
+    if (tZone) ficheItems.push({ label: 'Zone', value: tZone });
+
+    // Conditions items
+    const condItems = [];
+    const packageBand = candidat._teaser_package || candidat.teaser_package || salaryBand(candidat.package_souhaite_min, candidat.package_souhaite) || '';
+    if (packageBand) condItems.push({ label: 'Package', value: packageBand });
+    const tPreavis = _stripEmojis(candidat.teaser_preavis || candidat.preavis || '');
+    if (tPreavis) condItems.push({ label: 'Pr\u00e9avis', value: tPreavis });
+    const tTeletravail = _stripEmojis(candidat.teaser_teletravail || candidat.teletravail || '');
+    if (tTeletravail) condItems.push({ label: 'T\u00e9l\u00e9travail', value: tTeletravail });
+    let dispoLabel = candidat._teaser_dispo || candidat.teaser_dispo || '';
     if (!dispoLabel && candidat.open_to_work) {
       dispoLabel = candidat.date_disponibilite
         ? 'Dispo. ' + new Date(candidat.date_disponibilite).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })
         : 'Disponible';
     }
-    if (dispoLabel) metrics.push({ label: 'Dispo', value: dispoLabel, color: [232, 121, 36] });
+    if (dispoLabel) condItems.push({ label: 'Disponibilit\u00e9', value: _stripEmojis(dispoLabel) });
 
-    if (metrics.length > 0) {
-      let pillX = PAGE.marginLeft;
-      for (const m of metrics) {
-        if (pillX + 40 > PAGE.marginLeft + leftColW) {
-          y += 8;
-          pillX = PAGE.marginLeft;
-        }
-        pillX = _addPill(doc, pillX, y, m.label, m.value, m.color);
-      }
-      y += 10;
-    }
+    // Calculate card height based on max items
+    const rowH = 6;
+    const cardTitleH = 8;
+    const cardPad = 4;
+    const ficheCardH = cardTitleH + ficheItems.length * rowH + cardPad;
+    const condCardH = cardTitleH + condItems.length * rowH + cardPad;
+    const twoColCardH = Math.max(ficheCardH, condCardH, 30);
 
-    // ─── RIGHT CALLOUTS — encarts percutants à droite ───
-    let rightY = y - (metrics.length > 0 ? 10 : 0) + 2;
-    const callouts = [];
-    const packageBand = candidat._teaser_package || salaryBand(candidat.package_souhaite_min, candidat.package_souhaite);
-    if (packageBand) callouts.push({ label: 'Package', value: packageBand, color: [45, 106, 79] });
-    if (candidat.preavis) callouts.push({ label: 'Preavis', value: _stripEmojis(candidat.preavis), color: [58, 91, 160] });
-    if (candidat.teletravail) callouts.push({ label: 'Teletravail', value: _stripEmojis(candidat.teletravail), color: [139, 92, 246] });
-    if (dsiResult && dsiResult.status === 'completed') {
-      const avg = Math.round(dsiResult.avgNorm || 0);
-      callouts.push({ label: 'DSI Score', value: `${avg}/100`, color: BRAND.dark });
-    }
+    // ── Carte FICHE PROFIL (dark) ──
+    doc.setFillColor(...BRAND.dark);
+    doc.roundedRect(PAGE.marginLeft, y, ficheW, twoColCardH, 3, 3, 'F');
+    doc.setFillColor(...BRAND.primary);
+    doc.roundedRect(PAGE.marginLeft, y, 2.5, twoColCardH, 3, 0, 'F');
+    doc.rect(PAGE.marginLeft + 1.2, y, 1.3, twoColCardH, 'F');
 
-    for (const c of callouts.slice(0, 4)) {
-      rightY = _addRightCallout(doc, rightY, c.label, c.value, null, c.color);
-    }
+    doc.setFont(BRAND.font, 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(...BRAND.primary);
+    doc.text('FICHE PROFIL', PAGE.marginLeft + 7, y + 5.5);
 
-    // ─── C) INFOS CLÉS — carte dark compacte ───
-    const briefItems = [];
-    if (candidat.poste_cible) briefItems.push({ label: 'Poste cible', value: _stripEmojis(candidat.poste_cible) });
-    if (candidat.diplome) briefItems.push({ label: 'Formation', value: _stripEmojis(candidat.diplome) });
-    if (packageBand) briefItems.push({ label: 'Package', value: packageBand });
-    if (candidat.preavis) briefItems.push({ label: 'Pr\u00e9avis', value: _stripEmojis(candidat.preavis) });
-    if (candidat.teletravail) briefItems.push({ label: 'T\u00e9l\u00e9travail', value: _stripEmojis(candidat.teletravail) });
-    if (dispoLabel) briefItems.push({ label: 'Disponibilit\u00e9', value: dispoLabel });
-
-    if (briefItems.length > 0) {
-      const rowH = 5;
-      const rows = Math.ceil(briefItems.length / 2);
-      const cardH = rows * rowH + 10;
-
-      doc.setFillColor(...BRAND.dark);
-      doc.roundedRect(PAGE.marginLeft, y, leftColW, cardH, 3, 3, 'F');
-
-      // Accent jaune
-      doc.setFillColor(...BRAND.primary);
-      doc.roundedRect(PAGE.marginLeft, y, 2.5, cardH, 3, 0, 'F');
-      doc.rect(PAGE.marginLeft + 1.2, y, 1.3, cardH, 'F');
-
-      doc.setFont(BRAND.font, 'bold');
+    let fy = y + cardTitleH + 2;
+    const labelW = 24;
+    for (const item of ficheItems) {
+      doc.setFont(BRAND.font, 'normal');
       doc.setFontSize(6.5);
-      doc.setTextColor(...BRAND.primary);
-      doc.text('INFORMATIONS CL\u00c9S', PAGE.marginLeft + 7, y + 5);
-
-      let iy = y + 9;
-      const col1X = PAGE.marginLeft + 7;
-      const col2X = PAGE.marginLeft + leftColW / 2 + 2;
-      const lw = 28;
-
-      for (let i = 0; i < briefItems.length; i += 2) {
-        doc.setFont(BRAND.font, 'normal');
-        doc.setFontSize(6);
-        doc.setTextColor(148, 163, 184);
-        doc.text(briefItems[i].label, col1X, iy);
-        doc.setFont(BRAND.font, 'bold');
-        doc.setFontSize(7);
-        doc.setTextColor(...BRAND.white);
-        const val1 = doc.splitTextToSize(String(briefItems[i].value), leftColW / 2 - lw - 4);
-        doc.text(val1[0] || '', col1X + lw, iy);
-
-        if (briefItems[i + 1]) {
-          doc.setFont(BRAND.font, 'normal');
-          doc.setFontSize(6);
-          doc.setTextColor(148, 163, 184);
-          doc.text(briefItems[i + 1].label, col2X, iy);
-          doc.setFont(BRAND.font, 'bold');
-          doc.setFontSize(7);
-          doc.setTextColor(...BRAND.white);
-          const val2 = doc.splitTextToSize(String(briefItems[i + 1].value), leftColW / 2 - lw - 4);
-          doc.text(val2[0] || '', col2X + lw, iy);
-        }
-        iy += rowH;
-      }
-
-      y += cardH + 5;
+      doc.setTextColor(148, 163, 184);
+      doc.text(item.label, PAGE.marginLeft + 7, fy);
+      doc.setFont(BRAND.font, 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(...BRAND.white);
+      const valLines = doc.splitTextToSize(String(item.value), ficheW - labelW - 14);
+      doc.text(valLines[0] || '', PAGE.marginLeft + 7 + labelW, fy);
+      fy += rowH;
     }
 
-    // Ensure right callouts don't overlap with content below
-    y = Math.max(y, rightY + 2);
+    // ── Carte CONDITIONS & DISPONIBILITÉS (fond clair) ──
+    doc.setFillColor(241, 245, 249);
+    doc.roundedRect(condX, y, condW, twoColCardH, 3, 3, 'F');
+    doc.setFillColor(...BRAND.pillarOps);
+    doc.roundedRect(condX, y, 2.5, twoColCardH, 3, 0, 'F');
+    doc.rect(condX + 1.2, y, 1.3, twoColCardH, 'F');
 
-    // ─── D) SYNTHÈSE — carte crème avec titre intégré ───
-    const syntheseText = aiPitch?.synthese
-      || anonymizeText(_stripEmojis(candidat.synthese_30s), companyNames);
+    doc.setFont(BRAND.font, 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...BRAND.pillarOps);
+    doc.text('CONDITIONS & DISPONIBILIT\u00c9S', condX + 7, y + 5.5);
 
-    // ─── E) PROJET PROFESSIONNEL — carte bleu glacier ───
-    const projetText = aiPitch?.projet
-      || [
-        anonymizeText(_stripEmojis(candidat.parcours_cible), companyNames),
-        anonymizeText(_stripEmojis(candidat.motivation_drivers), companyNames),
-      ].filter(Boolean).join('\n');
+    let cy = y + cardTitleH + 2;
+    const condLabelW = 26;
+    for (const item of condItems) {
+      doc.setFont(BRAND.font, 'normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(...BRAND.textLight);
+      doc.text(item.label, condX + 7, cy);
+      doc.setFont(BRAND.font, 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(...BRAND.dark);
+      const valLines = doc.splitTextToSize(String(item.value), condW - condLabelW - 14);
+      doc.text(valLines[0] || '', condX + 7 + condLabelW, cy);
+      cy += rowH;
+    }
 
-    // ─── F) DSI SCORING TEXT (conditionnel) ───
-    const dsiText = _dsiScoringText(dsiResult);
+    y += twoColCardH + 5;
+
+    // ─── C) IMPACT STRATÉGIQUE & OPÉRATIONNEL ───
+    const impactText = aiPitch?.impact
+      || _stripEmojis(candidat.teaser_impact_strategique || '');
+
+    // ─── D) LECTURE STRATÉGIQUE AMARILLO ───
+    const lectureText = aiPitch?.lecture
+      || _stripEmojis(candidat.teaser_lecture_strategique || '');
 
     // Calculate remaining space and distribute dynamically
     const confidH = 6;
-    const dsiTextH = dsiText ? 18 : 0;
     const spacing = 4;
-    const availableH = contentMaxY - y - confidH - dsiTextH - spacing * 3;
+    const availableH = contentMaxY - y - confidH - spacing * 3;
 
     // Distribute cards proportionally
-    const synLen = (syntheseText || '').length;
-    const projLen = (projetText || '').length;
-    const totalLen = synLen + projLen;
+    const impactLen = (impactText || '').length || 1;
+    const lectureLen = (lectureText || '').length || 1;
+    const totalLen = impactLen + lectureLen;
 
-    if (syntheseText && y < contentMaxY - 25) {
-      const cardMaxY = totalLen > 0 && projetText
-        ? y + Math.max(30, availableH * (synLen / totalLen))
-        : contentMaxY - confidH - dsiTextH - spacing;
-      y = _addPremiumCard(doc, y, 'Synth\u00e8se du profil', _stripEmojis(syntheseText), {
+    if (impactText && y < contentMaxY - 25) {
+      const cardMaxY = lectureText
+        ? y + Math.max(28, availableH * (impactLen / totalLen))
+        : contentMaxY - confidH - spacing;
+      y = _addPremiumCard(doc, y, 'IMPACT STRAT\u00c9GIQUE & OP\u00c9RATIONNEL', impactText, {
         accentColor: BRAND.primary,
         bgColor: [255, 251, 230],
         maxY: cardMaxY,
       });
     }
 
-    if (projetText && y < contentMaxY - 25) {
-      y = _addPremiumCard(doc, y, 'Projet professionnel', _stripEmojis(projetText), {
-        accentColor: [58, 91, 160],
+    if (lectureText && y < contentMaxY - 25) {
+      y = _addPremiumCard(doc, y, 'LECTURE STRAT\u00c9GIQUE AMARILLO', lectureText, {
+        accentColor: BRAND.pillarInnovation,
         bgColor: [236, 243, 255],
-        maxY: contentMaxY - confidH - dsiTextH - spacing,
+        maxY: contentMaxY - confidH - spacing,
       });
     }
 
-    // ─── G) DSI SCORING TEXT ───
-    if (dsiText && y < contentMaxY - 10) {
-      doc.setFillColor(245, 245, 250);
-      const dsiBoxH = 14;
-      doc.roundedRect(PAGE.marginLeft, y, PAGE.contentWidth, dsiBoxH, 2, 2, 'F');
-      doc.setFillColor(...BRAND.pillarInnovation);
-      doc.rect(PAGE.marginLeft, y, 2, dsiBoxH, 'F');
-
-      doc.setFont(BRAND.font, 'bold');
-      doc.setFontSize(6.5);
-      doc.setTextColor(...BRAND.dark);
-      doc.text('PROFIL DSI AMARILLO', PAGE.marginLeft + 5, y + 4.5);
-
-      doc.setFont(BRAND.font, 'normal');
-      doc.setFontSize(6.5);
-      doc.setTextColor(...BRAND.text);
-      const dsiLines = doc.splitTextToSize(dsiText, PAGE.contentWidth - 10);
-      doc.text(dsiLines.slice(0, 2), PAGE.marginLeft + 5, y + 9);
-      y += dsiBoxH + 3;
-    }
-
-    // ─── H) CONFIDENTIALITÉ ───
-    doc.setFont(BRAND.font, 'italic');
+    // ─── E) CONFIDENTIALITÉ ───
+    doc.setFont(BRAND.font, 'normal');
     doc.setFontSize(5.5);
     doc.setTextColor(...BRAND.textLight);
     doc.text(
