@@ -67,6 +67,8 @@
 
     filtered.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
     renderTable(filtered);
+    const isFiltered = searchValue || activeFilters.some(f => f.values.length > 0);
+    UI.rowCount('candidats-count', { filtered: filtered.length, total: allCandidats.length, label: 'candidats', isFiltered });
   }
 
   function renderAdvancedFilters() {
@@ -158,9 +160,16 @@
 
   renderAdvancedFilters();
 
+  // Row count container
+  const countEl = document.createElement('div');
+  countEl.id = 'candidats-count';
+  countEl.className = 'row-count-bar';
+  document.getElementById('candidats-filters').after(countEl);
+
   // Sort by creation date (most recent first)
   allCandidats.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
   renderTable(allCandidats);
+  UI.rowCount('candidats-count', { filtered: allCandidats.length, total: allCandidats.length, label: 'candidats', isFiltered: false });
 
   function renderTable(data) {
     UI.dataTable('candidats-table', {

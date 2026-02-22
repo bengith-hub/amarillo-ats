@@ -1701,6 +1701,17 @@ const UI = (() => {
     </a>`;
   }
 
+  // Row count bar — displays filtered/total count between filters and table
+  function rowCount(containerId, { filtered, total, label, isFiltered }) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (isFiltered) {
+      el.innerHTML = `<span class="row-count-number">${filtered}</span> / ${total} ${escHtml(label)}`;
+    } else {
+      el.innerHTML = `<span class="row-count-number">${total}</span> ${escHtml(label)}`;
+    }
+  }
+
   return {
     badge, autoBadgeStyle, entityLink, resolveLink,
     dataTable, filterBar, modal, toast,
@@ -1709,7 +1720,7 @@ const UI = (() => {
     candidatDecideurLink,
     inlineEdit, statusBadge, showStatusPicker,
     documentsSection, drawer,
-    linkedinBadge,
+    linkedinBadge, rowCount,
     escHtml, renderRichText, normalizeUrl, formatDate, formatMonthYear, formatCurrency, getParam
   };
 })();

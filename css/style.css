@@ -364,6 +364,19 @@ body {
   border-color: var(--primary);
 }
 
+/* Row count bar */
+.row-count-bar {
+  font-size: 0.8125rem;
+  color: #64748b;
+  padding: 8px 0 4px;
+}
+
+.row-count-bar .row-count-number {
+  font-weight: 700;
+  color: #1e293b;
+  font-size: 0.875rem;
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;
