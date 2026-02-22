@@ -7,7 +7,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/tailwind.css" />
   <link rel="stylesheet" href="css/style.css" />
-  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="icon" type="image/png" href="AS_logo_only.png" />
 </head>
 <body>
   <nav class="sidebar">
@@ -60,6 +60,14 @@
       return (m.decideurs_ids || []).some(did => decIds.includes(did));
     });
     const actions = Store.filter('actions', a => a.entreprise_id === entId);
+
+    // Resolve linked entreprises
+    const entreprisesLiees = (e.entreprises_liees || [])
+      .map(rel => {
+        const linked = Store.findById('entreprises', rel.entreprise_id);
+        return linked ? { ...rel, nom: linked.nom, statut: linked.statut, secteur: linked.secteur, localisation: linked.localisation } : null;
+      })
+      .filter(Boolean);
 
     // Find teasers sent to this entreprise
     const allCandidats = Store.get('candidats');
@@ -125,6 +133,28 @@
           </div>
 
           <div id="ent-documents-section"></div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2>Entreprises liées (${entreprisesLiees.length})</h2>
+              <button class="btn btn-primary btn-sm" id="btn-add-entreprise-liee">+ Lier une entreprise</button>
+            </div>
+            <div class="card-body">
+              ${entreprisesLiees.length === 0 ? '<div class="empty-state"><p>Aucune entreprise liée</p></div>' :
+                entreprisesLiees.map(rel => `
+                  <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+                    <div>
+                      <a href="entreprise.html?id=${rel.entreprise_id}" class="entity-link" style="font-weight:600;">${UI.escHtml(rel.nom)}</a>
+                      <div style="font-size:0.75rem;color:#64748b;">${UI.escHtml(rel.secteur || '')} • ${UI.escHtml(rel.localisation || '')}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                      ${UI.badge(rel.type_relation)}
+                      <button class="btn-remove-link" data-linked-id="${rel.entreprise_id}" title="Retirer le lien" style="background:none;border:none;cursor:pointer;padding:2px 6px;font-size:0.875rem;color:#ef4444;">×</button>
+                    </div>
+                  </div>
+                `).join('')}
+            </div>
+          </div>
 
           <div class="card">
             <div class="card-header">
@@ -226,6 +256,8 @@
           <div class="card">
             <div class="card-header"><h2>Résumé</h2></div>
             <div class="card-body">
+              <div style="font-size:0.75rem;color:#64748b;">Entreprises liées</div>
+              <div style="font-size:1.25rem;font-weight:700;margin-bottom:12px;">${entreprisesLiees.length}</div>
               <div style="font-size:0.75rem;color:#64748b;">Décideurs</div>
               <div style="font-size:1.25rem;font-weight:700;margin-bottom:12px;">${decideurs.length}</div>
               <div style="font-size:0.75rem;color:#64748b;">Missions</div>
@@ -334,6 +366,16 @@
     document.getElementById('btn-new-ent-action')?.addEventListener('click', (ev) => {
       ev.stopPropagation();
       showNewEntAction();
+    });
+
+    // Entreprises liées buttons
+    document.getElementById('btn-add-entreprise-liee')?.addEventListener('click', showAddEntrepriseLieeModal);
+    document.querySelectorAll('.btn-remove-link').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        removeEntrepriseLiee(btn.dataset.linkedId);
+      });
     });
   }
 
@@ -504,6 +546,81 @@
         renderEntreprisePage();
       }
     });
+  }
+
+  // --- Entreprises liées functions ---
+
+  const RELATION_INVERSE = {
+    'Société mère': 'Filiale',
+    'Filiale': 'Société mère',
+    'Même groupe': 'Même groupe',
+    'Partenaire': 'Partenaire',
+  };
+
+  function showAddEntrepriseLieeModal() {
+    const bodyHtml = `
+      <div class="form-group">
+        <label>Entreprise</label>
+        <div style="position:relative;">
+          <input type="text" id="link-ent-name" placeholder="Rechercher une entreprise..." autocomplete="off" />
+          <input type="hidden" id="link-ent-id" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Type de relation</label>
+        <select id="link-ent-type">
+          <option value="Société mère">Société mère</option>
+          <option value="Filiale">Filiale</option>
+          <option value="Même groupe">Même groupe</option>
+          <option value="Partenaire">Partenaire</option>
+        </select>
+      </div>
+    `;
+
+    UI.modal('Lier une entreprise', bodyHtml, {
+      width: 480,
+      onSave: async () => {
+        const linkedId = document.getElementById('link-ent-id').value;
+        const type = document.getElementById('link-ent-type').value;
+        if (!linkedId || linkedId === entId) { UI.toast('Sélectionnez une entreprise valide'); return; }
+
+        const existing = (currentEntreprise.entreprises_liees || []);
+        if (existing.some(r => r.entreprise_id === linkedId)) { UI.toast('Cette entreprise est déjà liée'); return; }
+
+        // Update side A (current entreprise)
+        const newLinks = [...existing, { entreprise_id: linkedId, type_relation: type }];
+        await Store.update('entreprises', entId, { entreprises_liees: newLinks });
+
+        // Update side B (linked entreprise) — inverse relation
+        const linked = Store.findById('entreprises', linkedId);
+        if (linked) {
+          const linkedLinks = [...(linked.entreprises_liees || []), { entreprise_id: entId, type_relation: RELATION_INVERSE[type] }];
+          await Store.update('entreprises', linkedId, { entreprises_liees: linkedLinks });
+        }
+
+        UI.toast('Entreprise liée');
+        renderEntreprisePage();
+      }
+    });
+    UI.entrepriseAutocomplete('link-ent-name', 'link-ent-id');
+  }
+
+  async function removeEntrepriseLiee(linkedId) {
+    if (!confirm('Retirer ce lien ?')) return;
+
+    // Remove from side A
+    const newLinks = (currentEntreprise.entreprises_liees || []).filter(r => r.entreprise_id !== linkedId);
+    await Store.update('entreprises', entId, { entreprises_liees: newLinks });
+
+    // Remove from side B
+    const linked = Store.findById('entreprises', linkedId);
+    if (linked) {
+      const linkedLinks = (linked.entreprises_liees || []).filter(r => r.entreprise_id !== entId);
+      await Store.update('entreprises', linkedId, { entreprises_liees: linkedLinks });
+    }
+
+    UI.toast('Lien retiré');
+    renderEntreprisePage();
   }
 
   function renderAutresSites(e) {

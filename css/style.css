@@ -808,8 +808,8 @@ body {
   display: flex; align-items: center; gap: 10px;
 }
 .sidebar-logo-icon {
-  width: 32px; height: 32px; border-radius: 8px;
-  object-fit: contain;
+  width: 32px; height: 32px; border-radius: 50%;
+  object-fit: cover; background: transparent;
 }
 
 /* Better table row alternation */
@@ -1279,6 +1279,12 @@ body {
 .badge-a-contacter { background: #f1f5f9; color: #64748b; }
 .badge-en-relation { background: #dbeafe; color: #2563eb; }
 .badge-champion { background: #dcfce7; color: #16a34a; }
+
+/* Relation types badges */
+.badge-societe-mere { background: #e0e7ff; color: #4338ca; }
+.badge-filiale { background: #dbeafe; color: #2563eb; }
+.badge-meme-groupe { background: #f3e8ff; color: #7c3aed; }
+.badge-partenaire { background: #fef3c7; color: #b45309; }
 
 /* Priority badges for decideurs */
 .badge-decideur { background: #fee2e2; color: #dc2626; }

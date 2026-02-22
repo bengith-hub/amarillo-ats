@@ -150,6 +150,11 @@
         { key: 'taille', label: 'Taille' },
         { key: 'ca', label: 'CA' },
         { key: 'localisation', label: 'Localisation' },
+        { key: 'groupe', label: 'Groupe', render: r => {
+          const parent = (r.entreprises_liees || []).find(l => l.type_relation === 'Société mère');
+          if (parent) { const p = Store.findById('entreprises', parent.entreprise_id); return p ? UI.escHtml(p.nom) : ''; }
+          return '';
+        }},
         { key: 'priorite', label: 'Priorité', render: r => UI.badge(r.priorite === '5 - Coeur de cible' ? 'Haute' : 'Moyenne') },
         { key: 'statut', label: 'Statut' },
         { key: 'decideurs', label: 'Décideurs', render: r => {
