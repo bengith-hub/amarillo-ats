@@ -228,11 +228,16 @@ const PDFEngine = (() => {
     return bannerH + 1.2;
   }
 
-  // Helper : vérifie si une police est disponible dans le document
+  // Helper : vérifie si une police est disponible et fonctionnelle dans le document
   function _hasFont(doc, fontName) {
     try {
       const fonts = doc.getFontList();
-      return fonts && fonts[fontName];
+      if (!fonts || !fonts[fontName]) return false;
+      // Test réel : essayer de positionner la police et mesurer du texte
+      const style = fonts[fontName].includes('bold') ? 'bold' : 'normal';
+      doc.setFont(fontName, style);
+      doc.getTextWidth('Test');
+      return true;
     } catch (_e) { return false; }
   }
 
