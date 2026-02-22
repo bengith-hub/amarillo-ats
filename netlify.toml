@@ -4,8 +4,6 @@
 [functions]
   directory = "netlify/functions"
 
-# Environment variables needed for the teaser-followup function:
-# - JSONBIN_API_KEY: Your JSONBin master key
-# - JSONBIN_CANDIDATS_BIN: The candidats bin ID
-# - JSONBIN_ACTIONS_BIN: The actions bin ID
-# Set these in Netlify dashboard > Site settings > Environment variables
+# Les bin IDs JSONBin sont en fallback dans la function (memes valeurs que config.js).
+# Pour overrider, definir JSONBIN_API_KEY, JSONBIN_CANDIDATS_BIN, JSONBIN_ACTIONS_BIN
+# dans Netlify dashboard > Site settings > Environment variables.

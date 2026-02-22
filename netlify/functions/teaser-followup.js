@@ -7,13 +7,10 @@
 const JSONBIN_BASE = 'https://api.jsonbin.io/v3/b';
 
 export default async function handler(req) {
-  const apiKey = process.env.JSONBIN_API_KEY;
-  const candidatsBin = process.env.JSONBIN_CANDIDATS_BIN;
-  const actionsBin = process.env.JSONBIN_ACTIONS_BIN;
-
-  if (!apiKey || !candidatsBin || !actionsBin) {
-    return new Response(JSON.stringify({ error: 'Missing environment variables' }), { status: 500 });
-  }
+  // Fallback to hardcoded values from config.js (already public in frontend code)
+  const apiKey = process.env.JSONBIN_API_KEY || '$2a$10$FvDIogJwH4l87MiEdExg6udcabOSwaFpjoL1xTc5KQgUojd6JA4Be';
+  const candidatsBin = process.env.JSONBIN_CANDIDATS_BIN || '698a4deeae596e708f1e4f33';
+  const actionsBin = process.env.JSONBIN_ACTIONS_BIN || '698a4defd0ea881f40ade482';
 
   const today = new Date().toISOString().split('T')[0];
 
