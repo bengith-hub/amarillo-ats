@@ -2762,10 +2762,10 @@
     const savedEquipe = candidat.teaser_equipe || '';
     const savedBudget = candidat.teaser_budget || '';
     const savedZone = candidat.teaser_zone || candidat.localisation || '';
-    const savedPackage = candidat.teaser_package || PDFEngine.salaryBand(candidat.package_souhaite_min, candidat.package_souhaite) || '';
+    const savedStatut = candidat.teaser_statut || '';
+    const savedMobilite = candidat.teaser_mobilite || '';
+    const savedRemuneration = candidat.teaser_remuneration || candidat.teaser_package || PDFEngine.salaryBand(candidat.package_souhaite_min, candidat.package_souhaite) || '';
     const savedPreavis = candidat.teaser_preavis || candidat.preavis || '';
-    const savedTeletravail = candidat.teaser_teletravail || candidat.teletravail || '';
-    const savedDispo = candidat.teaser_dispo || '';
     const savedImpact = candidat.teaser_impact_strategique || '';
     const savedLecture = candidat.teaser_lecture_strategique || '';
 
@@ -2776,7 +2776,7 @@
 
     container.innerHTML = `
       <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
-        <button class="btn btn-secondary" id="teaser-ai-btn" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">
+        <button class="btn btn-secondary" id="teaser-ai-btn" style="background:#2D3436;color:#F5B731;border-color:#2D3436;">
           <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
           IA \u2014 G\u00e9n\u00e9rer tout
         </button>
@@ -2810,13 +2810,13 @@
           </div>
         </div>
 
-        <div class="card" data-accent="green">
-          <div class="card-header"><h2>Conditions & Disponibilit\u00e9s</h2><span class="edit-hint">package et disponibilit\u00e9</span></div>
+        <div class="card" data-accent="gold">
+          <div class="card-header"><h2>Conditions & Disponibilit\u00e9</h2><span class="edit-hint">statut, mobilit\u00e9, r\u00e9mun\u00e9ration</span></div>
           <div class="card-body">
-            <div class="form-group" style="margin-bottom:10px;"><label>Package</label><input type="text" id="teaser-f-package" value="${UI.escHtml(savedPackage)}" maxlength="60" placeholder="Ex: 90-110 K\u20ac" />${charCountHtml('teaser-f-package', 60)}</div>
-            <div class="form-group" style="margin-bottom:10px;"><label>Pr\u00e9avis</label><input type="text" id="teaser-f-preavis" value="${UI.escHtml(savedPreavis)}" maxlength="40" placeholder="Ex: 3 mois" />${charCountHtml('teaser-f-preavis', 40)}</div>
-            <div class="form-group" style="margin-bottom:10px;"><label>T\u00e9l\u00e9travail</label><input type="text" id="teaser-f-teletravail" value="${UI.escHtml(savedTeletravail)}" maxlength="40" placeholder="Ex: 2j/semaine" />${charCountHtml('teaser-f-teletravail', 40)}</div>
-            <div class="form-group"><label>Disponibilit\u00e9</label><input type="text" id="teaser-f-dispo" value="${UI.escHtml(savedDispo)}" maxlength="60" placeholder="Ex: Disponible imm\u00e9diatement" />${charCountHtml('teaser-f-dispo', 60)}</div>
+            <div class="form-group" style="margin-bottom:10px;"><label>Statut</label><input type="text" id="teaser-f-statut" value="${UI.escHtml(savedStatut)}" maxlength="60" placeholder="Ex: En poste actuellement" />${charCountHtml('teaser-f-statut', 60)}</div>
+            <div class="form-group" style="margin-bottom:10px;"><label>Mobilit\u00e9</label><input type="text" id="teaser-f-mobilite" value="${UI.escHtml(savedMobilite)}" maxlength="60" placeholder="Ex: Grand Ouest / Nationale" />${charCountHtml('teaser-f-mobilite', 60)}</div>
+            <div class="form-group" style="margin-bottom:10px;"><label>R\u00e9mun\u00e9ration cible</label><input type="text" id="teaser-f-remuneration" value="${UI.escHtml(savedRemuneration)}" maxlength="60" placeholder="Ex: 120-135k\u20ac fixe + variable" />${charCountHtml('teaser-f-remuneration', 60)}</div>
+            <div class="form-group"><label>Pr\u00e9avis</label><input type="text" id="teaser-f-preavis" value="${UI.escHtml(savedPreavis)}" maxlength="40" placeholder="Ex: 3 mois" />${charCountHtml('teaser-f-preavis', 40)}</div>
           </div>
         </div>
       </div>
@@ -2824,7 +2824,7 @@
       <div class="card" data-accent="gold" style="margin-bottom:16px;">
         <div class="card-header">
           <h2>Impact strat\u00e9gique & op\u00e9rationnel</h2>
-          <button class="btn btn-secondary" id="teaser-ai-impact-btn" style="background:#1e293b;color:#FECC02;border-color:#1e293b;font-size:0.75rem;padding:4px 10px;">
+          <button class="btn btn-secondary" id="teaser-ai-impact-btn" style="background:#2D3436;color:#F5B731;border-color:#2D3436;font-size:0.75rem;padding:4px 10px;">
             <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
             IA
           </button>
@@ -2835,10 +2835,10 @@
         </div>
       </div>
 
-      <div class="card" data-accent="blue" style="margin-bottom:16px;">
+      <div class="card" data-accent="gold" style="margin-bottom:16px;">
         <div class="card-header">
           <h2>Lecture strat\u00e9gique Amarillo</h2>
-          <button class="btn btn-secondary" id="teaser-ai-lecture-btn" style="background:#3A5BA0;color:#fff;border-color:#3A5BA0;font-size:0.75rem;padding:4px 10px;">
+          <button class="btn btn-secondary" id="teaser-ai-lecture-btn" style="background:#2D3436;color:#F5B731;border-color:#2D3436;font-size:0.75rem;padding:4px 10px;">
             <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
             IA
           </button>
@@ -2858,10 +2858,10 @@
       'teaser-f-equipe': 80,
       'teaser-f-budget': 60,
       'teaser-f-zone': 60,
-      'teaser-f-package': 60,
+      'teaser-f-statut': 60,
+      'teaser-f-mobilite': 60,
+      'teaser-f-remuneration': 60,
       'teaser-f-preavis': 40,
-      'teaser-f-teletravail': 40,
-      'teaser-f-dispo': 60,
       'teaser-f-impact': 500,
       'teaser-f-lecture': 350,
     };
@@ -2887,10 +2887,10 @@
       'teaser-f-equipe': 'teaser_equipe',
       'teaser-f-budget': 'teaser_budget',
       'teaser-f-zone': 'teaser_zone',
-      'teaser-f-package': 'teaser_package',
+      'teaser-f-statut': 'teaser_statut',
+      'teaser-f-mobilite': 'teaser_mobilite',
+      'teaser-f-remuneration': 'teaser_remuneration',
       'teaser-f-preavis': 'teaser_preavis',
-      'teaser-f-teletravail': 'teaser_teletravail',
-      'teaser-f-dispo': 'teaser_dispo',
       'teaser-f-impact': 'teaser_impact_strategique',
       'teaser-f-lecture': 'teaser_lecture_strategique',
     };
