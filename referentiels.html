@@ -45,10 +45,15 @@
     </div>
   </div>
 
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="js/config.js"></script>
+  <script src="js/backup-monitor.js"></script>
   <script src="js/api.js"></script>
   <script src="js/store.js"></script>
   <script src="js/components.js"></script>
+  <script src="js/google-auth.js"></script>
+  <script src="js/google-drive.js"></script>
+  <script src="js/backup.js"></script>
   <script src="js/referentiels.js"></script>
   <script src="js/templates.js"></script>
   <script>
@@ -74,9 +79,12 @@
           <button class="ref-tab ${'trames' === activeCategory ? 'active' : ''}" data-cat="trames" style="${'trames' === activeCategory ? 'border-color:#c9a000;color:#c9a000;' : ''}">
             <span>📝</span> Trames
           </button>
+          <button class="ref-tab ${'sauvegardes' === activeCategory ? 'active' : ''}" data-cat="sauvegardes" style="${'sauvegardes' === activeCategory ? 'border-color:#0ea5e9;color:#0ea5e9;' : ''}">
+            <span>💾</span> Sauvegardes
+          </button>
         </div>
         <div class="ref-content">
-          ${activeCategory === 'trames' ? renderTramesTab() : categories.filter(cat => cat.id === activeCategory).map(cat => `
+          ${activeCategory === 'sauvegardes' ? renderBackupTab() : activeCategory === 'trames' ? renderTramesTab() : categories.filter(cat => cat.id === activeCategory).map(cat => `
             <div class="ref-items-grid">
               ${cat.items.map(item => {
                 const values = Referentiels.get(item.key);
@@ -213,6 +221,7 @@
 
       // Bind trames tab events
       if (activeCategory === 'trames') bindTramesEvents();
+      if (activeCategory === 'sauvegardes') bindBackupEvents();
     }
 
     function addValue(key) {
@@ -316,6 +325,386 @@
       });
     }
 
+    // ─── Backup tab ───────────────────────────────────
+
+    function renderBackupTab() {
+      const lastBackup = Backup.getLastBackupDate();
+      const lastStr = lastBackup ? Backup.formatDate(lastBackup) : 'Aucun';
+
+      return `
+        <!-- Statut du backup automatique -->
+        <div id="backup-status-card" style="margin-bottom:20px;">
+          <div class="card" style="border-left:4px solid #94a3b8;">
+            <div class="card-body" style="display:flex;align-items:center;gap:12px;padding:14px 20px;">
+              <span style="font-size:1.25rem;" id="backup-status-icon">&#9203;</span>
+              <div style="flex:1;">
+                <div style="font-size:0.8125rem;font-weight:600;color:#1e293b;" id="backup-status-text">V\u00e9rification du backup automatique...</div>
+                <div style="font-size:0.75rem;color:#94a3b8;" id="backup-status-detail"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="backup-grid">
+
+          <!-- Export local -->
+          <div class="card backup-card" style="border-left:3px solid #0ea5e9;">
+            <div class="card-header">
+              <h2>📥 Export local</h2>
+            </div>
+            <div class="card-body">
+              <p style="font-size:0.8125rem;color:#64748b;margin-bottom:12px;">
+                Téléchargez toutes vos données au format JSON pour une sauvegarde locale sur votre ordinateur.
+              </p>
+              <button class="btn btn-primary btn-sm" id="btn-backup-export">📥 Exporter les données</button>
+            </div>
+          </div>
+
+          <!-- Import / Restauration -->
+          <div class="card backup-card" style="border-left:3px solid #f59e0b;">
+            <div class="card-header">
+              <h2>📤 Import / Restauration</h2>
+            </div>
+            <div class="card-body">
+              <p style="font-size:0.8125rem;color:#64748b;margin-bottom:8px;">
+                Restaurez vos données depuis un fichier JSON précédemment exporté.
+              </p>
+              <p style="font-size:0.75rem;color:#dc2626;margin-bottom:12px;">
+                ⚠️ Cette opération remplacera toutes les données actuelles.
+              </p>
+              <input type="file" id="backup-file-input" accept=".json" style="display:none;" />
+              <button class="btn btn-secondary btn-sm" id="btn-backup-import">📤 Importer un fichier</button>
+            </div>
+          </div>
+
+          <!-- Google Drive -->
+          <div class="card backup-card" style="border-left:3px solid #22c55e;">
+            <div class="card-header">
+              <h2>☁️ Google Drive</h2>
+            </div>
+            <div class="card-body">
+              <p style="font-size:0.8125rem;color:#64748b;margin-bottom:8px;">
+                Sauvegardez sur Google Drive ou restaurez depuis une sauvegarde précédente.
+              </p>
+              <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:12px;">
+                Dernier backup : <strong>${lastStr}</strong>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-primary btn-sm" id="btn-backup-drive">☁️ Sauvegarder sur Drive</button>
+                <button class="btn btn-secondary btn-sm" id="btn-backup-drive-list">📋 Voir les backups</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Snapshots automatiques -->
+          <div class="card backup-card" style="border-left:3px solid #8b5cf6;">
+            <div class="card-header">
+              <h2>📸 Snapshots automatiques</h2>
+            </div>
+            <div class="card-body">
+              <p style="font-size:0.8125rem;color:#64748b;margin-bottom:8px;">
+                Backup automatique quotidien (3h du matin). Les 7 derniers snapshots sont conservés.
+              </p>
+              <div id="snapshots-list" style="margin-bottom:12px;">
+                <div style="font-size:0.8125rem;color:#94a3b8;">Chargement...</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" id="btn-backup-snapshot">🔄 Créer un snapshot maintenant</button>
+            </div>
+          </div>
+
+        </div>
+      `;
+    }
+
+    function bindBackupEvents() {
+      // Check backup status
+      loadBackupStatus();
+
+      // Export local
+      document.getElementById('btn-backup-export')?.addEventListener('click', () => {
+        try {
+          const counts = Backup.exportAll();
+          const total = Object.values(counts).reduce((a, b) => a + b, 0);
+          UI.toast('Backup exporté (' + total + ' enregistrements)');
+        } catch (e) {
+          UI.toast('Erreur export : ' + e.message, 'error');
+        }
+      });
+
+      // Import
+      const fileInput = document.getElementById('backup-file-input');
+      document.getElementById('btn-backup-import')?.addEventListener('click', () => {
+        fileInput?.click();
+      });
+
+      fileInput?.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        try {
+          const result = await Backup.parseBackupFile(file);
+
+          const summaryHtml = `
+            <p style="margin-bottom:12px;">Fichier : <strong>${UI.escHtml(file.name)}</strong></p>
+            ${result.meta ? '<p style="font-size:0.8125rem;color:#64748b;margin-bottom:12px;">Date du backup : ' + Backup.formatDate(result.meta.date) + '</p>' : ''}
+            <table style="width:100%;font-size:0.8125rem;border-collapse:collapse;">
+              <thead><tr style="border-bottom:1px solid #e2e8f0;"><th style="text-align:left;padding:6px 8px;">Entité</th><th style="text-align:right;padding:6px 8px;">Enregistrements</th></tr></thead>
+              <tbody>
+                ${Backup.ENTITIES.map(e => '<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:6px 8px;">' + e + '</td><td style="text-align:right;padding:6px 8px;font-weight:600;">' + (result.counts[e] || 0) + '</td></tr>').join('')}
+              </tbody>
+              <tfoot><tr style="border-top:2px solid #e2e8f0;font-weight:700;"><td style="padding:6px 8px;">Total</td><td style="text-align:right;padding:6px 8px;">${result.totalRecords}</td></tr></tfoot>
+            </table>
+            <p style="color:#dc2626;font-size:0.8125rem;margin-top:16px;font-weight:600;">⚠️ Toutes les données actuelles seront remplacées par celles du fichier.</p>
+          `;
+
+          UI.modal('Confirmer la restauration', summaryHtml, {
+            width: 500,
+            saveLabel: 'Restaurer',
+            onSave: async () => {
+              UI.toast('Restauration en cours...');
+              try {
+                await Backup.restoreFromData(result.data, (entity, done, total) => {
+                  if (entity) UI.toast('Restauration : ' + entity + '...');
+                });
+                UI.toast('Restauration terminée ! Rechargement...');
+                setTimeout(() => window.location.reload(), 1500);
+              } catch (err) {
+                UI.toast('Erreur restauration : ' + err.message, 'error');
+              }
+            }
+          });
+        } catch (err) {
+          UI.toast('Erreur : ' + err.message, 'error');
+        }
+
+        fileInput.value = '';
+      });
+
+      // Google Drive backup
+      document.getElementById('btn-backup-drive')?.addEventListener('click', async () => {
+        if (!GoogleAuth.isConfigured()) {
+          UI.toast('Configurez d\'abord Google (Configuration API dans la sidebar)', 'error');
+          return;
+        }
+
+        try {
+          UI.toast('Sauvegarde Google Drive en cours...');
+          const result = await Backup.backupToGoogleDrive();
+          const total = Object.values(result.counts).reduce((a, b) => a + b, 0);
+          UI.toast('Sauvegardé sur Drive : ' + result.fileName + ' (' + total + ' enregistrements)');
+          render(); // refresh last backup date
+        } catch (e) {
+          UI.toast('Erreur Drive : ' + e.message, 'error');
+        }
+      });
+
+      // Google Drive list
+      document.getElementById('btn-backup-drive-list')?.addEventListener('click', async () => {
+        if (!GoogleAuth.isConfigured()) {
+          UI.toast('Configurez d\'abord Google (Configuration API dans la sidebar)', 'error');
+          return;
+        }
+
+        try {
+          UI.toast('Chargement des backups Drive...');
+          const files = await Backup.listDriveBackups();
+
+          if (files.length === 0) {
+            UI.toast('Aucun backup trouvé sur Google Drive');
+            return;
+          }
+
+          const listHtml = `
+            <div style="max-height:400px;overflow-y:auto;">
+              ${files.map(f => `
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #f1f5f9;">
+                  <div>
+                    <div style="font-size:0.8125rem;font-weight:600;color:#1e293b;">${UI.escHtml(f.name)}</div>
+                    <div style="font-size:0.75rem;color:#94a3b8;">${Backup.formatDate(f.createdTime)} ${f.size ? '— ' + Backup.formatSize(parseInt(f.size)) : ''}</div>
+                  </div>
+                  <button class="btn btn-secondary btn-sm drive-restore-btn" data-file-id="${f.id}" data-name="${UI.escHtml(f.name)}">Restaurer</button>
+                </div>
+              `).join('')}
+            </div>
+          `;
+
+          UI.modal('Backups Google Drive', listHtml, { width: 560 });
+
+          // Bind restore buttons
+          setTimeout(() => {
+            document.querySelectorAll('.drive-restore-btn').forEach(btn => {
+              btn.addEventListener('click', async () => {
+                const fileId = btn.dataset.fileId;
+                const name = btn.dataset.name;
+
+                try {
+                  UI.toast('Téléchargement de ' + name + '...');
+                  const result = await Backup.restoreFromDrive(fileId);
+
+                  // Close the list modal and show confirmation
+                  document.getElementById('modal-overlay')?.classList.remove('visible');
+
+                  const summaryHtml = `
+                    <p style="margin-bottom:12px;">Backup : <strong>${UI.escHtml(name)}</strong></p>
+                    <table style="width:100%;font-size:0.8125rem;border-collapse:collapse;">
+                      <tbody>
+                        ${Backup.ENTITIES.map(e => '<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:6px 8px;">' + e + '</td><td style="text-align:right;padding:6px 8px;font-weight:600;">' + (result.counts[e] || 0) + '</td></tr>').join('')}
+                      </tbody>
+                    </table>
+                    <p style="color:#dc2626;font-size:0.8125rem;margin-top:16px;font-weight:600;">⚠️ Toutes les données actuelles seront remplacées.</p>
+                  `;
+
+                  UI.modal('Confirmer la restauration', summaryHtml, {
+                    width: 500,
+                    saveLabel: 'Restaurer',
+                    onSave: async () => {
+                      UI.toast('Restauration en cours...');
+                      await Backup.restoreFromData(result.data);
+                      UI.toast('Restauration terminée ! Rechargement...');
+                      setTimeout(() => window.location.reload(), 1500);
+                    }
+                  });
+                } catch (err) {
+                  UI.toast('Erreur : ' + err.message, 'error');
+                }
+              });
+            });
+          }, 100);
+        } catch (e) {
+          UI.toast('Erreur : ' + e.message, 'error');
+        }
+      });
+
+      // Snapshots — load list
+      loadSnapshotsList();
+
+      // Create snapshot
+      document.getElementById('btn-backup-snapshot')?.addEventListener('click', async () => {
+        try {
+          UI.toast('Création du snapshot en cours...');
+          await Backup.createSnapshot('manual');
+          UI.toast('Snapshot créé avec succès');
+          loadSnapshotsList();
+        } catch (e) {
+          UI.toast('Erreur snapshot : ' + e.message, 'error');
+        }
+      });
+    }
+
+    async function loadSnapshotsList() {
+      const listEl = document.getElementById('snapshots-list');
+      if (!listEl) return;
+
+      try {
+        const snapshots = await Backup.listSnapshots();
+
+        if (snapshots.length === 0) {
+          listEl.innerHTML = '<div style="font-size:0.8125rem;color:#94a3b8;padding:8px 0;">Aucun snapshot disponible.</div>';
+          return;
+        }
+
+        listEl.innerHTML = snapshots.map(s => {
+          const total = s.counts ? Object.values(s.counts).reduce((a, b) => a + b, 0) : '?';
+          return `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid #f1f5f9;">
+              <div>
+                <span style="font-size:0.8125rem;color:#1e293b;">📸 ${Backup.formatDate(s.date)}</span>
+                <span style="font-size:0.6875rem;color:#94a3b8;margin-left:8px;">${s.source} — ${total} enregistrements</span>
+              </div>
+              <button class="btn btn-secondary btn-sm snapshot-restore-btn" data-snap-id="${s.id}" style="font-size:0.75rem;padding:4px 10px;">Restaurer</button>
+            </div>
+          `;
+        }).join('');
+
+        // Bind restore buttons
+        listEl.querySelectorAll('.snapshot-restore-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const snapId = btn.dataset.snapId;
+
+            try {
+              UI.toast('Chargement du snapshot...');
+              const snapshot = await Backup.getSnapshot(snapId);
+              if (!snapshot) {
+                UI.toast('Snapshot introuvable', 'error');
+                return;
+              }
+
+              const total = snapshot.counts ? Object.values(snapshot.counts).reduce((a, b) => a + b, 0) : 0;
+              const summaryHtml = `
+                <p style="margin-bottom:12px;">Snapshot du <strong>${Backup.formatDate(snapshot.date)}</strong> (${snapshot.source})</p>
+                <table style="width:100%;font-size:0.8125rem;border-collapse:collapse;">
+                  <tbody>
+                    ${Backup.ENTITIES.map(e => '<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:6px 8px;">' + e + '</td><td style="text-align:right;padding:6px 8px;font-weight:600;">' + (snapshot.counts[e] || 0) + '</td></tr>').join('')}
+                  </tbody>
+                  <tfoot><tr style="border-top:2px solid #e2e8f0;font-weight:700;"><td style="padding:6px 8px;">Total</td><td style="text-align:right;padding:6px 8px;">${total}</td></tr></tfoot>
+                </table>
+                <p style="color:#dc2626;font-size:0.8125rem;margin-top:16px;font-weight:600;">⚠️ Toutes les données actuelles seront remplacées.</p>
+              `;
+
+              UI.modal('Confirmer la restauration', summaryHtml, {
+                width: 500,
+                saveLabel: 'Restaurer',
+                onSave: async () => {
+                  UI.toast('Restauration en cours...');
+                  await Backup.restoreFromData(snapshot.data);
+                  UI.toast('Restauration terminée ! Rechargement...');
+                  setTimeout(() => window.location.reload(), 1500);
+                }
+              });
+            } catch (err) {
+              UI.toast('Erreur : ' + err.message, 'error');
+            }
+          });
+        });
+      } catch (e) {
+        listEl.innerHTML = '<div style="font-size:0.8125rem;color:#dc2626;">Erreur chargement snapshots : ' + e.message + '</div>';
+      }
+    }
+
+    async function loadBackupStatus() {
+      const card = document.getElementById('backup-status-card');
+      if (!card) return;
+
+      try {
+        const status = await BackupMonitor.fetchBackupStatus();
+        const iconEl = document.getElementById('backup-status-icon');
+        const textEl = document.getElementById('backup-status-text');
+        const detailEl = document.getElementById('backup-status-detail');
+        const cardInner = card.querySelector('.card');
+
+        if (!status || !status.last_success) {
+          iconEl.innerHTML = '&#9888;&#65039;';
+          textEl.textContent = 'Backup automatique non configur\u00e9';
+          detailEl.textContent = 'Configurez JSONBIN_BACKUP_BIN dans Netlify pour activer les backups automatiques.';
+          cardInner.style.borderLeftColor = '#f59e0b';
+          return;
+        }
+
+        const isStale = BackupMonitor.isBackupStale(status);
+        const lastDate = new Date(status.last_success).toLocaleDateString('fr-FR', {
+          day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+
+        if (isStale || status.result === 'error') {
+          iconEl.innerHTML = '&#10060;';
+          textEl.textContent = 'Backup en \u00e9chec';
+          textEl.style.color = '#dc2626';
+          cardInner.style.borderLeftColor = '#dc2626';
+          let detail = 'Dernier succ\u00e8s : ' + lastDate;
+          if (status.error) detail += ' \u2014 Erreur : ' + status.error;
+          detailEl.textContent = detail;
+        } else {
+          iconEl.innerHTML = '&#9989;';
+          textEl.textContent = 'Backup automatique fonctionnel';
+          textEl.style.color = '#16a34a';
+          cardInner.style.borderLeftColor = '#22c55e';
+          detailEl.textContent = 'Dernier backup r\u00e9ussi : ' + lastDate;
+        }
+      } catch (e) {
+        console.warn('Could not check backup status:', e.message);
+      }
+    }
+
     render();
 
     // Reset all button
@@ -414,6 +803,13 @@
     }
     .ref-value-item:hover .ref-value-delete { opacity: 1; }
     .ref-value-delete:hover { color: #dc2626; background: #fee2e2; }
+
+    .backup-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 16px;
+    }
+    .backup-card { margin-bottom: 0; }
   </style>
 </body>
 </html>
