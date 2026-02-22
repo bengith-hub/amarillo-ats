@@ -1,0 +1,11 @@
+[build]
+  publish = "."
+
+[functions]
+  directory = "netlify/functions"
+
+# Environment variables needed for the teaser-followup function:
+# - JSONBIN_API_KEY: Your JSONBin master key
+# - JSONBIN_CANDIDATS_BIN: The candidats bin ID
+# - JSONBIN_ACTIONS_BIN: The actions bin ID
+# Set these in Netlify dashboard > Site settings > Environment variables

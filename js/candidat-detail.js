@@ -33,6 +33,9 @@
   renderEntreprisesCibles();
   renderDSIProfile();
 
+  // Background check for teaser email replies (non-blocking)
+  checkTeaserReplies();
+
   // Refresh header + sidebar after any inline edit that affects them
   function refreshDependentViews() {
     renderHeader();
@@ -59,6 +62,7 @@
           ${UI.statusBadge(candidat.niveau || 'Middle', CANDIDAT_NIVEAUX, { entity: 'candidats', recordId: id, fieldName: 'niveau', onUpdate: (s) => { candidat.niveau = s; } })}
           <button class="btn btn-secondary btn-sm" id="btn-export-pdf" title="Exporter la fiche en PDF">PDF</button>
           <button class="btn btn-secondary btn-sm" id="btn-teaser-pdf" title="G\u00E9n\u00E9rer le Teaser Talent \u00E0 Impact (anonymis\u00E9)" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">Teaser</button>
+          <button class="btn btn-secondary btn-sm" id="btn-send-teaser" title="Envoyer le profil en teaser par email" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">✈️ Envoyer</button>
           <button class="btn btn-secondary btn-sm" id="btn-dossier-pdf" title="Dossier complet de pr\u00E9sentation" style="background:#2D6A4F;color:#fff;border-color:#2D6A4F;">Dossier</button>
           <button class="btn btn-secondary btn-sm" id="btn-templates">Trames</button>
           <button class="btn btn-danger btn-sm" id="btn-delete-candidat" title="Supprimer ce candidat">Suppr.</button>
@@ -213,6 +217,10 @@ R\u00E8gles :
 
     document.getElementById('btn-templates').addEventListener('click', () => {
       showTemplatesModal({ candidatId: id });
+    });
+
+    document.getElementById('btn-send-teaser')?.addEventListener('click', () => {
+      showTeaserSendModal(candidat, id);
     });
 
     document.getElementById('btn-delete-candidat').addEventListener('click', () => {
@@ -1389,14 +1397,49 @@ R\u00E8gles :
   // ============================================================
   // PRÉSENTATIONS — suivi des envois de CV aux entreprises
   // ============================================================
+
+  function _emailStatusBadge(status) {
+    const map = {
+      'draft': { color: '#94a3b8', bg: '#f8fafc', icon: '📝', label: 'Brouillon' },
+      'sent': { color: '#3b82f6', bg: '#eff6ff', icon: '🔵', label: 'Envoyé' },
+      'replied': { color: '#16a34a', bg: '#f0fdf4', icon: '🟢', label: 'Répondu' },
+      'bounced': { color: '#dc2626', bg: '#fef2f2', icon: '🔴', label: 'Bounce' },
+      'auto-reply': { color: '#ca8a04', bg: '#fefce8', icon: '🟡', label: 'Auto-reply' },
+      'no-reply': { color: '#64748b', bg: '#f1f5f9', icon: '⚪', label: 'Sans réponse' },
+    };
+    const s = map[status] || map['sent'];
+    return `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:999px;font-size:0.6875rem;font-weight:600;background:${s.bg};color:${s.color};">${s.icon} ${s.label}</span>`;
+  }
+
+  function _relanceInfo(p) {
+    if (!p.relance_prevue) return '';
+    const today = new Date().toISOString().split('T')[0];
+    const days = Math.ceil((new Date(p.relance_prevue) - new Date(today)) / 86400000);
+    if (p.email_status !== 'sent') return '';
+    if (days < 0) return `<span style="color:#dc2626;font-size:0.6875rem;font-weight:600;">Relance en retard (${Math.abs(days)}j)</span>`;
+    if (days === 0) return `<span style="color:#ca8a04;font-size:0.6875rem;font-weight:600;">Relance aujourd'hui</span>`;
+    return `<span style="color:#64748b;font-size:0.6875rem;">Relance dans ${days}j</span>`;
+  }
+
   function renderPresentations() {
     const presentations = candidat.presentations || [];
-    const entreprises = Store.get('entreprises');
+    const teasers = presentations.filter(p => p.type === 'teaser');
+    const missions = presentations.filter(p => p.type !== 'teaser');
 
     document.getElementById('tab-presentations').innerHTML = `
+      <div class="card" data-accent="gold" style="margin-bottom:16px;">
+        <div class="card-header">
+          <h2>✈️ Teasers (${teasers.length})</h2>
+          <button class="btn btn-sm btn-primary" id="btn-send-teaser-tab" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">+ Envoyer Teaser</button>
+        </div>
+        <div class="card-body">
+          <div id="teasers-list"></div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-header">
-          <h2>Présentations aux entreprises (${presentations.length})</h2>
+          <h2>Présentations mission (${missions.length})</h2>
           <button class="btn btn-sm btn-primary" id="btn-add-presentation">+ Présentation</button>
         </div>
         <div class="card-body">
@@ -1405,15 +1448,78 @@ R\u00E8gles :
       </div>
     `;
 
+    // --- TEASERS SECTION ---
+    const teaserContainer = document.getElementById('teasers-list');
+    if (teasers.length === 0) {
+      teaserContainer.innerHTML = '<div class="empty-state"><p>Aucun teaser envoyé. Cliquez sur "Envoyer Teaser" pour commencer.</p></div>';
+    } else {
+      // Group by teaser_group_id
+      const groups = {};
+      teasers.forEach((t, idx) => {
+        const gid = t.teaser_group_id || 'ungrouped_' + idx;
+        if (!groups[gid]) groups[gid] = [];
+        const originalIdx = presentations.indexOf(t);
+        groups[gid].push({ ...t, _idx: originalIdx });
+      });
+
+      let teaserHtml = '';
+      for (const [gid, items] of Object.entries(groups)) {
+        const firstDate = items[0].date_envoi;
+        teaserHtml += `
+          <div style="margin-bottom:12px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+            <div style="background:#FFFDF0;padding:8px 14px;font-size:0.75rem;color:#92780c;font-weight:600;display:flex;justify-content:space-between;align-items:center;">
+              <span>Envoi du ${UI.formatDate(firstDate)} — ${items.length} destinataire${items.length>1?'s':''}</span>
+            </div>
+            <div class="data-table-wrapper"><table class="data-table" style="margin:0;"><thead><tr>
+              <th>Entreprise</th><th>Décideur</th><th>Email</th><th>Statut</th><th>Relance</th><th></th>
+            </tr></thead><tbody>
+            ${items.map(t => {
+              const ent = t.entreprise_id ? Store.resolve('entreprises', t.entreprise_id) : null;
+              const threadLink = t.gmail_thread_id ? `https://mail.google.com/mail/u/0/#inbox/${t.gmail_thread_id}` : '';
+              return `<tr>
+                <td><strong>${ent ? UI.entityLink('entreprises', ent.id, ent.displayName) : UI.escHtml(t.entreprise_nom || '—')}</strong></td>
+                <td style="font-size:0.8125rem;">${UI.escHtml(t.decideur_nom || '—')}</td>
+                <td style="font-size:0.75rem;color:#64748b;">${UI.escHtml(t.decideur_email || '')}</td>
+                <td>${_emailStatusBadge(t.email_status || 'sent')}${threadLink ? ` <a href="${threadLink}" target="_blank" title="Ouvrir dans Gmail" style="font-size:0.6875rem;">📧</a>` : ''}</td>
+                <td>${_relanceInfo(t)}${t.nb_relances > 0 ? `<br/><span style="font-size:0.6875rem;color:#94a3b8;">${t.nb_relances} relance${t.nb_relances>1?'s':''}</span>` : ''}</td>
+                <td>
+                  <select class="teaser-status-select" data-pres-idx="${t._idx}" style="font-size:0.6875rem;padding:2px 4px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;">
+                    ${Referentiels.get('teaser_email_statuts').map(s => `<option value="${s}" ${(t.statut_retour||'En attente')===s?'selected':''}>${s}</option>`).join('')}
+                  </select>
+                  <button class="btn btn-sm btn-danger" data-pres-delete="${t._idx}" style="margin-left:4px;">✕</button>
+                </td>
+              </tr>`;
+            }).join('')}
+            </tbody></table></div>
+          </div>
+        `;
+      }
+      teaserContainer.innerHTML = teaserHtml;
+
+      // Status change handlers
+      teaserContainer.querySelectorAll('.teaser-status-select').forEach(sel => {
+        sel.addEventListener('change', async () => {
+          const idx = parseInt(sel.dataset.presIdx);
+          const updated = [...presentations];
+          updated[idx] = { ...updated[idx], statut_retour: sel.value };
+          await Store.update('candidats', id, { presentations: updated });
+          candidat.presentations = updated;
+          UI.toast('Statut mis à jour');
+        });
+      });
+    }
+
+    // --- MISSIONS SECTION ---
     const container = document.getElementById('presentations-list');
-    if (presentations.length === 0) {
-      container.innerHTML = '<div class="empty-state"><p>Aucune présentation enregistrée</p></div>';
+    if (missions.length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>Aucune présentation mission enregistrée</p></div>';
     } else {
       container.innerHTML = `
         <div class="data-table-wrapper"><table class="data-table"><thead><tr>
           <th>Entreprise</th><th>Date d'envoi</th><th>Anonymisé</th><th>Statut retour</th><th>Notes</th><th></th>
         </tr></thead><tbody>
-        ${presentations.map((p, idx) => {
+        ${missions.map((p) => {
+          const originalIdx = presentations.indexOf(p);
           const ent = p.entreprise_id ? Store.resolve('entreprises', p.entreprise_id) : null;
           return `<tr>
             <td><strong>${ent ? UI.entityLink('entreprises', ent.id, ent.displayName) : UI.escHtml(p.entreprise_nom || '—')}</strong></td>
@@ -1421,27 +1527,32 @@ R\u00E8gles :
             <td>${p.anonymise ? '<span style="color:#c9a000;font-weight:600;">Oui</span>' : 'Non'}</td>
             <td>${UI.badge(p.statut_retour || 'En attente')}</td>
             <td style="font-size:0.75rem;color:#64748b;max-width:200px;overflow:hidden;text-overflow:ellipsis;">${UI.escHtml(p.notes || '')}</td>
-            <td><button class="btn btn-sm btn-danger" data-pres-delete="${idx}">✕</button></td>
+            <td><button class="btn btn-sm btn-danger" data-pres-delete="${originalIdx}">✕</button></td>
           </tr>`;
         }).join('')}
         </tbody></table></div>
       `;
-
-      // Delete handlers
-      container.querySelectorAll('[data-pres-delete]').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const idx = parseInt(btn.dataset.presDelete);
-          const updated = [...presentations];
-          updated.splice(idx, 1);
-          await Store.update('candidats', id, { presentations: updated });
-          UI.toast('Présentation supprimée');
-          location.reload();
-        });
-      });
     }
 
-    // Add presentation button
+    // Delete handlers (both sections)
+    document.getElementById('tab-presentations').querySelectorAll('[data-pres-delete]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.presDelete);
+        const updated = [...presentations];
+        updated.splice(idx, 1);
+        await Store.update('candidats', id, { presentations: updated });
+        UI.toast('Entrée supprimée');
+        location.reload();
+      });
+    });
+
+    // Send teaser from tab
+    document.getElementById('btn-send-teaser-tab')?.addEventListener('click', () => {
+      showTeaserSendModal(candidat, id);
+    });
+
+    // Add presentation button (missions)
     document.getElementById('btn-add-presentation').addEventListener('click', () => {
       UI.modal('Nouvelle présentation', `
         <div class="form-group">
@@ -1481,6 +1592,7 @@ R\u00E8gles :
           const entId = overlay.querySelector('#pres-entreprise-id').value;
           const entSearch = overlay.querySelector('#pres-entreprise-search').value.trim();
           const pres = {
+            type: 'mission',
             entreprise_id: entId || null,
             entreprise_nom: entSearch,
             date_envoi: overlay.querySelector('#pres-date').value,
@@ -1494,7 +1606,6 @@ R\u00E8gles :
           location.reload();
         }
       });
-      // Init autocomplete for entreprise
       UI.entrepriseAutocomplete('pres-entreprise-search', 'pres-entreprise-id');
     });
   }
@@ -1887,5 +1998,559 @@ R\u00E8gles :
         </div>
       </div>
     `;
+  }
+
+  // ============================================================
+  // TEASER REPLY TRACKING — polls Gmail for responses
+  // ============================================================
+  async function checkTeaserReplies() {
+    if (typeof Gmail === 'undefined' || typeof GoogleAuth === 'undefined') return;
+    if (!GoogleAuth.isConfigured() || !GoogleAuth.isAuthenticated()) return;
+
+    const presentations = candidat.presentations || [];
+    const teasers = presentations.filter(p =>
+      p.type === 'teaser' && p.gmail_thread_id && p.email_status === 'sent'
+    );
+
+    if (teasers.length === 0) return;
+
+    let updated = false;
+    const updatedPresentations = [...presentations];
+
+    for (const teaser of teasers) {
+      try {
+        const result = await Gmail.checkForReplies(teaser.gmail_thread_id, teaser.gmail_message_id);
+        if (!result.hasReply) continue;
+
+        const idx = updatedPresentations.indexOf(teaser);
+        if (idx === -1) continue;
+
+        // Map reply type to email_status
+        let newStatus = 'replied';
+        let newStatutRetour = 'Répondu';
+        if (result.replyType === 'bounce') {
+          newStatus = 'bounced';
+          newStatutRetour = 'Bounce';
+        } else if (result.replyType === 'auto-reply') {
+          newStatus = 'auto-reply';
+          newStatutRetour = 'Spam/Auto-reply';
+        } else {
+          newStatus = 'replied';
+          newStatutRetour = 'Intéressé';
+        }
+
+        updatedPresentations[idx] = {
+          ...updatedPresentations[idx],
+          email_status: newStatus,
+          statut_retour: newStatutRetour
+        };
+        updated = true;
+
+        // Create CRM action for the reply
+        if (result.replyType === 'human') {
+          const today = new Date().toISOString().split('T')[0];
+          const action = {
+            id: API.generateId('act'),
+            action: `Réponse au teaser — ${teaser.entreprise_nom || teaser.decideur_email}`,
+            type_action: 'Retour teaser',
+            canal: 'Email',
+            statut: 'À faire',
+            priorite: 'Haute',
+            date_action: today,
+            date_relance: null,
+            candidat_id: id,
+            decideur_id: teaser.decideur_id || null,
+            mission_id: null,
+            entreprise_id: teaser.entreprise_id || null,
+            reponse: true,
+            message_notes: `Réponse détectée automatiquement via Gmail.\nThread : ${teaser.gmail_thread_id}`,
+            next_step: 'Lire la réponse et qualifier',
+            phase: '', finalite: '', objectif: '', moment_suivi: ''
+          };
+          await Store.add('actions', action);
+        }
+
+      } catch (e) {
+        console.warn(`checkTeaserReplies error for thread ${teaser.gmail_thread_id}:`, e.message);
+      }
+    }
+
+    if (updated) {
+      await Store.update('candidats', id, { presentations: updatedPresentations });
+      candidat.presentations = updatedPresentations;
+      renderPresentations(); // re-render with new statuses
+      UI.toast('Statuts teaser mis à jour (réponses détectées)');
+    }
+  }
+
+  // ============================================================
+  // TEASER SEND MODAL — multi-recipient email workflow
+  // ============================================================
+  function showTeaserSendModal(candidat, candidatId) {
+    const allDecideurs = Store.get('decideurs');
+    const allEntreprises = Store.get('entreprises');
+    const decideurs = allDecideurs.filter(d => d.email);
+
+    // Determine candidate's sector for smart filtering
+    const candidatEntreprise = candidat.entreprise_actuelle_id ? Store.findById('entreprises', candidat.entreprise_actuelle_id) : null;
+    const candidatSecteur = candidatEntreprise ? candidatEntreprise.secteur : '';
+    const allSecteurs = Referentiels.get('entreprise_secteurs');
+    const similaires = Referentiels.loadAll().secteurs_similaires || {};
+    const relevantSecteurs = candidatSecteur ? [candidatSecteur, ...(similaires[candidatSecteur] || [])] : [];
+
+    // State
+    let selectedDecideurs = []; // [{id, prenom, nom, email, entreprise_id, entreprise_nom}]
+    let currentStep = 1;
+    let emailSubject = '';
+    let emailBody = '';
+    let relanceDelai = '7 jours';
+    let relanceAuto = true;
+    let sectorFilter = relevantSecteurs.length > 0 ? 'similar' : 'all';
+
+    function getFilteredDecideurs() {
+      if (sectorFilter === 'all') return decideurs;
+      return decideurs.filter(d => {
+        if (!d.entreprise_id) return false;
+        const ent = Store.findById('entreprises', d.entreprise_id);
+        if (!ent) return false;
+        return relevantSecteurs.includes(ent.secteur);
+      });
+    }
+
+    function renderModal() {
+      if (currentStep === 1) renderStep1();
+      else if (currentStep === 2) renderStep2();
+      else if (currentStep === 3) renderStep3();
+    }
+
+    // STEP 1: Select recipients
+    function renderStep1() {
+      const filtered = getFilteredDecideurs();
+
+      const bodyHtml = `
+        <div style="margin-bottom:12px;">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+            <input type="text" id="teaser-search" placeholder="Rechercher un décideur..." style="flex:1;" />
+            <select id="teaser-sector-filter" style="font-size:0.8125rem;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;">
+              <option value="all" ${sectorFilter==='all'?'selected':''}>Tous les secteurs</option>
+              ${relevantSecteurs.length > 0 ? `<option value="similar" ${sectorFilter==='similar'?'selected':''}>Secteurs proches (${relevantSecteurs.join(', ')})</option>` : ''}
+              ${allSecteurs.map(s => `<option value="${s}" ${sectorFilter===s?'selected':''}>${s}</option>`).join('')}
+            </select>
+          </div>
+          <div style="font-size:0.75rem;color:#64748b;margin-bottom:8px;">${selectedDecideurs.length} destinataire${selectedDecideurs.length>1?'s':''} sélectionné${selectedDecideurs.length>1?'s':''}</div>
+        </div>
+
+        <div id="teaser-recipients-list" style="max-height:350px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;">
+          ${filtered.length === 0 ? '<div style="padding:20px;text-align:center;color:#94a3b8;font-size:0.8125rem;">Aucun décideur avec email trouvé</div>' :
+            filtered.map(d => {
+              const ent = d.entreprise_id ? Store.findById('entreprises', d.entreprise_id) : null;
+              const isSelected = selectedDecideurs.some(s => s.id === d.id);
+              return `
+                <label data-did="${d.id}" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background 0.1s;${isSelected ? 'background:#FFFDF0;' : ''}" onmouseenter="this.style.background='${isSelected ? '#FFFDF0' : '#f8fafc'}'" onmouseleave="this.style.background='${isSelected ? '#FFFDF0' : 'transparent'}'">
+                  <input type="checkbox" class="teaser-recipient-cb" data-did="${d.id}" ${isSelected ? 'checked' : ''} />
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:0.8125rem;font-weight:600;color:#1e293b;">${UI.escHtml((d.prenom||'')+' '+(d.nom||''))}</div>
+                    <div style="font-size:0.75rem;color:#64748b;">${UI.escHtml(d.email)} ${ent ? '— '+UI.escHtml(ent.nom) : ''} ${ent && ent.secteur ? '<span style="color:#94a3b8;">• '+UI.escHtml(ent.secteur)+'</span>' : ''}</div>
+                  </div>
+                </label>
+              `;
+            }).join('')}
+        </div>
+
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0;">
+          <div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:6px;">Ajouter un destinataire hors base</div>
+          <div style="display:flex;gap:6px;">
+            <input type="text" id="teaser-new-name" placeholder="Nom" style="flex:1;font-size:0.8125rem;" />
+            <input type="email" id="teaser-new-email" placeholder="Email" style="flex:1;font-size:0.8125rem;" />
+            <input type="text" id="teaser-new-entreprise" placeholder="Entreprise" style="flex:1;font-size:0.8125rem;" />
+            <button class="btn btn-sm btn-primary" id="teaser-add-recipient">+</button>
+          </div>
+        </div>
+      `;
+
+      const { close } = UI.modal('Envoyer en Teaser — Étape 1/3 : Destinataires', bodyHtml, {
+        width: 700,
+        saveLabel: `Suivant (${selectedDecideurs.length}) →`,
+        onSave: () => {
+          if (selectedDecideurs.length === 0) {
+            UI.toast('Sélectionnez au moins un destinataire', 'error');
+            throw new Error('validation');
+          }
+          close();
+          currentStep = 2;
+          renderModal();
+        }
+      });
+
+      // Bind events after render
+      setTimeout(() => {
+        // Checkbox changes
+        document.querySelectorAll('.teaser-recipient-cb').forEach(cb => {
+          cb.addEventListener('change', () => {
+            const did = cb.dataset.did;
+            if (cb.checked) {
+              const d = Store.findById('decideurs', did);
+              if (d && !selectedDecideurs.some(s => s.id === did)) {
+                const ent = d.entreprise_id ? Store.findById('entreprises', d.entreprise_id) : null;
+                selectedDecideurs.push({
+                  id: d.id, prenom: d.prenom, nom: d.nom, email: d.email,
+                  entreprise_id: d.entreprise_id || null,
+                  entreprise_nom: ent ? ent.nom : ''
+                });
+              }
+            } else {
+              selectedDecideurs = selectedDecideurs.filter(s => s.id !== did);
+            }
+            // Update counter
+            const counter = document.querySelector('#teaser-recipients-list')?.previousElementSibling?.querySelector('div:last-child');
+            if (counter) counter.textContent = `${selectedDecideurs.length} destinataire${selectedDecideurs.length>1?'s':''} sélectionné${selectedDecideurs.length>1?'s':''}`;
+          });
+        });
+
+        // Sector filter
+        document.getElementById('teaser-sector-filter')?.addEventListener('change', (e) => {
+          sectorFilter = e.target.value;
+          close();
+          renderModal();
+        });
+
+        // Search filter
+        document.getElementById('teaser-search')?.addEventListener('input', (e) => {
+          const q = e.target.value.toLowerCase();
+          document.querySelectorAll('[data-did]').forEach(label => {
+            const text = label.textContent.toLowerCase();
+            label.style.display = text.includes(q) ? '' : 'none';
+          });
+        });
+
+        // Add manual recipient
+        document.getElementById('teaser-add-recipient')?.addEventListener('click', () => {
+          const name = document.getElementById('teaser-new-name').value.trim();
+          const email = document.getElementById('teaser-new-email').value.trim();
+          const entreprise = document.getElementById('teaser-new-entreprise').value.trim();
+          if (!email) { UI.toast('Email requis', 'error'); return; }
+          const parts = name.split(' ');
+          selectedDecideurs.push({
+            id: 'manual_' + Date.now(),
+            prenom: parts[0] || '',
+            nom: parts.slice(1).join(' ') || name,
+            email,
+            entreprise_id: null,
+            entreprise_nom: entreprise,
+            isManual: true
+          });
+          UI.toast(`${name || email} ajouté`);
+          document.getElementById('teaser-new-name').value = '';
+          document.getElementById('teaser-new-email').value = '';
+          document.getElementById('teaser-new-entreprise').value = '';
+        });
+      }, 100);
+    }
+
+    // STEP 2: Compose message
+    function renderStep2() {
+      // Load teaser templates
+      const tplAll = TemplatesStore.loadAll();
+      const teaserTemplates = Object.entries(tplAll).filter(([k]) => k.startsWith('teaser'));
+
+      // Default subject/body from template if not yet set
+      if (!emailSubject && tplAll.teaserInitial) {
+        const tpl = tplAll.teaserInitial;
+        const subjectSection = tpl.sections.find(s => s.title === 'Objet');
+        const bodySection = tpl.sections.find(s => s.title === 'Corps');
+        emailSubject = subjectSection ? subjectSection.content : '';
+        emailBody = bodySection ? bodySection.content : '';
+      }
+
+      const bodyHtml = `
+        <div class="form-group" style="margin-bottom:12px;">
+          <label style="font-weight:600;">Template</label>
+          <select id="teaser-template-select" style="font-size:0.8125rem;">
+            <option value="">— Choisir un template —</option>
+            ${teaserTemplates.map(([k, tpl]) => `<option value="${k}">${tpl.icon} ${tpl.title}</option>`).join('')}
+          </select>
+        </div>
+
+        <div class="form-group" style="margin-bottom:12px;">
+          <label style="font-weight:600;">Objet</label>
+          <input type="text" id="teaser-subject" value="${UI.escHtml(emailSubject)}" placeholder="Profil — {{poste_candidat}} | Amarillo Search" />
+          <small style="color:#94a3b8;font-size:0.6875rem;">Variables : {{prenom_decideur}}, {{nom_entreprise}}, {{poste_candidat}}, {{secteur_candidat}}, {{date_envoi}}</small>
+        </div>
+
+        <div class="form-group" style="margin-bottom:12px;">
+          <label style="font-weight:600;">Corps du message</label>
+          <textarea id="teaser-body" style="min-height:200px;font-size:0.875rem;line-height:1.6;">${UI.escHtml(emailBody)}</textarea>
+        </div>
+
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:12px;">
+          <div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:4px;">Signature</div>
+          <div style="font-size:0.8125rem;color:#475569;white-space:pre-wrap;">${UI.escHtml(GoogleAuth.getEmailSignature())}</div>
+        </div>
+
+        <div style="background:#FFFDF0;border:1px solid #FEE566;border-radius:8px;padding:12px;">
+          <div style="font-size:0.75rem;font-weight:600;color:#c9a000;margin-bottom:4px;">📎 Pièce jointe</div>
+          <div style="font-size:0.8125rem;color:#475569;">Le Teaser PDF (Talent à Impact) sera généré et attaché automatiquement à chaque email.</div>
+        </div>
+      `;
+
+      const { close } = UI.modal('Envoyer en Teaser — Étape 2/3 : Message', bodyHtml, {
+        width: 680,
+        saveLabel: 'Suivant →',
+        onSave: (overlay) => {
+          emailSubject = overlay.querySelector('#teaser-subject').value.trim();
+          emailBody = overlay.querySelector('#teaser-body').value.trim();
+          if (!emailSubject) { UI.toast('L\'objet est requis', 'error'); throw new Error('validation'); }
+          if (!emailBody) { UI.toast('Le corps du message est requis', 'error'); throw new Error('validation'); }
+          close();
+          currentStep = 3;
+          renderModal();
+        }
+      });
+
+      // Bind template selector
+      setTimeout(() => {
+        document.getElementById('teaser-template-select')?.addEventListener('change', (e) => {
+          const key = e.target.value;
+          if (!key || !tplAll[key]) return;
+          const tpl = tplAll[key];
+          const subjectSection = tpl.sections.find(s => s.title === 'Objet');
+          const bodySection = tpl.sections.find(s => s.title === 'Corps');
+          if (subjectSection) document.getElementById('teaser-subject').value = subjectSection.content;
+          if (bodySection) document.getElementById('teaser-body').value = bodySection.content;
+        });
+      }, 100);
+    }
+
+    // STEP 3: Confirm and send
+    function renderStep3() {
+      const delais = Referentiels.get('teaser_relance_delais');
+
+      const bodyHtml = `
+        <div style="margin-bottom:16px;">
+          <div style="font-size:0.875rem;font-weight:700;color:#1e293b;margin-bottom:8px;">Récapitulatif</div>
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;">
+            <div style="font-size:0.8125rem;margin-bottom:6px;"><strong>Candidat :</strong> ${UI.escHtml((candidat.poste_actuel || 'Profil') + ' (anonymisé)')}</div>
+            <div style="font-size:0.8125rem;margin-bottom:6px;"><strong>Objet :</strong> ${UI.escHtml(emailSubject)}</div>
+            <div style="font-size:0.8125rem;margin-bottom:6px;"><strong>Destinataires (${selectedDecideurs.length}) :</strong></div>
+            <div style="max-height:120px;overflow-y:auto;padding-left:12px;">
+              ${selectedDecideurs.map(d => `
+                <div style="font-size:0.75rem;color:#475569;padding:2px 0;">
+                  ${UI.escHtml((d.prenom||'')+' '+(d.nom||''))} — ${UI.escHtml(d.email)} ${d.entreprise_nom ? '('+UI.escHtml(d.entreprise_nom)+')' : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;margin-bottom:16px;">
+          <div class="form-group" style="flex:1;">
+            <label>Relance automatique après</label>
+            <select id="teaser-relance-delai">
+              ${delais.map(d => `<option value="${d}" ${d===relanceDelai?'selected':''}>${d}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group" style="flex:0 0 auto;display:flex;align-items:end;">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" id="teaser-relance-auto" ${relanceAuto ? 'checked' : ''} />
+              Relance auto
+            </label>
+          </div>
+        </div>
+
+        <div id="teaser-send-progress" style="display:none;">
+          <div style="background:#f1f5f9;border-radius:8px;overflow:hidden;height:8px;margin-bottom:8px;">
+            <div id="teaser-progress-bar" style="height:100%;background:#FECC02;width:0%;transition:width 0.3s;border-radius:8px;"></div>
+          </div>
+          <div id="teaser-progress-text" style="font-size:0.75rem;color:#64748b;text-align:center;"></div>
+        </div>
+      `;
+
+      const { close } = UI.modal('Envoyer en Teaser — Étape 3/3 : Confirmation', bodyHtml, {
+        width: 600,
+        saveLabel: `✈️ Envoyer (${selectedDecideurs.length} email${selectedDecideurs.length>1?'s':''})`,
+        onSave: async (overlay) => {
+          relanceDelai = overlay.querySelector('#teaser-relance-delai').value;
+          relanceAuto = overlay.querySelector('#teaser-relance-auto').checked;
+
+          const progressDiv = document.getElementById('teaser-send-progress');
+          const progressBar = document.getElementById('teaser-progress-bar');
+          const progressText = document.getElementById('teaser-progress-text');
+          if (progressDiv) progressDiv.style.display = 'block';
+
+          // Calculate relance date
+          const delaiJours = parseInt(relanceDelai) || 7;
+          const relanceDate = new Date(Date.now() + delaiJours * 86400000).toISOString().split('T')[0];
+          const today = new Date().toISOString().split('T')[0];
+          const groupId = API.generateId('tg');
+
+          // Authenticate Gmail
+          try {
+            await GoogleAuth.authenticate();
+          } catch (e) {
+            UI.toast('Authentification Google échouée : ' + e.message, 'error');
+            throw new Error('auth');
+          }
+
+          // Generate Teaser PDF
+          if (progressText) progressText.textContent = 'Génération du Teaser PDF...';
+          let pdfAttachment = null;
+          try {
+            const dsiResult = candidat.profile_code ? await DSIProfile.fetchProfile(candidat.profile_code) : null;
+            const companyNames = Store.get('entreprises').map(e => e.nom).filter(Boolean);
+            const doc = PDFEngine.generateTalentAImpact(candidat, { dsiResult, companyNames });
+            const filename = `Talent_a_Impact_${(candidat.poste_actuel || 'Profil').replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '_')}.pdf`;
+            pdfAttachment = Gmail.pdfToAttachment(doc, filename);
+          } catch (e) {
+            console.warn('PDF generation failed, sending without attachment:', e);
+          }
+
+          // Send to each recipient
+          const results = [];
+          for (let i = 0; i < selectedDecideurs.length; i++) {
+            const dest = selectedDecideurs[i];
+            const progress = Math.round(((i + 1) / selectedDecideurs.length) * 100);
+            if (progressBar) progressBar.style.width = progress + '%';
+            if (progressText) progressText.textContent = `Envoi ${i + 1}/${selectedDecideurs.length} — ${dest.email}...`;
+
+            // Replace template variables
+            const vars = {
+              prenom_decideur: dest.prenom || '',
+              nom_entreprise: dest.entreprise_nom || '',
+              poste_candidat: candidat.poste_actuel || 'Profil confidentiel',
+              secteur_candidat: candidatSecteur || '',
+              date_envoi: today
+            };
+            const subject = Gmail.replaceVariables(emailSubject, vars);
+            const body = Gmail.replaceVariables(emailBody, vars);
+            const htmlBody = Gmail.buildHtmlBody(body);
+
+            try {
+              const result = await Gmail.sendEmail({
+                to: dest.email,
+                subject,
+                htmlBody,
+                attachments: pdfAttachment ? [pdfAttachment] : []
+              });
+
+              // Auto-create entreprise if manual and not in DB
+              let finalEntrepriseId = dest.entreprise_id;
+              let finalDecideurId = dest.id;
+              if (dest.isManual && dest.entreprise_nom) {
+                // Check if entreprise exists
+                const existing = allEntreprises.find(e => e.nom.toLowerCase() === dest.entreprise_nom.toLowerCase());
+                if (existing) {
+                  finalEntrepriseId = existing.id;
+                } else {
+                  const newEnt = {
+                    id: API.generateId('ent'),
+                    nom: dest.entreprise_nom,
+                    statut: 'À cibler',
+                    secteur: '', taille: '', ca: '', localisation: '',
+                    priorite: '3 - Moyenne', source: 'Teaser',
+                    site_web: '', telephone: '', angle_approche: '', notes: '',
+                    dernier_contact: today, prochaine_relance: null
+                  };
+                  await Store.add('entreprises', newEnt);
+                  finalEntrepriseId = newEnt.id;
+                }
+                // Create decideur
+                const newDec = {
+                  id: API.generateId('dec'),
+                  prenom: dest.prenom, nom: dest.nom,
+                  email: dest.email,
+                  entreprise_id: finalEntrepriseId,
+                  fonction: '', niveau_hierarchique: '',
+                  role_decision: '', priorite_prospection: '',
+                  telephone: '', linkedin: '', localisation: '',
+                  missions_ids: [],
+                  dernier_contact: today, prochaine_relance: relanceDate
+                };
+                await Store.add('decideurs', newDec);
+                finalDecideurId = newDec.id;
+              }
+
+              // Create presentation entry on candidat
+              const presentation = {
+                type: 'teaser',
+                entreprise_id: finalEntrepriseId,
+                entreprise_nom: dest.entreprise_nom || '',
+                decideur_id: finalDecideurId,
+                decideur_nom: (dest.prenom || '') + ' ' + (dest.nom || ''),
+                decideur_email: dest.email,
+                date_envoi: today,
+                anonymise: true,
+                statut_retour: 'En attente',
+                notes: '',
+                teaser_group_id: groupId,
+                gmail_message_id: result.id || null,
+                gmail_thread_id: result.threadId || null,
+                email_subject: subject,
+                email_status: 'sent',
+                relance_prevue: relanceAuto ? relanceDate : null,
+                nb_relances: 0,
+                derniere_relance: null,
+                relance_auto: relanceAuto
+              };
+
+              const updatedPresentations = [...(candidat.presentations || []), presentation];
+              await Store.update('candidats', candidatId, { presentations: updatedPresentations });
+              candidat.presentations = updatedPresentations;
+
+              // Create CRM action
+              const action = {
+                id: API.generateId('act'),
+                action: `Teaser envoyé à ${dest.entreprise_nom || dest.email}`,
+                type_action: 'Envoi teaser',
+                canal: 'Email',
+                statut: 'Fait',
+                priorite: null,
+                date_action: today,
+                date_relance: relanceAuto ? relanceDate : null,
+                candidat_id: candidatId,
+                decideur_id: finalDecideurId !== dest.id || !dest.isManual ? finalDecideurId : null,
+                mission_id: null,
+                entreprise_id: finalEntrepriseId,
+                reponse: false,
+                message_notes: `Teaser envoyé par email à ${dest.email}\nObjet : ${subject}`,
+                next_step: relanceAuto ? `Relance prévue le ${relanceDate}` : '',
+                phase: '', finalite: '', objectif: '', moment_suivi: ''
+              };
+              await Store.add('actions', action);
+
+              // Update entreprise dernier_contact
+              if (finalEntrepriseId) {
+                await Store.update('entreprises', finalEntrepriseId, { dernier_contact: today });
+              }
+
+              results.push({ success: true, email: dest.email });
+
+            } catch (e) {
+              console.error(`Failed to send teaser to ${dest.email}:`, e);
+              results.push({ success: false, email: dest.email, error: e.message });
+            }
+
+            // Small delay between sends to avoid rate limiting
+            if (i < selectedDecideurs.length - 1) {
+              await new Promise(r => setTimeout(r, 500));
+            }
+          }
+
+          // Summary
+          const ok = results.filter(r => r.success).length;
+          const fail = results.filter(r => !r.success).length;
+          if (fail > 0) {
+            UI.toast(`${ok} email${ok>1?'s':''} envoyé${ok>1?'s':''}, ${fail} échec${fail>1?'s':''}`, 'error');
+          } else {
+            UI.toast(`${ok} email${ok>1?'s':''} teaser envoyé${ok>1?'s':''} avec succès`);
+          }
+
+          close();
+          location.reload();
+        }
+      });
+    }
+
+    // Start workflow
+    renderModal();
   }
 })();

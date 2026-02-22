@@ -322,6 +322,86 @@ const DEFAULT_TEMPLATES = {
         content: "→ Attendre est une décision, mais elle a un coût opérationnel et humain."
       }
     ]
+  },
+
+  // =============================================
+  // EMAIL TEASER — ENVOI INITIAL
+  // =============================================
+  teaserInitial: {
+    title: "Email Teaser — Envoi initial",
+    icon: "✈️",
+    sections: [
+      {
+        title: "Objet",
+        content: "Profil — {{poste_candidat}} | Amarillo Search"
+      },
+      {
+        title: "Corps",
+        content: `Bonjour {{prenom_decideur}},
+
+Je me permets de vous adresser un profil que j'accompagne actuellement dans sa réflexion de carrière.
+
+Il s'agit d'un(e) {{poste_candidat}} avec une expérience significative dans {{secteur_candidat}}, qui pourrait correspondre à vos enjeux de recrutement actuels ou à venir.
+
+Vous trouverez ci-joint une synthèse anonymisée de son parcours.
+
+Si ce type de profil peut avoir du sens pour votre organisation, je serais ravi d'en échanger avec vous.
+
+Bien cordialement,`
+      }
+    ]
+  },
+
+  // =============================================
+  // EMAIL TEASER — RELANCE
+  // =============================================
+  teaserRelance: {
+    title: "Email Teaser — Relance",
+    icon: "🔄",
+    sections: [
+      {
+        title: "Objet",
+        content: "Re: Profil — {{poste_candidat}} | Amarillo Search"
+      },
+      {
+        title: "Corps",
+        content: `Bonjour {{prenom_decideur}},
+
+Je me permets une courte relance concernant le profil que je vous ai adressé le {{date_envoi}}.
+
+Ce candidat est toujours en réflexion et son profil reste d'actualité. Si le sujet mérite un échange, même court, je suis disponible.
+
+Bien cordialement,`
+      }
+    ]
+  },
+
+  // =============================================
+  // EMAIL TEASER — PRÉSENTATION CHALEUREUSE
+  // =============================================
+  teaserChaleureux: {
+    title: "Email Teaser — Approche chaleureuse",
+    icon: "🤝",
+    sections: [
+      {
+        title: "Objet",
+        content: "Un profil {{poste_candidat}} qui pourrait vous intéresser"
+      },
+      {
+        title: "Corps",
+        content: `Bonjour {{prenom_decideur}},
+
+J'espère que tout va bien de votre côté.
+
+Je voulais partager avec vous un profil que j'accompagne en ce moment — un(e) {{poste_candidat}} avec une vraie expertise dans {{secteur_candidat}}.
+
+C'est le type de profil qu'on ne croise pas souvent sur le marché, et je me suis dit que cela pourrait résonner avec vos enjeux chez {{nom_entreprise}}.
+
+Je vous joins une synthèse anonymisée. Si ça vous parle, on en discute quand vous voulez.
+
+À bientôt,`
+      }
+    ]
   }
 };
 
@@ -335,7 +415,8 @@ const TemplatesStore = (() => {
   const DEFAULT_CATEGORIES = {
     'Candidats': ['entretien', 'reference', 'messageCandidats'],
     'Missions': ['cadreMission', 'suiviJ3', 'suiviM1', 'suiviM2'],
-    'Prospection': ['pitchs', 'objections']
+    'Prospection': ['pitchs', 'objections'],
+    'Teaser': ['teaserInitial', 'teaserRelance', 'teaserChaleureux']
   };
 
   function loadAll() {

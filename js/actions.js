@@ -34,6 +34,7 @@
       return allActions.filter(a => a.date_action >= weekAgo);
     }},
     prospection: { label: 'Prospection', icon: '🎯', filter: () => allActions.filter(a => a.type_action === 'Prospection' || a.type_action === 'Prise de contact' || a.type_action === 'Relance décideur') },
+    teasers: { label: 'Teasers', icon: '✈️', filter: () => allActions.filter(a => a.type_action === 'Envoi teaser' || a.type_action === 'Retour teaser' || a.type_action === 'Relance teaser') },
     done: { label: 'Fait', icon: '✅', filter: () => allActions.filter(a => a.statut === 'Fait') },
   };
 
