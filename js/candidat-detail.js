@@ -517,7 +517,7 @@
         : null;
       const currentEntrepriseNom = currentEntreprise ? (currentEntreprise.nom || currentEntreprise.displayName || '') : '';
 
-      // Build list of fields with changes
+      // Build list of all extracted fields
       const changes = [];
       for (const f of PROFILE_FIELDS) {
         const extractedVal = (extracted[f.key] || '').toString().trim();
@@ -532,19 +532,19 @@
           currentVal = (f.isNumeric && raw === 0) ? '' : (raw || '').toString().trim();
         }
 
-        // Only show if there's a difference
-        if (extractedVal === currentVal) continue;
+        const isSame = extractedVal === currentVal;
 
         changes.push({
           ...f,
           currentVal,
           extractedVal,
           isEmpty: !currentVal,
+          isSame,
         });
       }
 
       if (changes.length === 0) {
-        UI.toast('Aucun champ manquant à compléter — le profil est déjà à jour', 'info');
+        UI.toast('Aucun champ extrait du CV', 'info');
         return;
       }
 
@@ -553,17 +553,19 @@
           Cochez les champs à mettre à jour. Les valeurs proposées sont éditables.
         </div>
         ${changes.map((c, i) => `
-          <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #f1f5f9;">
-            <input type="checkbox" id="cv-field-check-${i}" ${c.isEmpty ? 'checked' : ''} style="margin-top:4px;accent-color:#3b82f6;" />
+          <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #f1f5f9;${c.isSame ? 'opacity:0.55;' : ''}">
+            <input type="checkbox" id="cv-field-check-${i}" ${c.isEmpty ? 'checked' : ''} ${c.isSame ? 'disabled' : ''} style="margin-top:4px;accent-color:#3b82f6;" />
             <div style="flex:1;min-width:0;">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
                 <label for="cv-field-check-${i}" style="font-size:0.8125rem;font-weight:600;color:#1e293b;cursor:pointer;">${c.label}</label>
-                ${c.isEmpty
-                  ? '<span style="font-size:0.6875rem;color:#059669;background:#ecfdf5;padding:1px 6px;border-radius:4px;">nouveau</span>'
-                  : '<span style="font-size:0.6875rem;color:#d97706;background:#fffbeb;padding:1px 6px;border-radius:4px;">modification</span>'}
+                ${c.isSame
+                  ? '<span style="font-size:0.6875rem;color:#6b7280;background:#f3f4f6;padding:1px 6px;border-radius:4px;">identique</span>'
+                  : c.isEmpty
+                    ? '<span style="font-size:0.6875rem;color:#059669;background:#ecfdf5;padding:1px 6px;border-radius:4px;">nouveau</span>'
+                    : '<span style="font-size:0.6875rem;color:#d97706;background:#fffbeb;padding:1px 6px;border-radius:4px;">modification</span>'}
               </div>
-              ${c.currentVal ? `<div style="font-size:0.75rem;color:#94a3b8;text-decoration:line-through;margin-bottom:4px;">${UI.escHtml(c.currentVal)}</div>` : ''}
-              <input type="text" id="cv-field-val-${i}" value="${UI.escHtml(c.extractedVal)}" style="width:100%;font-size:0.8125rem;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-family:inherit;" />
+              ${c.currentVal && !c.isSame ? `<div style="font-size:0.75rem;color:#94a3b8;text-decoration:line-through;margin-bottom:4px;">${UI.escHtml(c.currentVal)}</div>` : ''}
+              <input type="text" id="cv-field-val-${i}" value="${UI.escHtml(c.extractedVal)}" ${c.isSame ? 'disabled' : ''} style="width:100%;font-size:0.8125rem;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-family:inherit;${c.isSame ? 'background:#f9fafb;color:#9ca3af;' : ''}" />
             </div>
           </div>
         `).join('')}
