@@ -87,18 +87,25 @@ Format JSON attendu :
   "ville": "",
   "localisation": "",
   "poste_actuel": "",
+  "poste_cible": "",
   "entreprise_nom": "",
   "diplome": "",
   "date_naissance": "",
   "debut_carriere": "",
   "debut_poste_actuel": "",
+  "salaire_fixe_actuel": "",
+  "variable_actuel": "",
+  "preavis": "",
   "synthese_30s": "",
   "notes": ""
 }
 
 Pour "synthese_30s", rédige un résumé professionnel de 2-3 phrases.
 Pour "notes", reprends le paragraphe de présentation/profil/à propos du candidat tel qu'il apparaît dans le CV (l'accroche ou le résumé en haut du CV). Si aucun paragraphe de ce type n'existe, laisse vide.
-Pour "localisation", indique la région ou grande ville (ex: "Paris", "Lyon", "Île-de-France").`;
+Pour "localisation", indique la région ou grande ville (ex: "Paris", "Lyon", "Île-de-France").
+Pour "poste_cible", indique le poste recherché par le candidat s'il est mentionné.
+Pour "salaire_fixe_actuel" et "variable_actuel", donne uniquement le nombre en K€ (ex: "55" pour 55K€). Laisse vide si non mentionné.
+Pour "preavis", indique la durée du préavis si mentionnée (ex: "3 mois").`;
 
     const requestBody = JSON.stringify({
       model: 'gpt-4o-mini',
