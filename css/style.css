@@ -808,10 +808,8 @@ body {
   display: flex; align-items: center; gap: 10px;
 }
 .sidebar-logo-icon {
-  width: 32px; height: 32px; border-radius: 8px; display: flex;
-  align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #FEE566, #c9a000);
-  font-size: 1rem; font-weight: 700; color: #fff;
+  width: 32px; height: 32px; border-radius: 8px;
+  object-fit: contain;
 }
 
 /* Better table row alternation */
@@ -1278,6 +1276,7 @@ body {
 .badge-inactive { background: #f1f5f9; color: #94a3b8; }
 
 /* Relation level badges */
+.badge-a-contacter { background: #f1f5f9; color: #64748b; }
 .badge-en-relation { background: #dbeafe; color: #2563eb; }
 .badge-champion { background: #dcfce7; color: #16a34a; }
 

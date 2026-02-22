@@ -53,7 +53,7 @@ const Referentiels = (() => {
       'Décideur', 'Influenceur', 'Prescripteur', 'Utilisateur'
     ],
     decideur_niveaux_relation: [
-      'Contacté', 'En relation', 'Champion'
+      'À contacter', 'Contacté', 'En relation', 'Champion'
     ],
     decideur_priorites_prospection: ['Haute', 'Moyenne', 'Basse'],
     decideur_fonctions_macro: [

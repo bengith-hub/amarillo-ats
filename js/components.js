@@ -50,6 +50,7 @@ const UI = (() => {
     'Écarté': 'badge-annule',
     'Inactive': 'badge-inactive',
     // Décideur relation
+    'À contacter': 'badge-a-contacter',
     'En relation': 'badge-en-relation',
     'Champion': 'badge-champion',
     // Décideur roles
@@ -943,7 +944,7 @@ const UI = (() => {
                 role_decision: 'Décideur',
                 perimetre: 'France',
                 priorite_prospection: 'Haute',
-                niveau_relation: 'Contacté',
+                niveau_relation: 'À contacter',
                 email: candidat.email || '',
                 telephone: candidat.telephone || '',
                 linkedin: candidat.linkedin || '',
