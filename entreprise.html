@@ -61,6 +61,17 @@
     });
     const actions = Store.filter('actions', a => a.entreprise_id === entId);
 
+    // Find teasers sent to this entreprise
+    const allCandidats = Store.get('candidats');
+    const teasersRecus = [];
+    allCandidats.forEach(c => {
+      (c.presentations || []).forEach(p => {
+        if (p.type === 'teaser' && p.entreprise_id === entId) {
+          teasersRecus.push({ ...p, candidat_id: c.id, candidat_poste: c.poste_actuel || 'Profil' });
+        }
+      });
+    });
+
     // Auto-compute dernier_contact & prochaine_relance from actions
     const todayIso = new Date().toISOString().split('T')[0];
     const doneActions = actions.filter(a => a.statut === 'Fait' && a.date_action);
@@ -165,6 +176,31 @@
             </div>
           </div>
 
+          ${teasersRecus.length > 0 ? `
+          <div class="card" data-accent="gold">
+            <div class="card-header"><h2>✈️ Teasers reçus (${teasersRecus.length})</h2></div>
+            <div class="card-body">
+              ${teasersRecus.map(t => {
+                const statusMap = {
+                  'sent': '🔵', 'replied': '🟢', 'bounced': '🔴',
+                  'auto-reply': '🟡', 'no-reply': '⚪', 'draft': '📝'
+                };
+                const icon = statusMap[t.email_status] || '🔵';
+                return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">' +
+                  '<div>' +
+                    '<a href="candidat.html?id=' + t.candidat_id + '" class="entity-link" style="font-weight:600;">' + UI.escHtml(t.candidat_poste) + ' (anonymisé)</a>' +
+                    '<div style="font-size:0.75rem;color:#64748b;">' + UI.formatDate(t.date_envoi) + ' • ' + UI.escHtml(t.decideur_nom || '') + ' • ' + UI.escHtml(t.decideur_email || '') + '</div>' +
+                  '</div>' +
+                  '<div style="display:flex;align-items:center;gap:6px;">' +
+                    '<span style="font-size:0.75rem;">' + icon + ' ' + UI.escHtml(t.statut_retour || 'En attente') + '</span>' +
+                    (t.nb_relances > 0 ? '<span style="font-size:0.6875rem;color:#94a3b8;">' + t.nb_relances + ' relance(s)</span>' : '') +
+                  '</div>' +
+                '</div>';
+              }).join('')}
+            </div>
+          </div>
+          ` : ''}
+
           <div class="card">
             <div class="card-header"><h2>Actions (${actions.length})</h2></div>
             <div class="card-body">
@@ -192,6 +228,8 @@
               <div style="font-size:1.25rem;font-weight:700;margin-bottom:12px;">${missions.length}</div>
               <div style="font-size:0.75rem;color:#64748b;">Candidats identifiés</div>
               <div style="font-size:1.25rem;font-weight:700;margin-bottom:12px;">${candidats.length}</div>
+              <div style="font-size:0.75rem;color:#64748b;">Teasers reçus</div>
+              <div style="font-size:1.25rem;font-weight:700;margin-bottom:12px;">${teasersRecus.length}</div>
               <div style="font-size:0.75rem;color:#64748b;">Actions</div>
               <div style="font-size:1.25rem;font-weight:700;margin-bottom:12px;">${actions.length}</div>
               ${e.google_drive_url ? `

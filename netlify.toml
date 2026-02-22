@@ -1,0 +1,9 @@
+[build]
+  publish = "."
+
+[functions]
+  directory = "netlify/functions"
+
+# Les bin IDs JSONBin sont en fallback dans la function (memes valeurs que config.js).
+# Pour overrider, definir JSONBIN_API_KEY, JSONBIN_CANDIDATS_BIN, JSONBIN_ACTIONS_BIN
+# dans Netlify dashboard > Site settings > Environment variables.

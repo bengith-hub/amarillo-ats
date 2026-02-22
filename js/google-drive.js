@@ -1,23 +1,10 @@
 // Amarillo ATS — Google Drive Integration
-// Authentification OAuth2 via Google Identity Services (GIS)
+// Uses GoogleAuth for unified OAuth2 authentication (Drive + Gmail).
 // Création de dossiers et upload de fichiers vers Google Drive.
 
 const GoogleDrive = (function() {
 
-  const SCOPES = 'https://www.googleapis.com/auth/drive';
-  let _tokenClient = null;
-  let _accessToken = null;
-  let _tokenExpiry = 0;
-
   // --- Configuration ---
-
-  function getClientId() {
-    return localStorage.getItem('ats_google_client_id') || ATS_CONFIG.googleClientId || '';
-  }
-
-  function setClientId(id) {
-    localStorage.setItem('ats_google_client_id', id);
-  }
 
   function getParentFolderId() {
     return localStorage.getItem('ats_google_drive_parent') || ATS_CONFIG.googleDriveParentFolder || '';
@@ -28,62 +15,18 @@ const GoogleDrive = (function() {
   }
 
   function isConfigured() {
-    return !!getClientId();
+    return GoogleAuth.isConfigured();
   }
 
-  // --- OAuth2 Authentication via GIS ---
-
-  function _ensureGisLoaded() {
-    if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
-      throw new Error('Google Identity Services non chargé. Vérifiez votre connexion internet.');
-    }
-  }
-
-  function _initTokenClient() {
-    if (_tokenClient) return _tokenClient;
-    _ensureGisLoaded();
-
-    _tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: getClientId(),
-      scope: SCOPES,
-      callback: () => {} // sera remplacé à chaque appel
-    });
-    return _tokenClient;
-  }
-
-  // Demander un access token via popup de consentement Google
-  function authenticate() {
-    return new Promise((resolve, reject) => {
-      if (_accessToken && Date.now() < _tokenExpiry) {
-        resolve(_accessToken);
-        return;
-      }
-
-      try {
-        const client = _initTokenClient();
-        client.callback = (response) => {
-          if (response.error) {
-            reject(new Error(`Erreur d'authentification Google: ${response.error}`));
-            return;
-          }
-          _accessToken = response.access_token;
-          _tokenExpiry = Date.now() + (response.expires_in * 1000) - 60000; // marge de 1 min
-          resolve(_accessToken);
-        };
-        client.error_callback = (err) => {
-          reject(new Error('Authentification Google annulée ou échouée.'));
-        };
-        client.requestAccessToken();
-      } catch (e) {
-        reject(e);
-      }
-    });
+  // Authenticate via unified GoogleAuth
+  async function authenticate() {
+    return GoogleAuth.authenticate();
   }
 
   // --- Google Drive API calls ---
 
   async function _driveRequest(path, options = {}) {
-    const token = _accessToken;
+    const token = GoogleAuth.getAccessToken();
     if (!token) throw new Error('Non authentifié. Appelez authenticate() d\'abord.');
 
     const url = path.startsWith('http') ? path : `https://www.googleapis.com/drive/v3${path}`;
@@ -127,10 +70,9 @@ const GoogleDrive = (function() {
 
   // Uploader un fichier dans un dossier Drive
   async function uploadFile(file, folderId) {
-    const token = _accessToken;
+    const token = GoogleAuth.getAccessToken();
     if (!token) throw new Error('Non authentifié.');
 
-    // Utiliser l'API multipart upload pour envoyer metadata + contenu en une requête
     const metadata = {
       name: file.name,
       parents: [folderId]
@@ -163,7 +105,7 @@ const GoogleDrive = (function() {
 
   // Télécharger un fichier depuis Google Drive (retourne un Blob)
   async function downloadFile(fileId) {
-    const token = _accessToken;
+    const token = GoogleAuth.getAccessToken();
     if (!token) throw new Error('Non authentifié. Appelez authenticate() d\'abord.');
 
     const meta = await _driveRequest(`/files/${fileId}?fields=name,mimeType`);
@@ -188,12 +130,10 @@ const GoogleDrive = (function() {
   // --- Flow complet : créer dossier + uploader CV ---
 
   async function createCandidatFolderAndUploadCV(candidatName, file) {
-    // 1. Authentification
     await authenticate();
 
     const parentId = getParentFolderId();
 
-    // 2. Créer le dossier du candidat
     let folder;
     try {
       folder = await createFolder(candidatName, parentId || undefined);
@@ -204,7 +144,6 @@ const GoogleDrive = (function() {
       throw e;
     }
 
-    // 3. Uploader le CV
     const uploaded = await uploadFile(file, folder.id);
 
     return {
@@ -223,28 +162,44 @@ const GoogleDrive = (function() {
   // --- UI : modale de configuration Google Drive ---
 
   function showConfigModal(onConfigured) {
-    const currentClientId = getClientId();
+    const currentClientId = GoogleAuth.getClientId();
     const currentParent = getParentFolderId();
+    const currentSender = GoogleAuth.getSenderEmail();
+    const currentSignature = GoogleAuth.getEmailSignature();
 
     const bodyHtml = `
       <div class="form-group">
         <label>Client ID OAuth2 (GCP)</label>
         <input type="text" id="f-google-client-id" value="${currentClientId}" placeholder="xxxxx.apps.googleusercontent.com" style="font-family:monospace;font-size:0.8rem;" />
-        <small style="color:#64748b;">Créez un Client ID OAuth2 dans la <a href="https://console.cloud.google.com/apis/credentials" target="_blank">console GCP</a> (type : Application Web, origines autorisées : votre domaine)</small>
+        <small style="color:#64748b;">Créez un Client ID OAuth2 dans la <a href="https://console.cloud.google.com/apis/credentials" target="_blank">console GCP</a> (type : Application Web, origines autorisées : votre domaine). Scopes requis : Drive + Gmail.</small>
       </div>
       <div class="form-group" style="margin-top:12px;">
         <label>Dossier parent Drive (optionnel)</label>
         <input type="text" id="f-google-parent-folder" value="${currentParent}" placeholder="ID du dossier parent (ex: 1ABC123...)" style="font-family:monospace;font-size:0.8rem;" />
         <small style="color:#64748b;">ID du dossier Drive dans lequel créer les sous-dossiers candidats. Laissez vide pour créer à la racine.</small>
       </div>
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid #e2e8f0;">
+        <div style="font-size:0.8125rem;font-weight:700;color:#1e293b;margin-bottom:12px;">Configuration Gmail</div>
+        <div class="form-group">
+          <label>Email expéditeur</label>
+          <input type="email" id="f-gmail-sender" value="${UI.escHtml(currentSender)}" placeholder="benjamin.fetu@amarillosearch.com" />
+        </div>
+        <div class="form-group" style="margin-top:12px;">
+          <label>Signature email</label>
+          <textarea id="f-gmail-signature" style="min-height:80px;font-size:0.8125rem;">${UI.escHtml(currentSignature)}</textarea>
+          <small style="color:#64748b;">Signature ajoutée automatiquement à chaque email teaser.</small>
+        </div>
+      </div>
     `;
 
-    UI.modal('Configuration Google Drive', bodyHtml, {
-      width: 500,
+    UI.modal('Configuration Google (Drive + Gmail)', bodyHtml, {
+      width: 540,
       saveLabel: 'Enregistrer',
       onSave: async (overlay) => {
         const clientId = overlay.querySelector('#f-google-client-id').value.trim();
         const parentFolder = overlay.querySelector('#f-google-parent-folder').value.trim();
+        const senderEmail = overlay.querySelector('#f-gmail-sender').value.trim();
+        const signature = overlay.querySelector('#f-gmail-signature').value.trim();
 
         if (!clientId) {
           UI.toast('Le Client ID est requis', 'error');
@@ -255,10 +210,12 @@ const GoogleDrive = (function() {
           throw new Error('validation');
         }
 
-        setClientId(clientId);
+        GoogleAuth.setClientId(clientId);
         setParentFolderId(parentFolder);
-        _tokenClient = null; // reset pour prendre le nouveau client ID
-        UI.toast('Configuration Google Drive enregistrée');
+        if (senderEmail) GoogleAuth.setSenderEmail(senderEmail);
+        if (signature) GoogleAuth.setEmailSignature(signature);
+        GoogleAuth.reset(); // reset token client for new config
+        UI.toast('Configuration Google enregistrée');
         if (onConfigured) onConfigured();
       }
     });
@@ -266,8 +223,6 @@ const GoogleDrive = (function() {
 
   return {
     isConfigured,
-    getClientId,
-    setClientId,
     getParentFolderId,
     setParentFolderId,
     authenticate,

@@ -50,6 +50,8 @@
   }
 
   renderKPIs();
+  renderTeaserAlert();
+  renderTeaserKPIs();
   renderUrgentBlock();
   renderNextSteps();
   renderTodoActions();
@@ -79,6 +81,98 @@
     // Sub info
     const kpiSub = document.getElementById('kpi-actions-sub');
     if (kpiSub) kpiSub.textContent = `${doneThisWeek.length} faites cette semaine`;
+  }
+
+  // ========== Teaser Alert Banner ==========
+  function renderTeaserAlert() {
+    // Collect all teaser presentations across all candidats with due relances
+    const allTeasers = [];
+    candidats.forEach(c => {
+      (c.presentations || []).forEach(p => {
+        if (p.type === 'teaser') allTeasers.push({ ...p, candidat_id: c.id });
+      });
+    });
+
+    const dueRelances = allTeasers.filter(t =>
+      t.relance_prevue && t.relance_prevue <= today && t.email_status === 'sent' && t.relance_auto
+    );
+
+    const alertContainer = document.getElementById('dashboard-teaser-alert');
+    if (!alertContainer) {
+      // Create alert container above the urgent block
+      const urgentEl = document.getElementById('dashboard-urgent');
+      if (!urgentEl) return;
+      const div = document.createElement('div');
+      div.id = 'dashboard-teaser-alert';
+      urgentEl.parentNode.insertBefore(div, urgentEl);
+    }
+
+    const el = document.getElementById('dashboard-teaser-alert');
+    if (!el) return;
+
+    if (dueRelances.length === 0) {
+      el.innerHTML = '';
+      return;
+    }
+
+    el.innerHTML = `
+      <div style="background:#FFFDF0;border:1px solid #FEE566;border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:1.25rem;">✈️</span>
+          <div>
+            <div style="font-size:0.875rem;font-weight:700;color:#92780c;">${dueRelances.length} relance${dueRelances.length > 1 ? 's' : ''} teaser en attente</div>
+            <div style="font-size:0.75rem;color:#b8960a;">Des profils envoyés en teaser n'ont pas reçu de réponse et la date de relance est dépassée.</div>
+          </div>
+        </div>
+        <a href="actions.html" class="btn btn-sm" style="background:#1e293b;color:#FECC02;border:none;font-size:0.75rem;">Voir les relances</a>
+      </div>
+    `;
+  }
+
+  // ========== Teaser KPIs ==========
+  function renderTeaserKPIs() {
+    const kpiContainer = document.getElementById('dashboard-teaser-kpis');
+    if (!kpiContainer) return;
+
+    const allTeasers = [];
+    candidats.forEach(c => {
+      (c.presentations || []).forEach(p => {
+        if (p.type === 'teaser') allTeasers.push(p);
+      });
+    });
+
+    if (allTeasers.length === 0) {
+      kpiContainer.innerHTML = '';
+      return;
+    }
+
+    const sent = allTeasers.filter(t => t.email_status === 'sent').length;
+    const replied = allTeasers.filter(t => t.email_status === 'replied').length;
+    const interested = allTeasers.filter(t => t.statut_retour === 'Intéressé' || t.statut_retour === 'Entretien planifié').length;
+    const noReply = allTeasers.filter(t => t.email_status === 'no-reply').length;
+    const total = allTeasers.length;
+    const taux = total > 0 ? Math.round((replied + interested) / total * 100) : 0;
+
+    kpiContainer.innerHTML = `
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:100px;background:#f8fafc;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:0.6875rem;color:#64748b;text-transform:uppercase;font-weight:600;">Envoyés</div>
+          <div style="font-size:1.25rem;font-weight:700;color:#1e293b;">${total}</div>
+        </div>
+        <div style="flex:1;min-width:100px;background:#eff6ff;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:0.6875rem;color:#3b82f6;text-transform:uppercase;font-weight:600;">En attente</div>
+          <div style="font-size:1.25rem;font-weight:700;color:#3b82f6;">${sent}</div>
+        </div>
+        <div style="flex:1;min-width:100px;background:#f0fdf4;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:0.6875rem;color:#16a34a;text-transform:uppercase;font-weight:600;">Répondus</div>
+          <div style="font-size:1.25rem;font-weight:700;color:#16a34a;">${replied + interested}</div>
+        </div>
+        <div style="flex:1;min-width:100px;background:#FFFDF0;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:0.6875rem;color:#c9a000;text-transform:uppercase;font-weight:600;">Taux réponse</div>
+          <div style="font-size:1.25rem;font-weight:700;color:#c9a000;">${taux}%</div>
+        </div>
+      </div>
+    `;
   }
 
   // ========== Bloc Urgent (overdue + relances dépassées) ==========

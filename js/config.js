@@ -21,7 +21,10 @@ const ATS_CONFIG = {
   openaiApiKey: '',
   // Google Drive — Client ID OAuth2 (GCP)
   // Créez-le dans https://console.cloud.google.com/apis/credentials (type: Application Web)
+  // Scopes requis: Drive + Gmail (gmail.send, gmail.readonly, gmail.modify)
   googleClientId: '',
   // ID du dossier Drive parent pour les candidats (optionnel, vide = racine)
-  googleDriveParentFolder: ''
+  googleDriveParentFolder: '',
+  // Gmail — Email expéditeur pour les teasers
+  gmailSenderEmail: 'benjamin.fetu@amarillosearch.com'
 };

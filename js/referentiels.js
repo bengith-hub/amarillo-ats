@@ -73,7 +73,8 @@ const Referentiels = (() => {
       'Prise de contact', 'Qualification candidat', 'Présentation candidat',
       'Suivi candidat', 'Prise de référence', 'Suivi intégration',
       'Prospection', 'Relance décideur', 'Cadrage mission',
-      'Négociation', "Organisation d'échange", 'Facturation', 'Autre'
+      'Négociation', "Organisation d'échange", 'Facturation',
+      'Envoi teaser', 'Retour teaser', 'Relance teaser', 'Autre'
     ],
     action_canaux: [
       'LinkedIn', 'Appel', 'Email', 'Visio', 'Physique', 'SMS', 'Autre'
@@ -93,6 +94,31 @@ const Referentiels = (() => {
     presentation_statuts: [
       'En attente', 'Intéressé', 'Entretien planifié', 'Refusé', 'Offre'
     ],
+
+    // --- TEASERS ---
+    teaser_email_statuts: [
+      'Brouillon', 'Envoyé', 'Répondu', 'Intéressé',
+      'Entretien planifié', 'Refusé', 'Sans réponse',
+      'Bounce', 'Spam/Auto-reply'
+    ],
+    teaser_relance_delais: ['3 jours', '5 jours', '7 jours', '10 jours', '14 jours'],
+
+    // Mapping de secteurs similaires (pour filtrer les destinataires teaser)
+    secteurs_similaires: {
+      'Tech / SaaS': ['Conseil / ESN', 'Telecom / Média'],
+      'Conseil / ESN': ['Tech / SaaS', 'Telecom / Média'],
+      'Telecom / Média': ['Tech / SaaS', 'Conseil / ESN'],
+      'Finance / Banque': ['Assurance'],
+      'Assurance': ['Finance / Banque'],
+      'Santé / Pharma': ['Énergie / Environnement'],
+      'Énergie / Environnement': ['Santé / Pharma', 'Industrie'],
+      'Industrie': ['Énergie / Environnement', 'Transport / Logistique'],
+      'Transport / Logistique': ['Industrie', 'Retail / E-commerce'],
+      'Retail / E-commerce': ['Transport / Logistique', 'Luxe / Mode'],
+      'Luxe / Mode': ['Retail / E-commerce'],
+      'Immobilier / BTP': ['Industrie'],
+      'Agroalimentaire': ['Industrie', 'Retail / E-commerce']
+    },
 
     // --- DOCUMENTS ---
     document_types_candidat: [
@@ -261,6 +287,16 @@ const Referentiels = (() => {
         color: '#06b6d4',
         items: [
           { key: 'presentation_statuts', label: 'Statuts présentation' },
+        ]
+      },
+      {
+        id: 'teasers',
+        label: 'Teasers',
+        icon: '✈️',
+        color: '#1e293b',
+        items: [
+          { key: 'teaser_email_statuts', label: 'Statuts email teaser' },
+          { key: 'teaser_relance_delais', label: 'Délais de relance' },
         ]
       },
       {
