@@ -835,6 +835,87 @@ body {
 .timeline-dot.appel { background: #16a34a; border-color: #22c55e; color: #fff; }
 .timeline-dot.email { background: #c9a000; border-color: #FECC02; color: #fff; }
 
+/* LinkedIn enriched badge — full card (sidebar) */
+.linkedin-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f0f7ff;
+  border: 1px solid #c7ddf5;
+  text-decoration: none;
+  color: #1a1a1a;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  margin-bottom: 6px;
+}
+.linkedin-badge:hover {
+  background: #e0edfb;
+  border-color: #0A66C2;
+  box-shadow: 0 1px 4px rgba(10, 102, 194, 0.15);
+  text-decoration: none;
+}
+.linkedin-badge-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  border-radius: 6px;
+  background: #0A66C2;
+  color: #fff;
+  flex-shrink: 0;
+}
+.linkedin-badge-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.linkedin-badge-name {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: #1a1a1a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.linkedin-badge-label {
+  font-size: 0.6875rem;
+  color: #0A66C2;
+  font-weight: 500;
+}
+.linkedin-badge-arrow {
+  color: #94a3b8;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.linkedin-badge:hover .linkedin-badge-arrow { color: #0A66C2; }
+
+/* LinkedIn enriched badge — compact (inline fields) */
+.linkedin-badge-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 6px;
+  border-radius: 6px;
+  background: #f0f7ff;
+  border: 1px solid #dbeafe;
+  color: #0A66C2;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.linkedin-badge-compact:hover {
+  background: #dbeafe;
+  border-color: #0A66C2;
+  text-decoration: none;
+}
+.linkedin-badge-compact .linkedin-icon {
+  color: #0A66C2;
+  flex-shrink: 0;
+}
+
 /* Sync indicator pill */
 .sync-indicator {
   background: #f0fdf4; padding: 4px 12px; border-radius: 9999px;
