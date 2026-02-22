@@ -177,9 +177,9 @@ const Backup = (() => {
 
     const result = await GoogleDrive.uploadFile(file, folderId);
 
-    const now = new Date().toISOString();
-    localStorage.setItem(LS_LAST_BACKUP, now);
-    localStorage.setItem('ats_backup_last_success', now);
+    const savedAt = new Date().toISOString();
+    localStorage.setItem(LS_LAST_BACKUP, savedAt);
+    localStorage.setItem('ats_backup_last_success', savedAt);
 
     return {
       fileName,

@@ -163,12 +163,40 @@ async function updateBackupStatus(backupBin, apiKey, status, container) {
   }
 }
 
+// Auto-create backup bin if none configured (same approach as frontend _getBackupsBin)
+async function getOrCreateBackupBin(apiKey) {
+  const envBin = process.env.JSONBIN_BACKUP_BIN;
+  if (envBin) return envBin;
+
+  console.log('JSONBIN_BACKUP_BIN not set — creating backup bin automatically...');
+  const res = await fetch('https://api.jsonbin.io/v3/b', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Master-Key': apiKey,
+      'X-Bin-Name': 'amarillo-backups'
+    },
+    body: JSON.stringify({ snapshots: [], status: {} })
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to create backup bin: ${res.status}`);
+  }
+
+  const data = await res.json();
+  const binId = data.metadata.id;
+  console.log(`Backup bin created: ${binId} — Add JSONBIN_BACKUP_BIN=${binId} to Netlify env vars to avoid re-creation.`);
+  return binId;
+}
+
 export default async function handler(req) {
   const apiKey = process.env.JSONBIN_API_KEY || '$2a$10$FvDIogJwH4l87MiEdExg6udcabOSwaFpjoL1xTc5KQgUojd6JA4Be';
-  const backupBin = process.env.JSONBIN_BACKUP_BIN;
 
-  if (!backupBin) {
-    const errMsg = 'JSONBIN_BACKUP_BIN environment variable not set';
+  let backupBin;
+  try {
+    backupBin = await getOrCreateBackupBin(apiKey);
+  } catch (e) {
+    const errMsg = `Cannot get/create backup bin: ${e.message}`;
     console.error(errMsg);
     await Promise.all([
       sendAlertWebhook(errMsg),
