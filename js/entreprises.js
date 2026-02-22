@@ -47,6 +47,8 @@
 
     filtered.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
     renderTable(filtered);
+    const isFiltered = searchValue || activeFilters.some(f => f.values.length > 0);
+    UI.rowCount('entreprises-count', { filtered: filtered.length, total: allEntreprises.length, label: 'entreprises', isFiltered });
   }
 
   function renderAdvancedFilters() {
@@ -138,9 +140,16 @@
 
   renderAdvancedFilters();
 
+  // Row count container
+  const countEl = document.createElement('div');
+  countEl.id = 'entreprises-count';
+  countEl.className = 'row-count-bar';
+  document.getElementById('entreprises-filters').after(countEl);
+
   // Sort by creation date (most recent first)
   allEntreprises.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
   renderTable(allEntreprises);
+  UI.rowCount('entreprises-count', { filtered: allEntreprises.length, total: allEntreprises.length, label: 'entreprises', isFiltered: false });
 
   function renderTable(data) {
     UI.dataTable('entreprises-table', {

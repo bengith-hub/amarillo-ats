@@ -58,6 +58,8 @@
 
     filtered.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
     renderTable(filtered);
+    const isFiltered = searchValue || activeFilters.some(f => f.values.length > 0);
+    UI.rowCount('decideurs-count', { filtered: filtered.length, total: allDecideurs.length, label: 'décideurs', isFiltered });
   }
 
   function renderAdvancedFilters() {
@@ -149,9 +151,16 @@
 
   renderAdvancedFilters();
 
+  // Row count container
+  const countEl = document.createElement('div');
+  countEl.id = 'decideurs-count';
+  countEl.className = 'row-count-bar';
+  document.getElementById('decideurs-filters').after(countEl);
+
   // Sort by creation date (most recent first)
   allDecideurs.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
   renderTable(allDecideurs);
+  UI.rowCount('decideurs-count', { filtered: allDecideurs.length, total: allDecideurs.length, label: 'décideurs', isFiltered: false });
 
   function renderTable(data) {
     UI.dataTable('decideurs-table', {
