@@ -47,6 +47,7 @@
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="js/config.js"></script>
+  <script src="js/backup-monitor.js"></script>
   <script src="js/api.js"></script>
   <script src="js/store.js"></script>
   <script src="js/components.js"></script>
@@ -331,6 +332,19 @@
       const lastStr = lastBackup ? Backup.formatDate(lastBackup) : 'Aucun';
 
       return `
+        <!-- Statut du backup automatique -->
+        <div id="backup-status-card" style="margin-bottom:20px;">
+          <div class="card" style="border-left:4px solid #94a3b8;">
+            <div class="card-body" style="display:flex;align-items:center;gap:12px;padding:14px 20px;">
+              <span style="font-size:1.25rem;" id="backup-status-icon">&#9203;</span>
+              <div style="flex:1;">
+                <div style="font-size:0.8125rem;font-weight:600;color:#1e293b;" id="backup-status-text">V\u00e9rification du backup automatique...</div>
+                <div style="font-size:0.75rem;color:#94a3b8;" id="backup-status-detail"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="backup-grid">
 
           <!-- Export local -->
@@ -403,6 +417,9 @@
     }
 
     function bindBackupEvents() {
+      // Check backup status
+      loadBackupStatus();
+
       // Export local
       document.getElementById('btn-backup-export')?.addEventListener('click', () => {
         try {
@@ -641,6 +658,50 @@
         });
       } catch (e) {
         listEl.innerHTML = '<div style="font-size:0.8125rem;color:#dc2626;">Erreur chargement snapshots : ' + e.message + '</div>';
+      }
+    }
+
+    async function loadBackupStatus() {
+      const card = document.getElementById('backup-status-card');
+      if (!card) return;
+
+      try {
+        const status = await BackupMonitor.fetchBackupStatus();
+        const iconEl = document.getElementById('backup-status-icon');
+        const textEl = document.getElementById('backup-status-text');
+        const detailEl = document.getElementById('backup-status-detail');
+        const cardInner = card.querySelector('.card');
+
+        if (!status || !status.last_success) {
+          iconEl.innerHTML = '&#9888;&#65039;';
+          textEl.textContent = 'Backup automatique non configur\u00e9';
+          detailEl.textContent = 'Configurez JSONBIN_BACKUP_BIN dans Netlify pour activer les backups automatiques.';
+          cardInner.style.borderLeftColor = '#f59e0b';
+          return;
+        }
+
+        const isStale = BackupMonitor.isBackupStale(status);
+        const lastDate = new Date(status.last_success).toLocaleDateString('fr-FR', {
+          day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+
+        if (isStale || status.result === 'error') {
+          iconEl.innerHTML = '&#10060;';
+          textEl.textContent = 'Backup en \u00e9chec';
+          textEl.style.color = '#dc2626';
+          cardInner.style.borderLeftColor = '#dc2626';
+          let detail = 'Dernier succ\u00e8s : ' + lastDate;
+          if (status.error) detail += ' \u2014 Erreur : ' + status.error;
+          detailEl.textContent = detail;
+        } else {
+          iconEl.innerHTML = '&#9989;';
+          textEl.textContent = 'Backup automatique fonctionnel';
+          textEl.style.color = '#16a34a';
+          cardInner.style.borderLeftColor = '#22c55e';
+          detailEl.textContent = 'Dernier backup r\u00e9ussi : ' + lastDate;
+        }
+      } catch (e) {
+        console.warn('Could not check backup status:', e.message);
       }
     }
 

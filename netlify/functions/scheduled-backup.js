@@ -3,6 +3,7 @@
 // Keeps the last 7 snapshots with automatic rotation.
 // Records backup status for frontend monitoring.
 // Sends alert via webhook on failure (if BACKUP_ALERT_WEBHOOK is configured).
+// Sends alert email via Gmail API on failure (if GOOGLE_REFRESH_TOKEN is configured).
 
 const JSONBIN_BASE = 'https://api.jsonbin.io/v3/b';
 const MAX_SNAPSHOTS = 7;
@@ -57,6 +58,93 @@ async function sendAlertWebhook(errorMessage) {
   }
 }
 
+// Send alert email via Gmail API using OAuth2 refresh token
+async function sendAlertEmail(errorMessage) {
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const alertEmail = process.env.BACKUP_ALERT_EMAIL || 'benjamin.fetu@amarillosearch.com';
+
+  if (!refreshToken || !clientId || !clientSecret) {
+    console.log('Gmail alert not configured (missing GOOGLE_REFRESH_TOKEN, GOOGLE_CLIENT_ID, or GOOGLE_CLIENT_SECRET)');
+    return;
+  }
+
+  try {
+    // 1. Exchange refresh token for access token
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: clientId,
+        client_secret: clientSecret
+      })
+    });
+
+    if (!tokenRes.ok) {
+      console.error('Failed to refresh Gmail token:', tokenRes.status);
+      return;
+    }
+
+    const { access_token } = await tokenRes.json();
+
+    // 2. Build email
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const subject = `[Amarillo ATS] Echec du backup automatique — ${dateStr}`;
+    const htmlBody = `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+        <div style="background:#dc2626;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0;">
+          <h2 style="margin:0;font-size:18px;">Amarillo ATS — Alerte Backup</h2>
+        </div>
+        <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;padding:24px;border-radius:0 0 8px 8px;">
+          <p style="color:#dc2626;font-weight:600;font-size:16px;margin-top:0;">Le backup automatique a echoue</p>
+          <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+            <tr><td style="padding:8px 0;color:#6b7280;width:120px;">Date</td><td style="padding:8px 0;font-weight:600;">${dateStr}</td></tr>
+            <tr><td style="padding:8px 0;color:#6b7280;">Erreur</td><td style="padding:8px 0;color:#dc2626;font-weight:600;">${errorMessage}</td></tr>
+          </table>
+          <p style="color:#6b7280;font-size:14px;margin-bottom:0;">
+            Verifiez la configuration dans <strong>Netlify > Site settings > Environment variables</strong>
+            et consultez les logs dans <strong>Netlify > Functions</strong>.
+          </p>
+        </div>
+      </div>
+    `;
+
+    const mimeMessage = [
+      `To: ${alertEmail}`,
+      `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      btoa(unescape(encodeURIComponent(htmlBody)))
+    ].join('\r\n');
+
+    const raw = btoa(mimeMessage).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    // 3. Send via Gmail API
+    const sendRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ raw })
+    });
+
+    if (sendRes.ok) {
+      console.log('Alert email sent successfully to', alertEmail);
+    } else {
+      console.error('Failed to send alert email:', sendRes.status);
+    }
+  } catch (e) {
+    console.error('Failed to send alert email:', e.message);
+  }
+}
+
 // Update backup status metadata in the backup bin
 async function updateBackupStatus(backupBin, apiKey, status, container) {
   container.status = status;
@@ -80,11 +168,13 @@ export default async function handler(req) {
   const backupBin = process.env.JSONBIN_BACKUP_BIN;
 
   if (!backupBin) {
-    console.error('JSONBIN_BACKUP_BIN not configured');
-    await sendAlertWebhook('JSONBIN_BACKUP_BIN environment variable not set');
-    return new Response(JSON.stringify({
-      error: 'JSONBIN_BACKUP_BIN environment variable not set'
-    }), { status: 500 });
+    const errMsg = 'JSONBIN_BACKUP_BIN environment variable not set';
+    console.error(errMsg);
+    await Promise.all([
+      sendAlertWebhook(errMsg),
+      sendAlertEmail(errMsg)
+    ]);
+    return new Response(JSON.stringify({ error: errMsg }), { status: 500 });
   }
 
   const headers = { 'X-Master-Key': apiKey };
@@ -185,8 +275,11 @@ export default async function handler(req) {
     };
     await updateBackupStatus(backupBin, apiKey, container.status, container);
 
-    // Send alert webhook
-    await sendAlertWebhook(error.message);
+    // Send alerts (webhook + email)
+    await Promise.all([
+      sendAlertWebhook(error.message),
+      sendAlertEmail(error.message)
+    ]);
 
     return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   }
