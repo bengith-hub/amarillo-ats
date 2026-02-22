@@ -2572,9 +2572,20 @@
           if (progressText) progressText.textContent = 'Génération du Teaser PDF...';
           let pdfAttachment = null;
           try {
-            const dsiResult = candidat.profile_code ? await DSIProfile.fetchProfile(candidat.profile_code) : null;
+            const [dsiResult, logoDataUrl] = await Promise.all([
+              candidat.profile_code ? DSIProfile.fetchProfile(candidat.profile_code) : null,
+              typeof PDFEngine.loadTalentLogo === 'function' ? PDFEngine.loadTalentLogo() : null,
+            ]);
             const companyNames = Store.get('entreprises').map(e => e.nom).filter(Boolean);
-            const doc = PDFEngine.generateTalentAImpact(candidat, { dsiResult, companyNames });
+            const doc = PDFEngine.generateTalentAImpact(candidat, {
+              dsiResult,
+              companyNames,
+              logoDataUrl,
+              aiPitch: {
+                impact: candidat.teaser_impact_strategique || '',
+                lecture: candidat.teaser_lecture_strategique || '',
+              },
+            });
             const filename = `Talent_a_Impact_${(candidat.poste_actuel || 'Profil').replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '_')}.pdf`;
             pdfAttachment = Gmail.pdfToAttachment(doc, filename);
           } catch (e) {
@@ -2745,20 +2756,33 @@
     const _anon = (t) => PDFEngine.anonymizeText ? PDFEngine.anonymizeText(t, allCompanyNames) : (t || '');
 
     // Pre-fill from saved teaser fields or raw data
-    const savedSynthese = candidat.teaser_synthese || '';
-    const savedProjet = candidat.teaser_projet || '';
-    const savedPosteCible = candidat.teaser_poste_cible || candidat.poste_cible || '';
-    const savedFormation = candidat.teaser_formation || candidat.diplome || '';
+    const savedTitre = candidat.teaser_titre_accrocheur || candidat.poste_actuel || '';
+    const savedFonction = candidat.teaser_fonction || candidat.poste_actuel || '';
+    const savedPerimetre = candidat.teaser_perimetre || '';
+    const savedEquipe = candidat.teaser_equipe || '';
+    const savedBudget = candidat.teaser_budget || '';
+    const savedZone = candidat.teaser_zone || candidat.localisation || '';
     const savedPackage = candidat.teaser_package || PDFEngine.salaryBand(candidat.package_souhaite_min, candidat.package_souhaite) || '';
     const savedPreavis = candidat.teaser_preavis || candidat.preavis || '';
     const savedTeletravail = candidat.teaser_teletravail || candidat.teletravail || '';
     const savedDispo = candidat.teaser_dispo || '';
+    const savedImpact = candidat.teaser_impact_strategique || '';
+    const savedLecture = candidat.teaser_lecture_strategique || '';
+
+    // Character limit helper
+    const charCountHtml = (id, max) => `<span id="${id}-count" class="char-count" style="display:block;text-align:right;font-size:0.75rem;color:#94a3b8;margin-top:2px;">0/${max}</span>`;
+
+    const textareaStyle = 'width:100%;resize:vertical;font-size:0.875rem;line-height:1.6;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-family:inherit;';
 
     container.innerHTML = `
       <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
         <button class="btn btn-secondary" id="teaser-ai-btn" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">
           <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-          G\u00e9n\u00e9rer via IA
+          IA \u2014 G\u00e9n\u00e9rer tout
+        </button>
+        <button class="btn btn-secondary" id="teaser-preview-btn" style="background:#3A5BA0;color:#fff;border-color:#3A5BA0;">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+          Pr\u00e9visualiser
         </button>
         <button class="btn btn-secondary" id="teaser-download-btn" style="background:#2D6A4F;color:#fff;border-color:#2D6A4F;">
           <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
@@ -2767,48 +2791,108 @@
       </div>
 
       <div class="card" data-accent="gold" style="margin-bottom:16px;">
-        <div class="card-header"><h2>Synth\u00e8se Teaser</h2><span class="edit-hint">pitch vendeur du profil</span></div>
+        <div class="card-header"><h2>Titre accrocheur</h2><span class="edit-hint">headline vendeur du profil</span></div>
         <div class="card-body">
-          <textarea id="teaser-f-synthese" rows="5" style="width:100%;resize:vertical;font-size:0.875rem;line-height:1.6;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-family:inherit;">${UI.escHtml(savedSynthese)}</textarea>
+          <input type="text" id="teaser-f-titre" value="${UI.escHtml(savedTitre)}" maxlength="100" style="width:100%;font-size:1rem;font-weight:600;padding:10px;border:1px solid #e2e8f0;border-radius:8px;" placeholder="Ex: DSI transformateur, expert ERP & cybersécurité, 18 ans d'expérience" />
+          ${charCountHtml('teaser-f-titre', 100)}
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+        <div class="card" data-accent="dark">
+          <div class="card-header"><h2>Fiche Profil</h2><span class="edit-hint">informations cl\u00e9s du candidat</span></div>
+          <div class="card-body">
+            <div class="form-group" style="margin-bottom:10px;"><label>Fonction</label><input type="text" id="teaser-f-fonction" value="${UI.escHtml(savedFonction)}" maxlength="80" />${charCountHtml('teaser-f-fonction', 80)}</div>
+            <div class="form-group" style="margin-bottom:10px;"><label>P\u00e9rim\u00e8tre</label><input type="text" id="teaser-f-perimetre" value="${UI.escHtml(savedPerimetre)}" maxlength="120" placeholder="Ex: IT groupe, 3 filiales, 200 users" />${charCountHtml('teaser-f-perimetre', 120)}</div>
+            <div class="form-group" style="margin-bottom:10px;"><label>\u00c9quipe</label><input type="text" id="teaser-f-equipe" value="${UI.escHtml(savedEquipe)}" maxlength="80" placeholder="Ex: 12 internes + 5 prestataires" />${charCountHtml('teaser-f-equipe', 80)}</div>
+            <div class="form-group" style="margin-bottom:10px;"><label>Budget</label><input type="text" id="teaser-f-budget" value="${UI.escHtml(savedBudget)}" maxlength="60" placeholder="Ex: 2,5 M\u20ac" />${charCountHtml('teaser-f-budget', 60)}</div>
+            <div class="form-group"><label>Zone</label><input type="text" id="teaser-f-zone" value="${UI.escHtml(savedZone)}" maxlength="60" />${charCountHtml('teaser-f-zone', 60)}</div>
+          </div>
+        </div>
+
+        <div class="card" data-accent="green">
+          <div class="card-header"><h2>Conditions & Disponibilit\u00e9s</h2><span class="edit-hint">package et disponibilit\u00e9</span></div>
+          <div class="card-body">
+            <div class="form-group" style="margin-bottom:10px;"><label>Package</label><input type="text" id="teaser-f-package" value="${UI.escHtml(savedPackage)}" maxlength="60" placeholder="Ex: 90-110 K\u20ac" />${charCountHtml('teaser-f-package', 60)}</div>
+            <div class="form-group" style="margin-bottom:10px;"><label>Pr\u00e9avis</label><input type="text" id="teaser-f-preavis" value="${UI.escHtml(savedPreavis)}" maxlength="40" placeholder="Ex: 3 mois" />${charCountHtml('teaser-f-preavis', 40)}</div>
+            <div class="form-group" style="margin-bottom:10px;"><label>T\u00e9l\u00e9travail</label><input type="text" id="teaser-f-teletravail" value="${UI.escHtml(savedTeletravail)}" maxlength="40" placeholder="Ex: 2j/semaine" />${charCountHtml('teaser-f-teletravail', 40)}</div>
+            <div class="form-group"><label>Disponibilit\u00e9</label><input type="text" id="teaser-f-dispo" value="${UI.escHtml(savedDispo)}" maxlength="60" placeholder="Ex: Disponible imm\u00e9diatement" />${charCountHtml('teaser-f-dispo', 60)}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" data-accent="gold" style="margin-bottom:16px;">
+        <div class="card-header">
+          <h2>Impact strat\u00e9gique & op\u00e9rationnel</h2>
+          <button class="btn btn-secondary" id="teaser-ai-impact-btn" style="background:#1e293b;color:#FECC02;border-color:#1e293b;font-size:0.75rem;padding:4px 10px;">
+            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            IA
+          </button>
+        </div>
+        <div class="card-body">
+          <textarea id="teaser-f-impact" rows="6" maxlength="500" style="${textareaStyle}" placeholder="\u2022 Structuration DSI post-acquisition (3 soci\u00e9t\u00e9s int\u00e9gr\u00e9es)\n\u2022 R\u00e9duction OPEX IT de 18 %\n\u2022 Refonte ERP groupe (SAP / Dynamics)\n\u2022 Mise en place gouvernance & comit\u00e9 IT\n\u2022 Pilotage cybers\u00e9curit\u00e9 ISO 27001\n\u2022 Accompagnement croissance de 60M\u20ac \u2192 140M\u20ac">${UI.escHtml(savedImpact)}</textarea>
+          ${charCountHtml('teaser-f-impact', 500)}
         </div>
       </div>
 
       <div class="card" data-accent="blue" style="margin-bottom:16px;">
-        <div class="card-header"><h2>Projet professionnel</h2><span class="edit-hint">motivations et recherche</span></div>
-        <div class="card-body">
-          <textarea id="teaser-f-projet" rows="5" style="width:100%;resize:vertical;font-size:0.875rem;line-height:1.6;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-family:inherit;">${UI.escHtml(savedProjet)}</textarea>
+        <div class="card-header">
+          <h2>Lecture strat\u00e9gique Amarillo</h2>
+          <button class="btn btn-secondary" id="teaser-ai-lecture-btn" style="background:#3A5BA0;color:#fff;border-color:#3A5BA0;font-size:0.75rem;padding:4px 10px;">
+            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            IA
+          </button>
         </div>
-      </div>
-
-      <div class="card" data-accent="green" style="margin-bottom:16px;">
-        <div class="card-header"><h2>Informations cl\u00e9s</h2><span class="edit-hint">encarts du PDF</span></div>
         <div class="card-body">
-          <div class="form-row">
-            <div class="form-group"><label>Poste cible</label><input type="text" id="teaser-f-poste-cible" value="${UI.escHtml(savedPosteCible)}" /></div>
-            <div class="form-group"><label>Formation</label><input type="text" id="teaser-f-formation" value="${UI.escHtml(savedFormation)}" /></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>Package souhait\u00e9</label><input type="text" id="teaser-f-package" value="${UI.escHtml(savedPackage)}" /></div>
-            <div class="form-group"><label>Pr\u00e9avis</label><input type="text" id="teaser-f-preavis" value="${UI.escHtml(savedPreavis)}" /></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>T\u00e9l\u00e9travail</label><input type="text" id="teaser-f-teletravail" value="${UI.escHtml(savedTeletravail)}" /></div>
-            <div class="form-group"><label>Disponibilit\u00e9</label><input type="text" id="teaser-f-dispo" value="${UI.escHtml(savedDispo)}" /></div>
-          </div>
+          <textarea id="teaser-f-lecture" rows="4" maxlength="350" style="${textareaStyle}" placeholder="\u2022 Capacit\u00e9 \u00e0 structurer la fonction IT avant changement d'\u00e9chelle\n\u2022 Culture terrain combin\u00e9e \u00e0 vision comit\u00e9 de direction\n\u2022 Exp\u00e9rience d'environnements actionnariaux exigeants\n\u2022 Leadership adapt\u00e9 aux organisations familiales ou groupes">${UI.escHtml(savedLecture)}</textarea>
+          ${charCountHtml('teaser-f-lecture', 350)}
         </div>
       </div>
     `;
 
-    // Auto-save on blur for all teaser fields
+    // ── Character counters ──
+    const charLimits = {
+      'teaser-f-titre': 100,
+      'teaser-f-fonction': 80,
+      'teaser-f-perimetre': 120,
+      'teaser-f-equipe': 80,
+      'teaser-f-budget': 60,
+      'teaser-f-zone': 60,
+      'teaser-f-package': 60,
+      'teaser-f-preavis': 40,
+      'teaser-f-teletravail': 40,
+      'teaser-f-dispo': 60,
+      'teaser-f-impact': 500,
+      'teaser-f-lecture': 350,
+    };
+
+    for (const [elemId, max] of Object.entries(charLimits)) {
+      const el = document.getElementById(elemId);
+      const counter = document.getElementById(elemId + '-count');
+      if (!el || !counter) continue;
+      const updateCount = () => {
+        const len = el.value.length;
+        counter.textContent = `${len}/${max}`;
+        counter.style.color = len > max * 0.9 ? '#dc2626' : '#94a3b8';
+      };
+      el.addEventListener('input', updateCount);
+      updateCount(); // Initial
+    }
+
+    // ── Auto-save on blur for all teaser fields ──
     const fieldMap = {
-      'teaser-f-synthese': 'teaser_synthese',
-      'teaser-f-projet': 'teaser_projet',
-      'teaser-f-poste-cible': 'teaser_poste_cible',
-      'teaser-f-formation': 'teaser_formation',
+      'teaser-f-titre': 'teaser_titre_accrocheur',
+      'teaser-f-fonction': 'teaser_fonction',
+      'teaser-f-perimetre': 'teaser_perimetre',
+      'teaser-f-equipe': 'teaser_equipe',
+      'teaser-f-budget': 'teaser_budget',
+      'teaser-f-zone': 'teaser_zone',
       'teaser-f-package': 'teaser_package',
       'teaser-f-preavis': 'teaser_preavis',
       'teaser-f-teletravail': 'teaser_teletravail',
       'teaser-f-dispo': 'teaser_dispo',
+      'teaser-f-impact': 'teaser_impact_strategique',
+      'teaser-f-lecture': 'teaser_lecture_strategique',
     };
 
     for (const [elemId, fieldKey] of Object.entries(fieldMap)) {
@@ -2823,8 +2907,46 @@
       });
     }
 
-    // AI generation button
-    document.getElementById('teaser-ai-btn')?.addEventListener('click', async () => {
+    // ── AI prompts ──
+    const impactSystemPrompt = `Tu es consultant en executive search sp\u00e9cialis\u00e9 DSI.
+Ta mission : Produire le bloc "Impact strat\u00e9gique & op\u00e9rationnel" pour un teaser anonymis\u00e9.
+R\u00e8gles absolues :
+- Utiliser uniquement les informations pr\u00e9sentes dans les sources fournies.
+- Ne jamais inventer. Ne jamais extrapoler. Ne rien d\u00e9duire.
+- Si une donn\u00e9e est absente \u2192 ne rien \u00e9crire.
+- Formulation synth\u00e9tique en bullet points.
+- Maximum 6 bullet points. 1 ligne par bullet point.
+- Orientation r\u00e9sultats business, pas descriptif de poste.
+- Privil\u00e9gier les impacts mesurables (croissance, r\u00e9duction co\u00fbts, structuration, transformation, gouvernance).
+Structure attendue : \u2022 Action structurante + contexte + r\u00e9sultat mesurable (si disponible)
+R\u00e9ponds UNIQUEMENT avec les bullet points, un par ligne, commen\u00e7ant par \u2022.
+Ne mentionne AUCUN nom de personne ni d'entreprise.`;
+
+    const lectureSystemPrompt = `Tu es consultant en executive search sp\u00e9cialis\u00e9 DSI.
+Ta mission : Produire le bloc "Lecture strat\u00e9gique Amarillo" pour un teaser anonymis\u00e9 destin\u00e9 \u00e0 un DG ou DRH.
+R\u00e8gles absolues :
+- Utiliser uniquement les \u00e9l\u00e9ments pr\u00e9sents dans les sources fournies.
+- Ne jamais inventer. Ne pas extrapoler au-del\u00e0 des faits \u00e9crits.
+- Il est autoris\u00e9 de reformuler et de synth\u00e9tiser.
+- Maximum 4 bullet points. 1 ligne par bullet point.
+- Ton strat\u00e9gique, d\u00e9cisionnel, orient\u00e9 enjeu entreprise.
+- Ne pas r\u00e9p\u00e9ter les \u00e9l\u00e9ments d\u00e9j\u00e0 list\u00e9s dans "Impact strat\u00e9gique & op\u00e9rationnel".
+- Mettre en avant capacit\u00e9, posture, ad\u00e9quation avec enjeux typiques d'ETI industrielles.
+Angle attendu : Pourquoi ce profil peut \u00eatre structurant dans une phase de croissance, structuration, transformation, changement d'\u00e9chelle, gouvernance renforc\u00e9e.
+R\u00e9ponds UNIQUEMENT avec les bullet points, un par ligne, commen\u00e7ant par \u2022.
+Ne mentionne AUCUN nom de personne ni d'entreprise.`;
+
+    const buildUserPrompt = () => {
+      const notesConcat = [
+        candidat.synthese_30s || '',
+        candidat.parcours_cible || '',
+        candidat.motivation_drivers || ''
+      ].filter(Boolean).join('\n\n');
+      return `Notes d'entretien :\n${notesConcat.substring(0, 6000)}\n\nPoste actuel : ${candidat.poste_actuel || 'Non renseign\u00e9'}`;
+    };
+
+    // Helper: generate one AI block
+    async function generateAIBlock(systemPrompt, targetId, fieldKey, btn) {
       const apiKey = typeof CVParser !== 'undefined' && CVParser.getOpenAIKey ? CVParser.getOpenAIKey() : null;
       if (!apiKey) {
         UI.toast('Cl\u00e9 OpenAI non configur\u00e9e. Allez dans Configuration.', 'error');
@@ -2832,108 +2954,121 @@
       }
       const hasNotes = candidat.synthese_30s || candidat.parcours_cible || candidat.motivation_drivers;
       if (!hasNotes) {
-        UI.toast('Aucune note d\'entretien \u00e0 r\u00e9\u00e9crire.', 'error');
+        UI.toast('Aucune note d\'entretien disponible.', 'error');
         return;
       }
 
-      const btn = document.getElementById('teaser-ai-btn');
+      const origHtml = btn.innerHTML;
       btn.disabled = true;
-      btn.textContent = 'G\u00e9n\u00e9ration en cours...';
+      btn.textContent = 'G\u00e9n\u00e9ration...';
 
       try {
-        const systemPrompt = `Tu es un consultant senior en executive search chez Amarillo Search.
-On te donne des notes internes de recruteur sur un candidat.
-Reecris-les en 2 sections pour un document client professionnel ("Talent a Impact").
-
-Reponds UNIQUEMENT avec un JSON :
-{
-  "synthese": "...",
-  "projet": "..."
-}
-
-synthese (3-4 phrases max) : Pitch percutant du profil. Mets en avant les forces, l'experience cle, et la valeur ajoutee. Ton positif et vendeur. Ne mentionne AUCUN nom de personne ni d'entreprise.
-
-projet (3-4 phrases max) : Ce que le candidat recherche et ce qui le motive, formule de maniere a rassurer un client. Ton professionnel. Ne mentionne AUCUN nom de personne ni d'entreprise.
-
-Regles :
-- Texte brut, pas de markdown, pas de tirets, pas de listes
-- Francais professionnel
-- JAMAIS de nom de candidat, d'entreprise ou de coordonnees
-- Si les notes sont vides ou insuffisantes, retourne des chaines vides`;
-
-        const notesConcat = [
-          candidat.synthese_30s || '',
-          candidat.parcours_cible || '',
-          candidat.motivation_drivers || ''
-        ].filter(Boolean).join('\n\n');
-
-        const userPrompt = `Notes d'entretien :\n${notesConcat.substring(0, 6000)}\n\nPoste actuel : ${candidat.poste_actuel || 'Non renseigne'}`;
-
-        const aiPitch = await InterviewAnalyzer._callOpenAI(systemPrompt, userPrompt);
-
-        if (aiPitch?.synthese) {
-          const synEl = document.getElementById('teaser-f-synthese');
-          synEl.value = _anon(aiPitch.synthese);
-          candidat.teaser_synthese = synEl.value;
-          await Store.update('candidats', id, { teaser_synthese: synEl.value });
+        const result = await InterviewAnalyzer._callOpenAI(systemPrompt, buildUserPrompt());
+        // Result can be a string (bullet points) or JSON with a field
+        let text = '';
+        if (typeof result === 'string') {
+          text = result;
+        } else if (result && typeof result === 'object') {
+          text = result.impact || result.lecture || result.text || JSON.stringify(result);
         }
-        if (aiPitch?.projet) {
-          const projEl = document.getElementById('teaser-f-projet');
-          projEl.value = _anon(aiPitch.projet);
-          candidat.teaser_projet = projEl.value;
-          await Store.update('candidats', id, { teaser_projet: projEl.value });
+        // Clean: keep only lines starting with bullet
+        text = _anon(text);
+        const el = document.getElementById(targetId);
+        if (el) {
+          el.value = text;
+          candidat[fieldKey] = text;
+          await Store.update('candidats', id, { [fieldKey]: text });
+          // Update char counter
+          el.dispatchEvent(new Event('input'));
         }
-
-        UI.toast('Texte g\u00e9n\u00e9r\u00e9 par IA et anonymis\u00e9');
+        UI.toast('Bloc g\u00e9n\u00e9r\u00e9 par IA');
       } catch (e) {
         console.error('AI generation error:', e);
         UI.toast('Erreur IA : ' + e.message, 'error');
       } finally {
         btn.disabled = false;
-        btn.innerHTML = `<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> G\u00e9n\u00e9rer via IA`;
+        btn.innerHTML = origHtml;
+      }
+    }
+
+    // ── AI buttons ──
+    // "IA — Générer tout" button
+    document.getElementById('teaser-ai-btn')?.addEventListener('click', async () => {
+      const btn = document.getElementById('teaser-ai-btn');
+      const origHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.textContent = 'G\u00e9n\u00e9ration en cours...';
+      try {
+        await generateAIBlock(impactSystemPrompt, 'teaser-f-impact', 'teaser_impact_strategique', document.getElementById('teaser-ai-impact-btn'));
+        await generateAIBlock(lectureSystemPrompt, 'teaser-f-lecture', 'teaser_lecture_strategique', document.getElementById('teaser-ai-lecture-btn'));
+        UI.toast('Blocs strat\u00e9giques g\u00e9n\u00e9r\u00e9s par IA');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
       }
     });
 
-    // Download button
+    // Individual AI buttons
+    document.getElementById('teaser-ai-impact-btn')?.addEventListener('click', () => {
+      generateAIBlock(impactSystemPrompt, 'teaser-f-impact', 'teaser_impact_strategique', document.getElementById('teaser-ai-impact-btn'));
+    });
+    document.getElementById('teaser-ai-lecture-btn')?.addEventListener('click', () => {
+      generateAIBlock(lectureSystemPrompt, 'teaser-f-lecture', 'teaser_lecture_strategique', document.getElementById('teaser-ai-lecture-btn'));
+    });
+
+    // ── Build PDF candidat from current form values ──
+    function buildPdfCandidat() {
+      const pdfCandidat = { ...candidat };
+      pdfCandidat.teaser_titre_accrocheur = document.getElementById('teaser-f-titre')?.value.trim() || candidat.teaser_titre_accrocheur || candidat.poste_actuel || '';
+      pdfCandidat.teaser_fonction = document.getElementById('teaser-f-fonction')?.value.trim() || candidat.teaser_fonction || candidat.poste_actuel || '';
+      pdfCandidat.teaser_perimetre = document.getElementById('teaser-f-perimetre')?.value.trim() || '';
+      pdfCandidat.teaser_equipe = document.getElementById('teaser-f-equipe')?.value.trim() || '';
+      pdfCandidat.teaser_budget = document.getElementById('teaser-f-budget')?.value.trim() || '';
+      pdfCandidat.teaser_zone = document.getElementById('teaser-f-zone')?.value.trim() || candidat.localisation || '';
+      pdfCandidat.teaser_package = document.getElementById('teaser-f-package')?.value.trim() || '';
+      pdfCandidat.teaser_preavis = document.getElementById('teaser-f-preavis')?.value.trim() || candidat.preavis || '';
+      pdfCandidat.teaser_teletravail = document.getElementById('teaser-f-teletravail')?.value.trim() || candidat.teletravail || '';
+      pdfCandidat.teaser_dispo = document.getElementById('teaser-f-dispo')?.value.trim() || '';
+      pdfCandidat.teaser_impact_strategique = document.getElementById('teaser-f-impact')?.value.trim() || '';
+      pdfCandidat.teaser_lecture_strategique = document.getElementById('teaser-f-lecture')?.value.trim() || '';
+      return pdfCandidat;
+    }
+
+    async function generateTeaserPdf() {
+      const pdfCandidat = buildPdfCandidat();
+      const [dsiResult, logoDataUrl] = await Promise.all([
+        candidat.profile_code ? DSIProfile.fetchProfile(candidat.profile_code) : null,
+        typeof PDFEngine.loadTalentLogo === 'function' ? PDFEngine.loadTalentLogo() : null,
+      ]);
+      return PDFEngine.generateTalentAImpact(pdfCandidat, {
+        dsiResult,
+        companyNames: allCompanyNames,
+        aiPitch: {
+          impact: pdfCandidat.teaser_impact_strategique,
+          lecture: pdfCandidat.teaser_lecture_strategique,
+        },
+        logoDataUrl,
+      });
+    }
+
+    // ── Preview button (new tab) ──
+    document.getElementById('teaser-preview-btn')?.addEventListener('click', async () => {
+      try {
+        UI.toast('G\u00e9n\u00e9ration de la pr\u00e9visualisation...');
+        const doc = await generateTeaserPdf();
+        const blobUrl = doc.output('bloburl');
+        window.open(blobUrl, '_blank');
+      } catch (e) {
+        console.error('Preview error:', e);
+        UI.toast('Erreur : ' + e.message, 'error');
+      }
+    });
+
+    // ── Download button ──
     document.getElementById('teaser-download-btn')?.addEventListener('click', async () => {
       try {
         UI.toast('G\u00e9n\u00e9ration du PDF...');
-
-        // Read current field values (not saved yet perhaps)
-        const synthese = document.getElementById('teaser-f-synthese')?.value.trim() || '';
-        const projet = document.getElementById('teaser-f-projet')?.value.trim() || '';
-
-        // Build overrides for candidat fields used by the PDF
-        const overrides = {
-          poste_cible: document.getElementById('teaser-f-poste-cible')?.value.trim() || candidat.poste_cible,
-          diplome: document.getElementById('teaser-f-formation')?.value.trim() || candidat.diplome,
-          preavis: document.getElementById('teaser-f-preavis')?.value.trim() || candidat.preavis,
-          teletravail: document.getElementById('teaser-f-teletravail')?.value.trim() || candidat.teletravail,
-        };
-        const customPackage = document.getElementById('teaser-f-package')?.value.trim() || '';
-        const customDispo = document.getElementById('teaser-f-dispo')?.value.trim() || '';
-
-        // Build candidat copy with overrides
-        const pdfCandidat = { ...candidat, ...overrides };
-        if (customDispo) {
-          pdfCandidat._teaser_dispo = customDispo;
-        }
-        if (customPackage) {
-          pdfCandidat._teaser_package = customPackage;
-        }
-
-        const [dsiResult, logoDataUrl] = await Promise.all([
-          candidat.profile_code ? DSIProfile.fetchProfile(candidat.profile_code) : null,
-          typeof PDFEngine.loadTalentLogo === 'function' ? PDFEngine.loadTalentLogo() : null,
-        ]);
-
-        const doc = PDFEngine.generateTalentAImpact(pdfCandidat, {
-          dsiResult,
-          companyNames: allCompanyNames,
-          aiPitch: { synthese, projet },
-          logoDataUrl,
-        });
-
+        const doc = await generateTeaserPdf();
         const filename = `Talent_a_Impact_${(candidat.poste_actuel || 'Candidat').replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
         PDFEngine.download(doc, filename);
         UI.toast('Teaser PDF t\u00e9l\u00e9charg\u00e9');
