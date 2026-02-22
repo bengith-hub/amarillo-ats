@@ -3016,7 +3016,7 @@ Ne mentionne AUCUN nom de personne ni d'entreprise.`;
       generateAIBlock(lectureSystemPrompt, 'teaser-f-lecture', 'teaser_lecture_strategique', document.getElementById('teaser-ai-lecture-btn'));
     });
 
-    // ── Build PDF candidat from current form values ──
+    // ── Build teaser data from current form values ──
     function buildPdfCandidat() {
       const pdfCandidat = { ...candidat };
       pdfCandidat.teaser_titre_accrocheur = document.getElementById('teaser-f-titre')?.value.trim() || candidat.teaser_titre_accrocheur || candidat.poste_actuel || '';
@@ -3025,55 +3025,79 @@ Ne mentionne AUCUN nom de personne ni d'entreprise.`;
       pdfCandidat.teaser_equipe = document.getElementById('teaser-f-equipe')?.value.trim() || '';
       pdfCandidat.teaser_budget = document.getElementById('teaser-f-budget')?.value.trim() || '';
       pdfCandidat.teaser_zone = document.getElementById('teaser-f-zone')?.value.trim() || candidat.localisation || '';
-      pdfCandidat.teaser_package = document.getElementById('teaser-f-package')?.value.trim() || '';
+      pdfCandidat.teaser_statut = document.getElementById('teaser-f-statut')?.value.trim() || '';
+      pdfCandidat.teaser_mobilite = document.getElementById('teaser-f-mobilite')?.value.trim() || '';
+      pdfCandidat.teaser_remuneration = document.getElementById('teaser-f-remuneration')?.value.trim() || '';
       pdfCandidat.teaser_preavis = document.getElementById('teaser-f-preavis')?.value.trim() || candidat.preavis || '';
-      pdfCandidat.teaser_teletravail = document.getElementById('teaser-f-teletravail')?.value.trim() || candidat.teletravail || '';
-      pdfCandidat.teaser_dispo = document.getElementById('teaser-f-dispo')?.value.trim() || '';
       pdfCandidat.teaser_impact_strategique = document.getElementById('teaser-f-impact')?.value.trim() || '';
       pdfCandidat.teaser_lecture_strategique = document.getElementById('teaser-f-lecture')?.value.trim() || '';
       return pdfCandidat;
     }
 
-    async function generateTeaserPdf() {
-      const pdfCandidat = buildPdfCandidat();
-      const [dsiResult, logoDataUrl] = await Promise.all([
-        candidat.profile_code ? DSIProfile.fetchProfile(candidat.profile_code) : null,
-        typeof PDFEngine.loadTalentLogo === 'function' ? PDFEngine.loadTalentLogo() : null,
-      ]);
-      return PDFEngine.generateTalentAImpact(pdfCandidat, {
-        dsiResult,
-        companyNames: allCompanyNames,
-        aiPitch: {
-          impact: pdfCandidat.teaser_impact_strategique,
-          lecture: pdfCandidat.teaser_lecture_strategique,
-        },
-        logoDataUrl,
-      });
+    // ── Construire l'objet teaserData pour le template HTML ──
+    function buildTeaserData() {
+      const c = buildPdfCandidat();
+
+      // Anonymiser le texte
+      const anon = (t) => _anon(t || '');
+
+      // Parser les bullet points depuis un textarea
+      const parseBullets = (text) => {
+        if (!text) return [];
+        return text.split('\n')
+          .map(l => l.trim())
+          .filter(l => l.length > 0)
+          .map(l => l.replace(/^[\u2022\u2023\u25E6\u2043\-\*]\s*/, ''));
+      };
+
+      // Métadonnées (colonnes horizontales)
+      const metadonnees = [];
+      if (c.teaser_fonction) metadonnees.push({ label: 'FONCTION', valeur: anon(c.teaser_fonction) });
+      if (c.teaser_zone) metadonnees.push({ label: 'ZONE', valeur: anon(c.teaser_zone) });
+      if (c.teaser_perimetre) metadonnees.push({ label: 'P\u00c9RIM\u00c8TRE', valeur: anon(c.teaser_perimetre) });
+      if (c.teaser_equipe) metadonnees.push({ label: '\u00c9QUIPE', valeur: anon(c.teaser_equipe) });
+      if (c.teaser_budget) metadonnees.push({ label: 'BUDGET IT', valeur: anon(c.teaser_budget) });
+
+      // Conditions
+      const conditions = [];
+      if (c.teaser_statut) conditions.push({ texte: anon(c.teaser_statut) });
+      if (c.teaser_mobilite) conditions.push({ label: 'Mobilit\u00e9', texte: anon(c.teaser_mobilite) });
+      if (c.teaser_remuneration) conditions.push({ label: 'R\u00e9mun\u00e9ration cible', texte: anon(c.teaser_remuneration) });
+      if (c.teaser_preavis) conditions.push({ label: 'Pr\u00e9avis', texte: anon(c.teaser_preavis) });
+
+      return {
+        titre_poste: anon(c.teaser_titre_accrocheur),
+        metadonnees,
+        impact_items: parseBullets(anon(c.teaser_impact_strategique)),
+        conditions,
+        lecture_items: parseBullets(anon(c.teaser_lecture_strategique)),
+      };
     }
 
-    // ── Preview button (new tab) ──
-    document.getElementById('teaser-preview-btn')?.addEventListener('click', async () => {
+    // ── Ouvrir le template HTML dans un nouvel onglet avec les données ──
+    function openTeaserTemplate() {
+      const data = buildTeaserData();
+      const encoded = btoa(encodeURIComponent(JSON.stringify(data)));
+      window.open('teaser-template.html?data=' + encoded, '_blank');
+    }
+
+    // ── Preview button (new tab — template HTML) ──
+    document.getElementById('teaser-preview-btn')?.addEventListener('click', () => {
       try {
-        UI.toast('G\u00e9n\u00e9ration de la pr\u00e9visualisation...');
-        const doc = await generateTeaserPdf();
-        const blobUrl = doc.output('bloburl');
-        window.open(blobUrl, '_blank');
+        openTeaserTemplate();
       } catch (e) {
         console.error('Preview error:', e);
         UI.toast('Erreur : ' + e.message, 'error');
       }
     });
 
-    // ── Download button ──
-    document.getElementById('teaser-download-btn')?.addEventListener('click', async () => {
+    // ── Download button (ouvre aussi le template HTML pour impression PDF) ──
+    document.getElementById('teaser-download-btn')?.addEventListener('click', () => {
       try {
-        UI.toast('G\u00e9n\u00e9ration du PDF...');
-        const doc = await generateTeaserPdf();
-        const filename = `Talent_a_Impact_${(candidat.poste_actuel || 'Candidat').replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
-        PDFEngine.download(doc, filename);
-        UI.toast('Teaser PDF t\u00e9l\u00e9charg\u00e9');
+        openTeaserTemplate();
+        UI.toast('Utilisez Ctrl+P ou le bouton "Imprimer" pour enregistrer en PDF');
       } catch (e) {
-        console.error('Teaser PDF error:', e);
+        console.error('Teaser error:', e);
         UI.toast('Erreur : ' + e.message, 'error');
       }
     });
