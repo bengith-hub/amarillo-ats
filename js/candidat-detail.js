@@ -282,7 +282,36 @@ R\u00E8gles :
     const durePoste = computeDuration(candidat.debut_poste_actuel);
     const totalExp = computeDuration(candidat.debut_carriere);
 
+    // Check if CV completion feature is available
+    const cvDoc = (candidat.documents || []).find(d => d.type === 'CV' && d.url);
+    const hasDriveCv = cvDoc && typeof GoogleDrive !== 'undefined' && GoogleDrive.isConfigured();
+    const hasOpenAI = typeof CVParser !== 'undefined' && CVParser.getOpenAIKey && CVParser.getOpenAIKey();
+    const showCvCompletion = hasDriveCv || hasOpenAI;
+
     document.getElementById('tab-profil').innerHTML = `
+      ${showCvCompletion ? `
+      <div class="card" data-accent="blue" id="cv-completion-section" style="margin-bottom:16px;">
+        <div class="card-header">
+          <h2>Compléter le profil depuis le CV</h2>
+          <span style="font-size:0.7rem;color:#94a3b8;">gpt-4o-mini</span>
+        </div>
+        <div class="card-body" style="padding:16px;">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            ${hasDriveCv ? `
+            <button class="btn btn-primary" id="btn-cv-complete-drive">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              Compléter depuis le CV (Drive)
+            </button>` : ''}
+            <div id="cv-complete-drop-zone" style="border:2px dashed #e2e8f0;border-radius:8px;padding:10px 16px;text-align:center;cursor:pointer;transition:all 0.15s;display:inline-block;">
+              <span style="font-size:0.8125rem;color:#64748b;">Ou glissez un CV ici</span>
+              <input type="file" id="cv-complete-file" accept=".pdf,.txt,.text,.md" style="display:none;" />
+            </div>
+            ${!hasOpenAI ? `
+            <button class="btn btn-sm btn-secondary" id="btn-cv-complete-config" style="font-size:0.6875rem;">Configurer clé OpenAI</button>` : ''}
+          </div>
+          <div id="cv-complete-status" style="margin-top:8px;font-size:0.8125rem;"></div>
+        </div>
+      </div>` : ''}
       <div class="card" data-accent="green">
         <div class="card-header">
           <h2>Informations générales</h2>
@@ -463,6 +492,242 @@ R\u00E8gles :
         { key: 'notes', label: 'Notes', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' }
       ]
     });
+
+    // =============================================
+    // CV Profile Completion — event handlers
+    // =============================================
+
+    if (showCvCompletion) {
+      const cvCompleteStatus = document.getElementById('cv-complete-status');
+      const cvCompleteDropZone = document.getElementById('cv-complete-drop-zone');
+      const cvCompleteFileInput = document.getElementById('cv-complete-file');
+
+      // Process a CV file: extract text, call OpenAI, show review modal
+      async function processCvForCompletion(file) {
+        const driveBtn = document.getElementById('btn-cv-complete-drive');
+        if (driveBtn) driveBtn.disabled = true;
+        cvCompleteDropZone.style.pointerEvents = 'none';
+        cvCompleteStatus.innerHTML = '<span style="color:#64748b;"><span class="ia-spinner"></span> Analyse du CV en cours...</span>';
+
+        try {
+          if (!CVParser.getOpenAIKey()) {
+            CVParser.showKeyConfigModal(() => {
+              // Retry after key is set
+              processCvForCompletion(file);
+            });
+            cvCompleteStatus.innerHTML = '';
+            if (driveBtn) driveBtn.disabled = false;
+            cvCompleteDropZone.style.pointerEvents = '';
+            return;
+          }
+
+          const text = await CVParser.parseFile(file);
+          if (!text || text.trim().length < 20) throw new Error('Fichier vide ou illisible');
+
+          const extracted = await CVParser.extractWithOpenAI(text);
+          showProfileReviewModal(extracted);
+
+          cvCompleteStatus.innerHTML = '';
+        } catch (err) {
+          cvCompleteStatus.innerHTML = `<span style="color:#dc2626;">Erreur : ${UI.escHtml(err.message)}</span>`;
+        } finally {
+          const driveBtn2 = document.getElementById('btn-cv-complete-drive');
+          if (driveBtn2) driveBtn2.disabled = false;
+          if (cvCompleteDropZone) cvCompleteDropZone.style.pointerEvents = '';
+        }
+      }
+
+      // Drive button
+      document.getElementById('btn-cv-complete-drive')?.addEventListener('click', async () => {
+        const match = cvDoc.url.match(/\/d\/([^/]+)/);
+        if (!match) { UI.toast('URL Drive invalide', 'error'); return; }
+
+        const driveBtn = document.getElementById('btn-cv-complete-drive');
+        driveBtn.disabled = true;
+        cvCompleteStatus.innerHTML = '<span style="color:#64748b;"><span class="ia-spinner"></span> Téléchargement depuis Drive...</span>';
+
+        try {
+          await GoogleDrive.authenticate();
+          const downloaded = await GoogleDrive.downloadFile(match[1]);
+          const file = new File([downloaded.blob], downloaded.name, { type: downloaded.mimeType });
+          await processCvForCompletion(file);
+        } catch (err) {
+          cvCompleteStatus.innerHTML = `<span style="color:#dc2626;">Erreur Drive : ${UI.escHtml(err.message)}</span>`;
+          driveBtn.disabled = false;
+        }
+      });
+
+      // Drop zone
+      cvCompleteDropZone.addEventListener('click', () => cvCompleteFileInput.click());
+      cvCompleteDropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        cvCompleteDropZone.style.borderColor = '#3b82f6';
+        cvCompleteDropZone.style.background = '#eff6ff';
+      });
+      cvCompleteDropZone.addEventListener('dragleave', () => {
+        cvCompleteDropZone.style.borderColor = '#e2e8f0';
+        cvCompleteDropZone.style.background = '';
+      });
+      cvCompleteDropZone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        cvCompleteDropZone.style.borderColor = '#e2e8f0';
+        cvCompleteDropZone.style.background = '';
+        const file = e.dataTransfer.files[0];
+        if (file) await processCvForCompletion(file);
+      });
+      cvCompleteFileInput.addEventListener('change', async () => {
+        if (cvCompleteFileInput.files[0]) await processCvForCompletion(cvCompleteFileInput.files[0]);
+        cvCompleteFileInput.value = '';
+      });
+
+      // OpenAI key config button
+      document.getElementById('btn-cv-complete-config')?.addEventListener('click', () => {
+        CVParser.showKeyConfigModal();
+      });
+    }
+
+    // Profile review modal — shows extracted CV data vs current values
+    function showProfileReviewModal(extracted) {
+      const PROFILE_FIELDS = [
+        { key: 'email', label: 'Email' },
+        { key: 'telephone', label: 'Téléphone' },
+        { key: 'linkedin', label: 'LinkedIn' },
+        { key: 'adresse_ligne1', label: 'Adresse' },
+        { key: 'code_postal', label: 'Code postal' },
+        { key: 'ville', label: 'Ville' },
+        { key: 'localisation', label: 'Localisation' },
+        { key: 'poste_actuel', label: 'Poste actuel' },
+        { key: 'entreprise_nom', label: 'Entreprise actuelle', candidatKey: 'entreprise_actuelle_id', isEntreprise: true },
+        { key: 'diplome', label: 'Diplôme' },
+        { key: 'date_naissance', label: 'Date de naissance' },
+        { key: 'debut_carriere', label: 'Début de carrière' },
+        { key: 'debut_poste_actuel', label: 'Prise de poste actuel' },
+        { key: 'synthese_30s', label: 'Synthèse 30 secondes' },
+        { key: 'notes', label: 'Notes (profil CV)' },
+      ];
+
+      // Resolve current entreprise name for display
+      const currentEntreprise = candidat.entreprise_actuelle_id
+        ? Store.resolve('entreprises', candidat.entreprise_actuelle_id)
+        : null;
+      const currentEntrepriseNom = currentEntreprise ? (currentEntreprise.nom || currentEntreprise.displayName || '') : '';
+
+      // Build list of fields with changes
+      const changes = [];
+      for (const f of PROFILE_FIELDS) {
+        const extractedVal = (extracted[f.key] || '').toString().trim();
+        if (!extractedVal) continue; // Skip if CV didn't extract anything
+
+        let currentVal;
+        if (f.isEntreprise) {
+          currentVal = currentEntrepriseNom;
+        } else {
+          currentVal = (candidat[f.candidatKey || f.key] || '').toString().trim();
+        }
+
+        // Only show if there's a difference
+        if (extractedVal === currentVal) continue;
+
+        changes.push({
+          ...f,
+          currentVal,
+          extractedVal,
+          isEmpty: !currentVal,
+        });
+      }
+
+      if (changes.length === 0) {
+        UI.toast('Aucun champ manquant à compléter — le profil est déjà à jour', 'info');
+        return;
+      }
+
+      const bodyHtml = `
+        <div style="margin-bottom:12px;font-size:0.8125rem;color:#475569;">
+          Cochez les champs à mettre à jour. Les valeurs proposées sont éditables.
+        </div>
+        ${changes.map((c, i) => `
+          <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #f1f5f9;">
+            <input type="checkbox" id="cv-field-check-${i}" ${c.isEmpty ? 'checked' : ''} style="margin-top:4px;accent-color:#3b82f6;" />
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                <label for="cv-field-check-${i}" style="font-size:0.8125rem;font-weight:600;color:#1e293b;cursor:pointer;">${c.label}</label>
+                ${c.isEmpty
+                  ? '<span style="font-size:0.6875rem;color:#059669;background:#ecfdf5;padding:1px 6px;border-radius:4px;">nouveau</span>'
+                  : '<span style="font-size:0.6875rem;color:#d97706;background:#fffbeb;padding:1px 6px;border-radius:4px;">modification</span>'}
+              </div>
+              ${c.currentVal ? `<div style="font-size:0.75rem;color:#94a3b8;text-decoration:line-through;margin-bottom:4px;">${UI.escHtml(c.currentVal)}</div>` : ''}
+              <input type="text" id="cv-field-val-${i}" value="${UI.escHtml(c.extractedVal)}" style="width:100%;font-size:0.8125rem;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-family:inherit;" />
+            </div>
+          </div>
+        `).join('')}
+      `;
+
+      UI.modal('Compléter le profil depuis le CV', bodyHtml, {
+        width: 600,
+        saveLabel: 'Appliquer les modifications',
+        onSave: async (overlay) => {
+          const updates = {};
+          let entrepriseNom = null;
+
+          for (let i = 0; i < changes.length; i++) {
+            const checkbox = overlay.querySelector(`#cv-field-check-${i}`);
+            if (!checkbox || !checkbox.checked) continue;
+
+            const val = overlay.querySelector(`#cv-field-val-${i}`).value.trim();
+            if (!val) continue;
+
+            const field = changes[i];
+
+            if (field.isEntreprise) {
+              entrepriseNom = val;
+            } else if (field.key === 'diplome') {
+              // Validate diploma against allowed values
+              const allowedDiplomes = Referentiels.get('candidat_diplomes');
+              if (allowedDiplomes.includes(val)) {
+                updates[field.candidatKey || field.key] = val;
+              }
+            } else {
+              updates[field.candidatKey || field.key] = val;
+            }
+          }
+
+          // Resolve entreprise
+          if (entrepriseNom) {
+            const entreprises = Store.get('entreprises');
+            const nomLower = entrepriseNom.toLowerCase().trim();
+            const match = entreprises.find(e => (e.nom || '').toLowerCase().trim() === nomLower);
+
+            if (match) {
+              updates.entreprise_actuelle_id = match.id;
+            } else {
+              const newEnt = {
+                id: API.generateId('ent'),
+                nom: entrepriseNom,
+                secteur: '', taille: '', ca: '', localisation: updates.localisation || candidat.localisation || '',
+                priorite: '', statut: 'À cibler',
+                site_web: '', telephone: '', angle_approche: '', source: '', notes: '',
+                dernier_contact: null, prochaine_relance: null,
+                created_at: new Date().toISOString(),
+              };
+              await Store.add('entreprises', newEnt);
+              updates.entreprise_actuelle_id = newEnt.id;
+              UI.toast('Entreprise créée : ' + newEnt.nom, 'info');
+            }
+          }
+
+          if (Object.keys(updates).length === 0) {
+            UI.toast('Aucune modification sélectionnée', 'info');
+            return;
+          }
+
+          await Store.update('candidats', id, updates);
+          Object.assign(candidat, updates);
+          UI.toast(`${Object.keys(updates).length} champ(s) mis à jour depuis le CV`);
+          renderProfil();
+          refreshDependentViews();
+        }
+      });
+    }
   }
 
   function renderEntretien() {
