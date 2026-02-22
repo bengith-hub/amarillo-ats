@@ -29,6 +29,7 @@
   renderPresentations();
   renderReferences();
   renderDocuments();
+  renderTeaser();
   renderSidebar();
   renderEntreprisesCibles();
   renderDSIProfile();
@@ -82,114 +83,12 @@
       }
     });
 
-    document.getElementById('btn-teaser-pdf')?.addEventListener('click', async () => {
-      try {
-        UI.toast('Pr\u00E9paration du Teaser...');
-
-        // Fetch DSI + company names en parallèle
-        const [dsiResult, companyNames] = await Promise.all([
-          candidat.profile_code ? DSIProfile.fetchProfile(candidat.profile_code) : null,
-          Promise.resolve(Store.get('entreprises').map(e => e.nom).filter(Boolean)),
-        ]);
-
-        // Réécriture IA des notes internes (avec fallback silencieux)
-        let aiPitch = null;
-        const hasNotes = candidat.synthese_30s || candidat.parcours_cible || candidat.motivation_drivers;
-        const apiKey = typeof CVParser !== 'undefined' && CVParser.getOpenAIKey ? CVParser.getOpenAIKey() : null;
-
-        if (apiKey && hasNotes && typeof InterviewAnalyzer !== 'undefined') {
-          try {
-            UI.toast('R\u00E9\u00E9criture IA en cours...');
-            const systemPrompt = `Tu es un consultant senior en executive search chez Amarillo Search.
-On te donne des notes internes de recruteur sur un candidat.
-R\u00E9\u00E9cris-les en 2 sections pour un document client professionnel ("Talent \u00E0 Impact").
-
-R\u00E9ponds UNIQUEMENT avec un JSON :
-{
-  "synthese": "...",
-  "projet": "..."
-}
-
-synthese (3-4 phrases max) : Pitch percutant du profil. Mets en avant les forces, l'exp\u00E9rience cl\u00E9, et la valeur ajout\u00E9e. Ton positif et vendeur. Ne mentionne AUCUN nom de personne ni d'entreprise.
-
-projet (3-4 phrases max) : Ce que le candidat recherche et ce qui le motive, formul\u00E9 de mani\u00E8re \u00E0 rassurer un client. Ton professionnel. Ne mentionne AUCUN nom de personne ni d'entreprise.
-
-R\u00E8gles :
-- Texte brut, pas de markdown, pas de tirets, pas de listes
-- Fran\u00E7ais professionnel
-- JAMAIS de nom de candidat, d'entreprise ou de coordonn\u00E9es
-- Si les notes sont vides ou insuffisantes, retourne des cha\u00EEnes vides`;
-
-            const notesConcat = [
-              candidat.synthese_30s || '',
-              candidat.parcours_cible || '',
-              candidat.motivation_drivers || ''
-            ].filter(Boolean).join('\n\n');
-
-            const userPrompt = `Notes d'entretien :\n${notesConcat.substring(0, 6000)}\n\nPoste actuel : ${candidat.poste_actuel || 'Non renseign\u00E9'}`;
-
-            aiPitch = await InterviewAnalyzer._callOpenAI(systemPrompt, userPrompt);
-          } catch (aiErr) {
-            console.warn('AI rewriting failed, using raw notes:', aiErr.message);
-            aiPitch = null;
-          }
-        }
-
-        // Préparer les textes pour le modal d'édition
-        const allCompanyNames = [...companyNames];
-        if (candidat.entreprise_nom) allCompanyNames.push(candidat.entreprise_nom);
-        if (candidat.entreprise_actuel) allCompanyNames.push(candidat.entreprise_actuel);
-
-        const _anon = (t) => {
-          if (!t) return '';
-          let r = t;
-          const sorted = [...allCompanyNames].filter(n => n && n.length >= 2).sort((a, b) => b.length - a.length);
-          for (const name of sorted) {
-            const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            r = r.replace(new RegExp(esc, 'gi'), '[entreprise confidentielle]');
-          }
-          return r;
-        };
-
-        const defaultSynthese = aiPitch?.synthese
-          || _anon(candidat.synthese_30s || '');
-        const defaultProjet = aiPitch?.projet
-          || [_anon(candidat.parcours_cible || ''), _anon(candidat.motivation_drivers || '')].filter(Boolean).join('\n\n');
-
-        // Afficher le modal d'édition avant génération
-        const bodyHtml = `
-          <p style="font-size:0.8125rem;color:#64748b;margin-bottom:16px;">
-            Relisez et corrigez le contenu avant de g\u00E9n\u00E9rer le PDF. ${aiPitch ? '<span style="color:#16a36a;font-weight:600;">Texte retravaillé par IA.</span>' : '<span style="color:#e8a838;font-weight:600;">Texte brut (pas de cl\u00E9 IA configur\u00E9e).</span>'}
-          </p>
-          <div class="form-group">
-            <label style="font-weight:600;">Synth\u00E8se <span style="font-weight:400;color:#94a3b8;font-size:0.75rem;">(pitch vendeur du profil)</span></label>
-            <textarea id="teaser-synthese" rows="5" style="width:100%;resize:vertical;font-size:0.875rem;line-height:1.5;padding:10px;border:1px solid #e2e8f0;border-radius:8px;">${UI.escHtml(defaultSynthese)}</textarea>
-          </div>
-          <div class="form-group" style="margin-top:12px;">
-            <label style="font-weight:600;">Projet professionnel <span style="font-weight:400;color:#94a3b8;font-size:0.75rem;">(motivations et recherche)</span></label>
-            <textarea id="teaser-projet" rows="5" style="width:100%;resize:vertical;font-size:0.875rem;line-height:1.5;padding:10px;border:1px solid #e2e8f0;border-radius:8px;">${UI.escHtml(defaultProjet)}</textarea>
-          </div>
-        `;
-
-        UI.modal('Teaser \u2014 Talent \u00E0 Impact', bodyHtml, {
-          saveLabel: 'G\u00E9n\u00E9rer le PDF',
-          width: 680,
-          onSave: (overlay) => {
-            const synthese = overlay.querySelector('#teaser-synthese').value.trim();
-            const projet = overlay.querySelector('#teaser-projet').value.trim();
-
-            const finalPitch = { synthese, projet };
-            const doc = PDFEngine.generateTalentAImpact(candidat, { dsiResult, companyNames, aiPitch: finalPitch });
-            const filename = `Talent_a_Impact_${(candidat.poste_actuel || 'Candidat').replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
-            PDFEngine.download(doc, filename);
-            UI.toast('Teaser PDF t\u00E9l\u00E9charg\u00E9');
-          }
-        });
-
-      } catch (e) {
-        console.error('Teaser PDF generation error:', e);
-        UI.toast('Erreur lors de la g\u00E9n\u00E9ration du teaser : ' + e.message, 'error');
-      }
+    document.getElementById('btn-teaser-pdf')?.addEventListener('click', () => {
+      // Navigate to Teaser tab
+      document.querySelectorAll('#candidat-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.querySelector('[data-tab="tab-teaser"]')?.classList.add('active');
+      document.getElementById('tab-teaser')?.classList.add('active');
     });
 
     document.getElementById('btn-dossier-pdf')?.addEventListener('click', async () => {
@@ -1887,5 +1786,218 @@ R\u00E8gles :
         </div>
       </div>
     `;
+  }
+
+  // ============================================================
+  // TEASER TAB — Editable content + AI generation + PDF download
+  // ============================================================
+  function renderTeaser() {
+    const container = document.getElementById('tab-teaser');
+    if (!container) return;
+
+    // Helper to anonymize text
+    const allCompanyNames = Store.get('entreprises').map(e => e.nom).filter(Boolean);
+    if (candidat.entreprise_nom) allCompanyNames.push(candidat.entreprise_nom);
+    if (candidat.entreprise_actuel) allCompanyNames.push(candidat.entreprise_actuel);
+    const _anon = (t) => PDFEngine.anonymizeText ? PDFEngine.anonymizeText(t, allCompanyNames) : (t || '');
+
+    // Pre-fill from saved teaser fields or raw data
+    const savedSynthese = candidat.teaser_synthese || '';
+    const savedProjet = candidat.teaser_projet || '';
+    const savedPosteCible = candidat.teaser_poste_cible || candidat.poste_cible || '';
+    const savedFormation = candidat.teaser_formation || candidat.diplome || '';
+    const savedPackage = candidat.teaser_package || PDFEngine.salaryBand(candidat.package_souhaite_min, candidat.package_souhaite) || '';
+    const savedPreavis = candidat.teaser_preavis || candidat.preavis || '';
+    const savedTeletravail = candidat.teaser_teletravail || candidat.teletravail || '';
+    const savedDispo = candidat.teaser_dispo || '';
+
+    container.innerHTML = `
+      <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" id="teaser-ai-btn" style="background:#1e293b;color:#FECC02;border-color:#1e293b;">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          G\u00e9n\u00e9rer via IA
+        </button>
+        <button class="btn btn-secondary" id="teaser-download-btn" style="background:#2D6A4F;color:#fff;border-color:#2D6A4F;">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          T\u00e9l\u00e9charger le Teaser
+        </button>
+      </div>
+
+      <div class="card" data-accent="gold" style="margin-bottom:16px;">
+        <div class="card-header"><h2>Synth\u00e8se Teaser</h2><span class="edit-hint">pitch vendeur du profil</span></div>
+        <div class="card-body">
+          <textarea id="teaser-f-synthese" rows="5" style="width:100%;resize:vertical;font-size:0.875rem;line-height:1.6;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-family:inherit;">${UI.escHtml(savedSynthese)}</textarea>
+        </div>
+      </div>
+
+      <div class="card" data-accent="blue" style="margin-bottom:16px;">
+        <div class="card-header"><h2>Projet professionnel</h2><span class="edit-hint">motivations et recherche</span></div>
+        <div class="card-body">
+          <textarea id="teaser-f-projet" rows="5" style="width:100%;resize:vertical;font-size:0.875rem;line-height:1.6;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-family:inherit;">${UI.escHtml(savedProjet)}</textarea>
+        </div>
+      </div>
+
+      <div class="card" data-accent="green" style="margin-bottom:16px;">
+        <div class="card-header"><h2>Informations cl\u00e9s</h2><span class="edit-hint">encarts du PDF</span></div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group"><label>Poste cible</label><input type="text" id="teaser-f-poste-cible" value="${UI.escHtml(savedPosteCible)}" /></div>
+            <div class="form-group"><label>Formation</label><input type="text" id="teaser-f-formation" value="${UI.escHtml(savedFormation)}" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Package souhait\u00e9</label><input type="text" id="teaser-f-package" value="${UI.escHtml(savedPackage)}" /></div>
+            <div class="form-group"><label>Pr\u00e9avis</label><input type="text" id="teaser-f-preavis" value="${UI.escHtml(savedPreavis)}" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>T\u00e9l\u00e9travail</label><input type="text" id="teaser-f-teletravail" value="${UI.escHtml(savedTeletravail)}" /></div>
+            <div class="form-group"><label>Disponibilit\u00e9</label><input type="text" id="teaser-f-dispo" value="${UI.escHtml(savedDispo)}" /></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Auto-save on blur for all teaser fields
+    const fieldMap = {
+      'teaser-f-synthese': 'teaser_synthese',
+      'teaser-f-projet': 'teaser_projet',
+      'teaser-f-poste-cible': 'teaser_poste_cible',
+      'teaser-f-formation': 'teaser_formation',
+      'teaser-f-package': 'teaser_package',
+      'teaser-f-preavis': 'teaser_preavis',
+      'teaser-f-teletravail': 'teaser_teletravail',
+      'teaser-f-dispo': 'teaser_dispo',
+    };
+
+    for (const [elemId, fieldKey] of Object.entries(fieldMap)) {
+      const el = document.getElementById(elemId);
+      if (!el) continue;
+      el.addEventListener('blur', async () => {
+        const val = el.value.trim();
+        if (candidat[fieldKey] !== val) {
+          candidat[fieldKey] = val;
+          await Store.update('candidats', id, { [fieldKey]: val });
+        }
+      });
+    }
+
+    // AI generation button
+    document.getElementById('teaser-ai-btn')?.addEventListener('click', async () => {
+      const apiKey = typeof CVParser !== 'undefined' && CVParser.getOpenAIKey ? CVParser.getOpenAIKey() : null;
+      if (!apiKey) {
+        UI.toast('Cl\u00e9 OpenAI non configur\u00e9e. Allez dans Configuration.', 'error');
+        return;
+      }
+      const hasNotes = candidat.synthese_30s || candidat.parcours_cible || candidat.motivation_drivers;
+      if (!hasNotes) {
+        UI.toast('Aucune note d\'entretien \u00e0 r\u00e9\u00e9crire.', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('teaser-ai-btn');
+      btn.disabled = true;
+      btn.textContent = 'G\u00e9n\u00e9ration en cours...';
+
+      try {
+        const systemPrompt = `Tu es un consultant senior en executive search chez Amarillo Search.
+On te donne des notes internes de recruteur sur un candidat.
+Reecris-les en 2 sections pour un document client professionnel ("Talent a Impact").
+
+Reponds UNIQUEMENT avec un JSON :
+{
+  "synthese": "...",
+  "projet": "..."
+}
+
+synthese (3-4 phrases max) : Pitch percutant du profil. Mets en avant les forces, l'experience cle, et la valeur ajoutee. Ton positif et vendeur. Ne mentionne AUCUN nom de personne ni d'entreprise.
+
+projet (3-4 phrases max) : Ce que le candidat recherche et ce qui le motive, formule de maniere a rassurer un client. Ton professionnel. Ne mentionne AUCUN nom de personne ni d'entreprise.
+
+Regles :
+- Texte brut, pas de markdown, pas de tirets, pas de listes
+- Francais professionnel
+- JAMAIS de nom de candidat, d'entreprise ou de coordonnees
+- Si les notes sont vides ou insuffisantes, retourne des chaines vides`;
+
+        const notesConcat = [
+          candidat.synthese_30s || '',
+          candidat.parcours_cible || '',
+          candidat.motivation_drivers || ''
+        ].filter(Boolean).join('\n\n');
+
+        const userPrompt = `Notes d'entretien :\n${notesConcat.substring(0, 6000)}\n\nPoste actuel : ${candidat.poste_actuel || 'Non renseigne'}`;
+
+        const aiPitch = await InterviewAnalyzer._callOpenAI(systemPrompt, userPrompt);
+
+        if (aiPitch?.synthese) {
+          const synEl = document.getElementById('teaser-f-synthese');
+          synEl.value = _anon(aiPitch.synthese);
+          candidat.teaser_synthese = synEl.value;
+          await Store.update('candidats', id, { teaser_synthese: synEl.value });
+        }
+        if (aiPitch?.projet) {
+          const projEl = document.getElementById('teaser-f-projet');
+          projEl.value = _anon(aiPitch.projet);
+          candidat.teaser_projet = projEl.value;
+          await Store.update('candidats', id, { teaser_projet: projEl.value });
+        }
+
+        UI.toast('Texte g\u00e9n\u00e9r\u00e9 par IA et anonymis\u00e9');
+      } catch (e) {
+        console.error('AI generation error:', e);
+        UI.toast('Erreur IA : ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> G\u00e9n\u00e9rer via IA`;
+      }
+    });
+
+    // Download button
+    document.getElementById('teaser-download-btn')?.addEventListener('click', async () => {
+      try {
+        UI.toast('G\u00e9n\u00e9ration du PDF...');
+
+        // Read current field values (not saved yet perhaps)
+        const synthese = document.getElementById('teaser-f-synthese')?.value.trim() || '';
+        const projet = document.getElementById('teaser-f-projet')?.value.trim() || '';
+
+        // Build overrides for candidat fields used by the PDF
+        const overrides = {
+          poste_cible: document.getElementById('teaser-f-poste-cible')?.value.trim() || candidat.poste_cible,
+          diplome: document.getElementById('teaser-f-formation')?.value.trim() || candidat.diplome,
+          preavis: document.getElementById('teaser-f-preavis')?.value.trim() || candidat.preavis,
+          teletravail: document.getElementById('teaser-f-teletravail')?.value.trim() || candidat.teletravail,
+        };
+        const customPackage = document.getElementById('teaser-f-package')?.value.trim() || '';
+        const customDispo = document.getElementById('teaser-f-dispo')?.value.trim() || '';
+
+        // Build candidat copy with overrides
+        const pdfCandidat = { ...candidat, ...overrides };
+        if (customDispo) {
+          pdfCandidat._teaser_dispo = customDispo;
+        }
+        if (customPackage) {
+          pdfCandidat._teaser_package = customPackage;
+        }
+
+        const [dsiResult, logoDataUrl] = await Promise.all([
+          candidat.profile_code ? DSIProfile.fetchProfile(candidat.profile_code) : null,
+          typeof PDFEngine.loadTalentLogo === 'function' ? PDFEngine.loadTalentLogo() : null,
+        ]);
+
+        const doc = PDFEngine.generateTalentAImpact(pdfCandidat, {
+          dsiResult,
+          companyNames: allCompanyNames,
+          aiPitch: { synthese, projet },
+          logoDataUrl,
+        });
+
+        const filename = `Talent_a_Impact_${(candidat.poste_actuel || 'Candidat').replace(/[^a-zA-Z0-9\u00C0-\u024F]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+        PDFEngine.download(doc, filename);
+        UI.toast('Teaser PDF t\u00e9l\u00e9charg\u00e9');
+      } catch (e) {
+        console.error('Teaser PDF error:', e);
+        UI.toast('Erreur : ' + e.message, 'error');
+      }
+    });
   }
 })();
