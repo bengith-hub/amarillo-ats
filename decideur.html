@@ -214,7 +214,7 @@
         fields: [
           { key: 'email', label: 'Email', type: 'text', render: (v) => v ? `<a href="mailto:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
           { key: 'telephone', label: 'Téléphone', type: 'text', render: (v) => v ? `<a href="tel:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
-          { key: 'linkedin', label: 'LinkedIn', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(v)}" target="_blank" class="entity-link">Profil LinkedIn</a>` : '' },
+          { key: 'linkedin', label: 'LinkedIn', type: 'text', render: (v) => v ? UI.linkedinBadge(v, { compact: true }) : '' },
         ]
       });
 
