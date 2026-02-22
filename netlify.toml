@@ -4,6 +4,11 @@
 [functions]
   directory = "netlify/functions"
 
-# Les bin IDs JSONBin sont en fallback dans la function (memes valeurs que config.js).
-# Pour overrider, definir JSONBIN_API_KEY, JSONBIN_CANDIDATS_BIN, JSONBIN_ACTIONS_BIN
-# dans Netlify dashboard > Site settings > Environment variables.
+# Les bin IDs JSONBin sont en fallback dans les functions (memes valeurs que config.js).
+# Pour overrider, definir dans Netlify dashboard > Site settings > Environment variables :
+#   JSONBIN_API_KEY, JSONBIN_CANDIDATS_BIN, JSONBIN_ACTIONS_BIN
+#
+# Pour le backup automatique quotidien (scheduled-backup.js), definir aussi :
+#   JSONBIN_BACKUP_BIN — ID du bin JSONBin pour stocker les snapshots
+#   (Optionnel) JSONBIN_ENTREPRISES_BIN, JSONBIN_DECIDEURS_BIN, JSONBIN_MISSIONS_BIN,
+#   JSONBIN_FACTURATION_BIN, JSONBIN_REFERENCES_BIN, JSONBIN_NOTES_BIN
