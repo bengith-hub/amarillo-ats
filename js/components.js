@@ -57,6 +57,11 @@ const UI = (() => {
     'Décideur': 'badge-decideur',
     'Influenceur': 'badge-influenceur',
     'Prescripteur': 'badge-prescripteur',
+    // Relations entre entreprises
+    'Société mère': 'badge-societe-mere',
+    'Filiale': 'badge-filiale',
+    'Même groupe': 'badge-meme-groupe',
+    'Partenaire': 'badge-partenaire',
   };
 
   // Generate a consistent color for values not in BADGE_MAP

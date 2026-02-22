@@ -1280,6 +1280,12 @@ body {
 .badge-en-relation { background: #dbeafe; color: #2563eb; }
 .badge-champion { background: #dcfce7; color: #16a34a; }
 
+/* Relation types badges */
+.badge-societe-mere { background: #e0e7ff; color: #4338ca; }
+.badge-filiale { background: #dbeafe; color: #2563eb; }
+.badge-meme-groupe { background: #f3e8ff; color: #7c3aed; }
+.badge-partenaire { background: #fef3c7; color: #b45309; }
+
 /* Priority badges for decideurs */
 .badge-decideur { background: #fee2e2; color: #dc2626; }
 .badge-influenceur { background: #FFF8D6; color: #c9a000; }
