@@ -41,7 +41,9 @@ const Backup = (() => {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    localStorage.setItem(LS_LAST_BACKUP, new Date().toISOString());
+    const now = new Date().toISOString();
+    localStorage.setItem(LS_LAST_BACKUP, now);
+    localStorage.setItem('ats_backup_last_success', now);
     return counts;
   }
 
@@ -175,7 +177,9 @@ const Backup = (() => {
 
     const result = await GoogleDrive.uploadFile(file, folderId);
 
-    localStorage.setItem(LS_LAST_BACKUP, new Date().toISOString());
+    const now = new Date().toISOString();
+    localStorage.setItem(LS_LAST_BACKUP, now);
+    localStorage.setItem('ats_backup_last_success', now);
 
     return {
       fileName,
@@ -292,7 +296,18 @@ const Backup = (() => {
       container.snapshots = container.snapshots.slice(0, MAX_SNAPSHOTS);
     }
 
+    // Update status for monitoring
+    container.status = {
+      last_success: new Date().toISOString(),
+      last_run: new Date().toISOString(),
+      result: 'ok',
+      error: null
+    };
+
     await _saveSnapshots(container);
+
+    localStorage.setItem('ats_backup_last_success', new Date().toISOString());
+    localStorage.removeItem('ats_backup_last_error');
 
     return snapshot;
   }

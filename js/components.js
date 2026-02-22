@@ -1766,3 +1766,207 @@ if (typeof Store !== 'undefined' && Store.onSyncError) {
   btn.addEventListener('click', toggle);
   overlay.addEventListener('click', close);
 })();
+
+// ─── Backup Health Monitor ──────────────────────────────
+// Checks backup status on every page load and shows a warning banner
+// if the last successful backup is older than 48 hours.
+// Uses localStorage to avoid excessive API calls (checks bin every 6h max).
+(function() {
+  const STALE_THRESHOLD = 48 * 60 * 60 * 1000; // 48h
+  const CHECK_INTERVAL = 6 * 60 * 60 * 1000;   // 6h between API checks
+  const DISMISS_DURATION = 24 * 60 * 60 * 1000; // 24h dismiss
+
+  const LS_LAST_SUCCESS = 'ats_backup_last_success';
+  const LS_LAST_CHECK   = 'ats_backup_monitor_check';
+  const LS_DISMISSED    = 'ats_backup_alert_dismissed';
+  const LS_LAST_ERROR   = 'ats_backup_last_error';
+
+  function init() {
+    if (typeof API === 'undefined' || !API.isConfigured()) return;
+    if (typeof ATS_CONFIG === 'undefined') return;
+
+    const now = Date.now();
+
+    // Check if alert was dismissed recently
+    const dismissed = localStorage.getItem(LS_DISMISSED);
+    if (dismissed && (now - parseInt(dismissed)) < DISMISS_DURATION) return;
+
+    // Check localStorage for cached status
+    const lastSuccess = localStorage.getItem(LS_LAST_SUCCESS);
+    const lastCheck = localStorage.getItem(LS_LAST_CHECK);
+    const lastError = localStorage.getItem(LS_LAST_ERROR);
+
+    // If we have a recent success timestamp, check if it's stale
+    if (lastSuccess) {
+      const age = now - new Date(lastSuccess).getTime();
+      if (age < STALE_THRESHOLD) return; // All good
+    }
+
+    // Show banner based on cached info
+    if (lastSuccess || lastError) {
+      showBanner(lastSuccess, lastError);
+    }
+
+    // Background check the backup bin if we haven't checked recently
+    if (!lastCheck || (now - parseInt(lastCheck)) > CHECK_INTERVAL) {
+      checkBackupBin();
+    }
+  }
+
+  async function checkBackupBin() {
+    const binId = ATS_CONFIG.bins?.backups;
+    if (!binId) return; // Backup bin not yet created
+
+    try {
+      const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+        headers: { 'X-Master-Key': ATS_CONFIG.apiKey }
+      });
+
+      if (!res.ok) return;
+
+      const result = await res.json();
+      const container = result.record || {};
+      const status = container.status || {};
+
+      localStorage.setItem(LS_LAST_CHECK, Date.now().toString());
+
+      if (status.last_success) {
+        localStorage.setItem(LS_LAST_SUCCESS, status.last_success);
+      }
+
+      if (status.result === 'error' && status.error) {
+        localStorage.setItem(LS_LAST_ERROR, JSON.stringify({
+          date: status.last_run,
+          message: status.error
+        }));
+      } else {
+        localStorage.removeItem(LS_LAST_ERROR);
+      }
+
+      // Re-evaluate after fresh data
+      const now = Date.now();
+      const dismissed = localStorage.getItem(LS_DISMISSED);
+      if (dismissed && (now - parseInt(dismissed)) < DISMISS_DURATION) return;
+
+      if (status.last_success) {
+        const age = now - new Date(status.last_success).getTime();
+        if (age >= STALE_THRESHOLD) {
+          showBanner(status.last_success, status.result === 'error' ? JSON.stringify({ date: status.last_run, message: status.error }) : null);
+        } else {
+          removeBanner();
+        }
+      }
+
+      // Send email alert if Gmail is configured and there's a new error
+      if (status.result === 'error' && status.error) {
+        const notifiedKey = 'ats_backup_alert_notified_' + status.last_run;
+        if (!localStorage.getItem(notifiedKey) && typeof Backup !== 'undefined' && typeof Gmail !== 'undefined') {
+          trySendEmailAlert(status, notifiedKey);
+        }
+      }
+    } catch (e) {
+      // Silent fail — don't block the page
+      console.warn('Backup monitor check failed:', e.message);
+    }
+  }
+
+  async function trySendEmailAlert(status, notifiedKey) {
+    try {
+      if (!GoogleAuth.isConfigured() || !GoogleAuth.isAuthenticated()) return;
+
+      const senderEmail = GoogleAuth.getSenderEmail();
+      if (!senderEmail) return;
+
+      const subject = '⚠️ Amarillo ATS — Échec du backup automatique';
+      const body = [
+        'Le backup automatique de l\'ATS a échoué.',
+        '',
+        'Date : ' + new Date(status.last_run).toLocaleString('fr-FR'),
+        'Erreur : ' + status.error,
+        '',
+        'Connectez-vous à l\'ATS pour vérifier : Référentiels > Sauvegardes',
+        '',
+        '— Amarillo ATS (alerte automatique)'
+      ].join('\n');
+
+      const raw = btoa(unescape(encodeURIComponent(
+        'From: ' + senderEmail + '\r\n' +
+        'To: ' + senderEmail + '\r\n' +
+        'Subject: ' + subject + '\r\n' +
+        'Content-Type: text/plain; charset=utf-8\r\n\r\n' +
+        body
+      ))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+      const token = GoogleAuth.getAccessToken();
+      if (!token) return;
+
+      await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ raw })
+      });
+
+      localStorage.setItem(notifiedKey, '1');
+      console.log('Backup alert email sent');
+    } catch (e) {
+      console.warn('Failed to send backup alert email:', e.message);
+    }
+  }
+
+  function showBanner(lastSuccess, lastErrorJson) {
+    removeBanner(); // Remove existing banner if any
+
+    const mainContent = document.querySelector('.main-content');
+    if (!mainContent) return;
+
+    let message = '⚠️ Le dernier backup automatique ';
+    if (lastSuccess) {
+      const d = new Date(lastSuccess);
+      message += 'date de ' + d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } else {
+      message += 'n\'a jamais été effectué';
+    }
+    message += '. ';
+
+    if (lastErrorJson) {
+      try {
+        const err = JSON.parse(lastErrorJson);
+        message += 'Dernière erreur : ' + err.message + '. ';
+      } catch (_) {}
+    }
+
+    message += '<a href="referentiels.html" style="color:inherit;font-weight:700;text-decoration:underline;">Vérifier les sauvegardes →</a>';
+
+    const banner = document.createElement('div');
+    banner.id = 'backup-alert-banner';
+    banner.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <span>${message}</span>
+        <button id="backup-alert-dismiss" style="background:none;border:none;color:inherit;cursor:pointer;font-size:1.1rem;padding:4px 8px;opacity:0.7;flex-shrink:0;" title="Masquer pendant 24h">✕</button>
+      </div>
+    `;
+    banner.style.cssText = 'background:#fef3c7;color:#92400e;padding:10px 20px;font-size:0.8125rem;border-bottom:1px solid #fcd34d;';
+
+    mainContent.insertBefore(banner, mainContent.firstChild);
+
+    document.getElementById('backup-alert-dismiss')?.addEventListener('click', () => {
+      localStorage.setItem(LS_DISMISSED, Date.now().toString());
+      removeBanner();
+    });
+  }
+
+  function removeBanner() {
+    document.getElementById('backup-alert-banner')?.remove();
+  }
+
+  // Run after DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    // Small delay to let other scripts initialize
+    setTimeout(init, 500);
+  }
+})();
