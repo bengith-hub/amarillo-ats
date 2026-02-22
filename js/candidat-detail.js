@@ -589,6 +589,8 @@ R\u00E8gles :
     // Profile review modal — shows extracted CV data vs current values
     function showProfileReviewModal(extracted) {
       const PROFILE_FIELDS = [
+        { key: 'prenom', label: 'Prénom' },
+        { key: 'nom', label: 'Nom' },
         { key: 'email', label: 'Email' },
         { key: 'telephone', label: 'Téléphone' },
         { key: 'linkedin', label: 'LinkedIn' },
@@ -597,11 +599,15 @@ R\u00E8gles :
         { key: 'ville', label: 'Ville' },
         { key: 'localisation', label: 'Localisation' },
         { key: 'poste_actuel', label: 'Poste actuel' },
+        { key: 'poste_cible', label: 'Poste cible' },
         { key: 'entreprise_nom', label: 'Entreprise actuelle', candidatKey: 'entreprise_actuelle_id', isEntreprise: true },
         { key: 'diplome', label: 'Diplôme' },
         { key: 'date_naissance', label: 'Date de naissance' },
         { key: 'debut_carriere', label: 'Début de carrière' },
         { key: 'debut_poste_actuel', label: 'Prise de poste actuel' },
+        { key: 'salaire_fixe_actuel', label: 'Salaire fixe actuel (K€)', isNumeric: true },
+        { key: 'variable_actuel', label: 'Variable actuel (K€)', isNumeric: true },
+        { key: 'preavis', label: 'Préavis' },
         { key: 'synthese_30s', label: 'Synthèse 30 secondes' },
         { key: 'notes', label: 'Notes (profil CV)' },
       ];
@@ -622,7 +628,9 @@ R\u00E8gles :
         if (f.isEntreprise) {
           currentVal = currentEntrepriseNom;
         } else {
-          currentVal = (candidat[f.candidatKey || f.key] || '').toString().trim();
+          const raw = candidat[f.candidatKey || f.key];
+          // Treat 0 as empty for numeric fields
+          currentVal = (f.isNumeric && raw === 0) ? '' : (raw || '').toString().trim();
         }
 
         // Only show if there's a difference
@@ -686,6 +694,9 @@ R\u00E8gles :
               if (allowedDiplomes.includes(val)) {
                 updates[field.candidatKey || field.key] = val;
               }
+            } else if (field.isNumeric) {
+              const num = parseInt(val);
+              if (!isNaN(num)) updates[field.candidatKey || field.key] = num;
             } else {
               updates[field.candidatKey || field.key] = val;
             }
