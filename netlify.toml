@@ -8,7 +8,13 @@
 # Pour overrider, definir dans Netlify dashboard > Site settings > Environment variables :
 #   JSONBIN_API_KEY, JSONBIN_CANDIDATS_BIN, JSONBIN_ACTIONS_BIN
 #
-# Pour le backup automatique quotidien (scheduled-backup.js), definir aussi :
-#   JSONBIN_BACKUP_BIN — ID du bin JSONBin pour stocker les snapshots
-#   (Optionnel) JSONBIN_ENTREPRISES_BIN, JSONBIN_DECIDEURS_BIN, JSONBIN_MISSIONS_BIN,
-#   JSONBIN_FACTURATION_BIN, JSONBIN_REFERENCES_BIN, JSONBIN_NOTES_BIN
+# Pour le backup automatique quotidien sur Google Drive (scheduled-backup.js) :
+#   GOOGLE_CLIENT_ID       — Client ID OAuth2 (GCP)
+#   GOOGLE_CLIENT_SECRET   — Client secret OAuth2 (GCP)
+#   GOOGLE_REFRESH_TOKEN   — Refresh token Google (scopes: drive.file, gmail.send)
+#
+# Optionnel :
+#   JSONBIN_BACKUP_BIN             — ID du bin JSONBin pour les metadonnees (auto-cree sinon)
+#   GOOGLE_DRIVE_BACKUP_FOLDER     — ID du dossier Drive "Amarillo Backups" (auto-cree sinon)
+#   BACKUP_ALERT_WEBHOOK           — URL webhook Slack pour alertes en cas d'echec
+#   BACKUP_ALERT_EMAIL             — Email pour alertes (defaut: benjamin.fetu@amarillosearch.com)

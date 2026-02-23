@@ -707,11 +707,14 @@
           if (status.error) detail += ' \u2014 Erreur : ' + status.error;
           detailEl.textContent = detail;
         } else {
+          const hasDrive = status.drive_backup === true;
           iconEl.innerHTML = '&#9989;';
-          textEl.textContent = 'Backup automatique fonctionnel';
+          textEl.textContent = hasDrive ? 'Backup automatique Google Drive actif' : 'Backup automatique fonctionnel';
           textEl.style.color = '#16a34a';
           cardInner.style.borderLeftColor = '#22c55e';
-          detailEl.textContent = 'Dernier backup r\u00e9ussi : ' + lastDate;
+          let detail = 'Dernier backup r\u00e9ussi : ' + lastDate;
+          if (status.drive_file) detail += ' \u2014 ' + status.drive_file;
+          detailEl.textContent = detail;
         }
       } catch (e) {
         console.warn('Could not check backup status:', e.message);
