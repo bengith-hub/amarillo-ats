@@ -217,7 +217,9 @@ const Backup = (() => {
     return validated;
   }
 
-  // ─── JSONBin Snapshots ──────────────────────────────────
+  // ─── Snapshots (Google Drive + JSONBin status) ─────────
+  // Full snapshot data → Google Drive (no size limit)
+  // Lightweight metadata + status → JSONBin (for monitoring dashboard)
 
   async function _getBackupsBin() {
     let binId = ATS_CONFIG.bins.backups;
@@ -240,7 +242,7 @@ const Backup = (() => {
         }
       } catch (_) {}
 
-      // Create the backup bin on first use
+      // Create the backup bin on first use (lightweight, metadata only)
       const res = await fetch('https://api.jsonbin.io/v3/b', {
         method: 'POST',
         headers: {
@@ -270,36 +272,27 @@ const Backup = (() => {
       console.log('Backup bin created:', binId);
     }
 
-    // Ensure API module knows about this bin
-    const apiCfg = API.getConfig();
-    if (!apiCfg.bins.backups) {
-      apiCfg.bins.backups = binId;
-      API.saveConfig(apiCfg);
-    }
-
     return binId;
   }
 
-  async function _fetchSnapshots() {
+  async function _fetchBackupMeta() {
     const binId = await _getBackupsBin();
     const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
       headers: { 'X-Master-Key': ATS_CONFIG.apiKey }
     });
 
     if (!res.ok) {
-      if (res.status === 404) return { snapshots: [] };
-      throw new Error(`Erreur lecture snapshots : ${res.status}`);
+      if (res.status === 404) return { snapshots: [], status: {} };
+      throw new Error(`Erreur lecture backup metadata : ${res.status}`);
     }
 
     const result = await res.json();
-    return result.record || { snapshots: [] };
+    return result.record || { snapshots: [], status: {} };
   }
 
-  async function _saveSnapshots(container) {
+  async function _saveBackupMeta(meta) {
     const binId = await _getBackupsBin();
-    const payload = JSON.stringify(container);
-    const sizeKB = Math.round(payload.length / 1024);
-    console.log(`Saving snapshots to ${binId}, payload: ${sizeKB} KB`);
+    const payload = JSON.stringify(meta);
 
     const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
       method: 'PUT',
@@ -313,69 +306,121 @@ const Backup = (() => {
     if (!res.ok) {
       let detail = '';
       try { detail = (await res.json()).message || ''; } catch (_) {}
-      console.error(`Snapshot save failed: ${res.status} — ${detail} (payload: ${sizeKB} KB)`);
-      throw new Error(`Sauvegarde snapshot échouée (${res.status}) : ${detail || 'erreur inconnue'}`);
+      console.error(`Backup meta save failed: ${res.status} — ${detail}`);
+      throw new Error(`Sauvegarde métadonnées échouée (${res.status}) : ${detail || 'erreur inconnue'}`);
     }
     return true;
   }
 
   async function createSnapshot(source = 'manual') {
+    // Require Google Drive for snapshot storage
+    if (!GoogleAuth.isConfigured()) {
+      throw new Error('Configurez Google (Drive) dans Configuration API pour utiliser les snapshots.');
+    }
+    await GoogleAuth.authenticate();
+
     const data = {};
     const counts = {};
 
-    // Fetch fresh data from JSONBin for accuracy
     for (const entity of ENTITIES) {
       data[entity] = Store.get(entity);
       counts[entity] = data[entity].length;
       await new Promise(r => setTimeout(r, 300));
     }
 
-    const snapshot = {
-      id: 'snap_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 4),
-      date: new Date().toISOString(),
-      source,
-      counts,
+    const snapshotId = 'snap_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
+    const snapshotDate = new Date().toISOString();
+
+    // 1. Upload full data to Google Drive
+    const backup = {
+      _meta: {
+        version: '1.0',
+        id: snapshotId,
+        date: snapshotDate,
+        source,
+        counts
+      },
       data
     };
 
-    const container = await _fetchSnapshots();
-    container.snapshots.unshift(snapshot);
+    const folderId = await _getOrCreateBackupFolder();
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const timeStr = now.toISOString().slice(11, 16).replace(':', 'h');
+    const fileName = `amarillo-snapshot-${dateStr}-${timeStr}.json`;
 
-    // Keep only last N snapshots
-    if (container.snapshots.length > MAX_SNAPSHOTS) {
-      container.snapshots = container.snapshots.slice(0, MAX_SNAPSHOTS);
+    const json = JSON.stringify(backup);
+    const blob = new Blob([json], { type: 'application/json' });
+    const file = new File([blob], fileName, { type: 'application/json' });
+
+    const driveResult = await GoogleDrive.uploadFile(file, folderId);
+
+    // 2. Save lightweight metadata to JSONBin (no data field — stays small)
+    const meta = await _fetchBackupMeta();
+    meta.snapshots.unshift({
+      id: snapshotId,
+      date: snapshotDate,
+      source,
+      counts,
+      driveFileId: driveResult.id,
+      driveFileName: fileName
+    });
+
+    // Keep only last N snapshot references
+    if (meta.snapshots.length > MAX_SNAPSHOTS) {
+      meta.snapshots = meta.snapshots.slice(0, MAX_SNAPSHOTS);
     }
 
     // Update status for monitoring
-    container.status = {
-      last_success: new Date().toISOString(),
-      last_run: new Date().toISOString(),
+    meta.status = {
+      last_success: snapshotDate,
+      last_run: snapshotDate,
       result: 'ok',
       error: null
     };
 
-    await _saveSnapshots(container);
+    await _saveBackupMeta(meta);
 
-    localStorage.setItem('ats_backup_last_success', new Date().toISOString());
+    localStorage.setItem('ats_backup_last_success', snapshotDate);
+    localStorage.setItem(LS_LAST_BACKUP, snapshotDate);
     localStorage.removeItem('ats_backup_last_error');
 
-    return snapshot;
+    return { id: snapshotId, date: snapshotDate, source, counts, fileName };
   }
 
   async function listSnapshots() {
-    const container = await _fetchSnapshots();
-    // Return without the heavy data field
-    return (container.snapshots || []).map(s => ({
+    const meta = await _fetchBackupMeta();
+    return (meta.snapshots || []).map(s => ({
       id: s.id,
       date: s.date,
       source: s.source,
-      counts: s.counts
+      counts: s.counts,
+      driveFileId: s.driveFileId,
+      driveFileName: s.driveFileName
     }));
   }
 
   async function getSnapshot(snapshotId) {
-    const container = await _fetchSnapshots();
-    return (container.snapshots || []).find(s => s.id === snapshotId) || null;
+    // Find the snapshot metadata
+    const meta = await _fetchBackupMeta();
+    const snap = (meta.snapshots || []).find(s => s.id === snapshotId);
+    if (!snap) return null;
+    if (!snap.driveFileId) throw new Error('Ce snapshot n\'a pas de fichier Drive associé.');
+
+    // Download full data from Google Drive
+    await GoogleAuth.authenticate();
+    const downloaded = await GoogleDrive.downloadFile(snap.driveFileId);
+    const text = await downloaded.blob.text();
+    const parsed = JSON.parse(text);
+    const data = parsed.data || parsed;
+
+    return {
+      id: snap.id,
+      date: snap.date,
+      source: snap.source,
+      counts: snap.counts,
+      data
+    };
   }
 
   // ─── Utilities ──────────────────────────────────────────
