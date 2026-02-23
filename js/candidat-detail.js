@@ -2769,6 +2769,20 @@
     const savedImpact = candidat.teaser_impact_strategique || '';
     const savedLecture = candidat.teaser_lecture_strategique || '';
 
+    // Custom labels (per-candidate, with defaults)
+    const savedLabelFonction = candidat.teaser_label_fonction || '';
+    const savedLabelZone = candidat.teaser_label_zone || '';
+    const savedLabelPerimetre = candidat.teaser_label_perimetre || '';
+    const savedLabelEquipe = candidat.teaser_label_equipe || '';
+    const savedLabelBudget = candidat.teaser_label_budget || '';
+    const savedLabelImpact = candidat.teaser_label_impact || '';
+    const savedLabelConditions = candidat.teaser_label_conditions || '';
+    const savedLabelLecture = candidat.teaser_label_lecture || '';
+
+    // Style for editable label inputs (look like static labels, editable on click)
+    const labelInputStyle = 'background:transparent;border:none;border-bottom:1px dashed transparent;font-size:inherit;font-weight:inherit;color:inherit;padding:0;width:100%;font-family:inherit;outline:none;cursor:text;transition:border-color 0.2s;';
+    const titleInputStyle = 'background:transparent;border:none;border-bottom:1px dashed transparent;font-size:inherit;font-weight:inherit;color:inherit;padding:0;width:100%;font-family:inherit;outline:none;cursor:text;transition:border-color 0.2s;';
+
     // Character limit helper
     const charCountHtml = (id, max) => `<span id="${id}-count" class="char-count" style="display:block;text-align:right;font-size:0.75rem;color:#94a3b8;margin-top:2px;">0/${max}</span>`;
 
@@ -2802,16 +2816,16 @@
         <div class="card" data-accent="dark">
           <div class="card-header"><h2>Fiche Profil</h2><span class="edit-hint">informations cl\u00e9s du candidat</span></div>
           <div class="card-body">
-            <div class="form-group" style="margin-bottom:10px;"><label>Fonction</label><input type="text" id="teaser-f-fonction" value="${UI.escHtml(savedFonction)}" maxlength="80" />${charCountHtml('teaser-f-fonction', 80)}</div>
-            <div class="form-group" style="margin-bottom:10px;"><label>P\u00e9rim\u00e8tre</label><input type="text" id="teaser-f-perimetre" value="${UI.escHtml(savedPerimetre)}" maxlength="120" placeholder="Ex: IT groupe, 3 filiales, 200 users" />${charCountHtml('teaser-f-perimetre', 120)}</div>
-            <div class="form-group" style="margin-bottom:10px;"><label>\u00c9quipe</label><input type="text" id="teaser-f-equipe" value="${UI.escHtml(savedEquipe)}" maxlength="80" placeholder="Ex: 12 internes + 5 prestataires" />${charCountHtml('teaser-f-equipe', 80)}</div>
-            <div class="form-group" style="margin-bottom:10px;"><label>Budget</label><input type="text" id="teaser-f-budget" value="${UI.escHtml(savedBudget)}" maxlength="60" placeholder="Ex: 2,5 M\u20ac" />${charCountHtml('teaser-f-budget', 60)}</div>
-            <div class="form-group"><label>Zone</label><input type="text" id="teaser-f-zone" value="${UI.escHtml(savedZone)}" maxlength="60" />${charCountHtml('teaser-f-zone', 60)}</div>
+            <div class="form-group" style="margin-bottom:10px;"><label><input type="text" id="teaser-f-label-fonction" value="${UI.escHtml(savedLabelFonction)}" placeholder="Fonction" maxlength="30" style="${labelInputStyle}" /></label><input type="text" id="teaser-f-fonction" value="${UI.escHtml(savedFonction)}" maxlength="80" />${charCountHtml('teaser-f-fonction', 80)}</div>
+            <div class="form-group" style="margin-bottom:10px;"><label><input type="text" id="teaser-f-label-perimetre" value="${UI.escHtml(savedLabelPerimetre)}" placeholder="P\u00e9rim\u00e8tre" maxlength="30" style="${labelInputStyle}" /></label><input type="text" id="teaser-f-perimetre" value="${UI.escHtml(savedPerimetre)}" maxlength="120" placeholder="Ex: IT groupe, 3 filiales, 200 users" />${charCountHtml('teaser-f-perimetre', 120)}</div>
+            <div class="form-group" style="margin-bottom:10px;"><label><input type="text" id="teaser-f-label-equipe" value="${UI.escHtml(savedLabelEquipe)}" placeholder="\u00c9quipe" maxlength="30" style="${labelInputStyle}" /></label><input type="text" id="teaser-f-equipe" value="${UI.escHtml(savedEquipe)}" maxlength="80" placeholder="Ex: 12 internes + 5 prestataires" />${charCountHtml('teaser-f-equipe', 80)}</div>
+            <div class="form-group" style="margin-bottom:10px;"><label><input type="text" id="teaser-f-label-budget" value="${UI.escHtml(savedLabelBudget)}" placeholder="Budget" maxlength="30" style="${labelInputStyle}" /></label><input type="text" id="teaser-f-budget" value="${UI.escHtml(savedBudget)}" maxlength="60" placeholder="Ex: 2,5 M\u20ac" />${charCountHtml('teaser-f-budget', 60)}</div>
+            <div class="form-group"><label><input type="text" id="teaser-f-label-zone" value="${UI.escHtml(savedLabelZone)}" placeholder="Zone" maxlength="30" style="${labelInputStyle}" /></label><input type="text" id="teaser-f-zone" value="${UI.escHtml(savedZone)}" maxlength="60" />${charCountHtml('teaser-f-zone', 60)}</div>
           </div>
         </div>
 
         <div class="card" data-accent="gold">
-          <div class="card-header"><h2>Conditions & Disponibilit\u00e9</h2><span class="edit-hint">statut, mobilit\u00e9, r\u00e9mun\u00e9ration</span></div>
+          <div class="card-header"><h2><input type="text" id="teaser-f-label-conditions" value="${UI.escHtml(savedLabelConditions)}" placeholder="Conditions & Disponibilit\u00e9" maxlength="60" style="${titleInputStyle}" /></h2><span class="edit-hint">statut, mobilit\u00e9, r\u00e9mun\u00e9ration</span></div>
           <div class="card-body">
             <div class="form-group" style="margin-bottom:10px;"><label>Statut</label><input type="text" id="teaser-f-statut" value="${UI.escHtml(savedStatut)}" maxlength="60" placeholder="Ex: En poste actuellement" />${charCountHtml('teaser-f-statut', 60)}</div>
             <div class="form-group" style="margin-bottom:10px;"><label>Mobilit\u00e9</label><input type="text" id="teaser-f-mobilite" value="${UI.escHtml(savedMobilite)}" maxlength="60" placeholder="Ex: Grand Ouest / Nationale" />${charCountHtml('teaser-f-mobilite', 60)}</div>
@@ -2823,7 +2837,7 @@
 
       <div class="card" data-accent="gold" style="margin-bottom:16px;">
         <div class="card-header">
-          <h2>Impact strat\u00e9gique & op\u00e9rationnel</h2>
+          <h2><input type="text" id="teaser-f-label-impact" value="${UI.escHtml(savedLabelImpact)}" placeholder="Impact strat\u00e9gique & op\u00e9rationnel" maxlength="60" style="${titleInputStyle}" /></h2>
           <button class="btn btn-secondary" id="teaser-ai-impact-btn" style="background:#2D3436;color:#F5B731;border-color:#2D3436;font-size:0.75rem;padding:4px 10px;">
             <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
             IA
@@ -2837,7 +2851,7 @@
 
       <div class="card" data-accent="gold" style="margin-bottom:16px;">
         <div class="card-header">
-          <h2>Lecture strat\u00e9gique Amarillo</h2>
+          <h2><input type="text" id="teaser-f-label-lecture" value="${UI.escHtml(savedLabelLecture)}" placeholder="Lecture strat\u00e9gique Amarillo" maxlength="60" style="${titleInputStyle}" /></h2>
           <button class="btn btn-secondary" id="teaser-ai-lecture-btn" style="background:#2D3436;color:#F5B731;border-color:#2D3436;font-size:0.75rem;padding:4px 10px;">
             <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
             IA
@@ -2893,7 +2907,23 @@
       'teaser-f-preavis': 'teaser_preavis',
       'teaser-f-impact': 'teaser_impact_strategique',
       'teaser-f-lecture': 'teaser_lecture_strategique',
+      'teaser-f-label-fonction': 'teaser_label_fonction',
+      'teaser-f-label-zone': 'teaser_label_zone',
+      'teaser-f-label-perimetre': 'teaser_label_perimetre',
+      'teaser-f-label-equipe': 'teaser_label_equipe',
+      'teaser-f-label-budget': 'teaser_label_budget',
+      'teaser-f-label-impact': 'teaser_label_impact',
+      'teaser-f-label-conditions': 'teaser_label_conditions',
+      'teaser-f-label-lecture': 'teaser_label_lecture',
     };
+
+    // Add hover/focus effect for editable label inputs
+    document.querySelectorAll('[id^="teaser-f-label-"]').forEach(el => {
+      el.addEventListener('mouseenter', () => { el.style.borderBottomColor = 'rgba(245,183,49,0.4)'; });
+      el.addEventListener('mouseleave', () => { if (document.activeElement !== el) el.style.borderBottomColor = 'transparent'; });
+      el.addEventListener('focus', () => { el.style.borderBottomColor = '#F5B731'; });
+      el.addEventListener('blur', () => { el.style.borderBottomColor = 'transparent'; });
+    });
 
     let _teaserSaveTimer = null;
     let _teaserPendingUpdates = {};
@@ -3051,6 +3081,15 @@ Ne mentionne AUCUN nom de personne ni d'entreprise.`;
       pdfCandidat.teaser_preavis = document.getElementById('teaser-f-preavis')?.value.trim() || candidat.preavis || '';
       pdfCandidat.teaser_impact_strategique = document.getElementById('teaser-f-impact')?.value.trim() || '';
       pdfCandidat.teaser_lecture_strategique = document.getElementById('teaser-f-lecture')?.value.trim() || '';
+      // Custom labels
+      pdfCandidat.teaser_label_fonction = document.getElementById('teaser-f-label-fonction')?.value.trim() || '';
+      pdfCandidat.teaser_label_zone = document.getElementById('teaser-f-label-zone')?.value.trim() || '';
+      pdfCandidat.teaser_label_perimetre = document.getElementById('teaser-f-label-perimetre')?.value.trim() || '';
+      pdfCandidat.teaser_label_equipe = document.getElementById('teaser-f-label-equipe')?.value.trim() || '';
+      pdfCandidat.teaser_label_budget = document.getElementById('teaser-f-label-budget')?.value.trim() || '';
+      pdfCandidat.teaser_label_impact = document.getElementById('teaser-f-label-impact')?.value.trim() || '';
+      pdfCandidat.teaser_label_conditions = document.getElementById('teaser-f-label-conditions')?.value.trim() || '';
+      pdfCandidat.teaser_label_lecture = document.getElementById('teaser-f-label-lecture')?.value.trim() || '';
       return pdfCandidat;
     }
 
@@ -3070,13 +3109,13 @@ Ne mentionne AUCUN nom de personne ni d'entreprise.`;
           .map(l => l.replace(/^[\u2022\u2023\u25E6\u2043\-\*]\s*/, ''));
       };
 
-      // Métadonnées (colonnes horizontales)
+      // Métadonnées (colonnes horizontales) — custom labels with fallbacks
       const metadonnees = [];
-      if (c.teaser_fonction) metadonnees.push({ label: 'FONCTION', valeur: anon(c.teaser_fonction) });
-      if (c.teaser_zone) metadonnees.push({ label: 'ZONE', valeur: anon(c.teaser_zone) });
-      if (c.teaser_perimetre) metadonnees.push({ label: 'P\u00c9RIM\u00c8TRE', valeur: anon(c.teaser_perimetre) });
-      if (c.teaser_equipe) metadonnees.push({ label: '\u00c9QUIPE', valeur: anon(c.teaser_equipe) });
-      if (c.teaser_budget) metadonnees.push({ label: 'BUDGET IT', valeur: anon(c.teaser_budget) });
+      if (c.teaser_fonction) metadonnees.push({ label: (c.teaser_label_fonction || 'FONCTION').toUpperCase(), valeur: anon(c.teaser_fonction) });
+      if (c.teaser_zone) metadonnees.push({ label: (c.teaser_label_zone || 'ZONE').toUpperCase(), valeur: anon(c.teaser_zone) });
+      if (c.teaser_perimetre) metadonnees.push({ label: (c.teaser_label_perimetre || 'P\u00c9RIM\u00c8TRE').toUpperCase(), valeur: anon(c.teaser_perimetre) });
+      if (c.teaser_equipe) metadonnees.push({ label: (c.teaser_label_equipe || '\u00c9QUIPE').toUpperCase(), valeur: anon(c.teaser_equipe) });
+      if (c.teaser_budget) metadonnees.push({ label: (c.teaser_label_budget || 'BUDGET IT').toUpperCase(), valeur: anon(c.teaser_budget) });
 
       // Conditions
       const conditions = [];
@@ -3088,8 +3127,11 @@ Ne mentionne AUCUN nom de personne ni d'entreprise.`;
       return {
         titre_poste: anon(c.teaser_titre_accrocheur),
         metadonnees,
+        impact_title: c.teaser_label_impact || 'Impact strat\u00e9gique & op\u00e9rationnel',
         impact_items: parseBullets(anon(c.teaser_impact_strategique)),
+        conditions_title: c.teaser_label_conditions || 'Conditions & Disponibilit\u00e9',
         conditions,
+        lecture_title: c.teaser_label_lecture || 'Lecture strat\u00e9gique Amarillo',
         lecture_items: parseBullets(anon(c.teaser_lecture_strategique)),
       };
     }
