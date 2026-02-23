@@ -1741,17 +1741,20 @@ const PDFEngine = (() => {
       || _stripEmojis(candidat.teaser_impact_strategique || '');
     const impactBullets = _parseBullets(impactText);
 
-    // Conditions items (nouveaux champs : Statut, Mobilité, Rémunération, Préavis)
+    // Conditions items — custom labels with fallbacks
     const condItems = [];
     const tStatut = _stripEmojis(candidat.teaser_statut || '');
-    if (tStatut) condItems.push({ label: null, value: tStatut }); // pas de label, juste "En poste actuellement"
+    if (tStatut) {
+      const statLabel = candidat.teaser_label_statut || null;
+      condItems.push({ label: statLabel, value: tStatut });
+    }
     const tMobilite = _stripEmojis(candidat.teaser_mobilite || '');
-    if (tMobilite) condItems.push({ label: 'Mobilit\u00e9', value: tMobilite });
+    if (tMobilite) condItems.push({ label: candidat.teaser_label_mobilite || 'Mobilit\u00e9', value: tMobilite });
     // Fallback : lire les anciens champs si les nouveaux sont vides
     const tRemuneration = _stripEmojis(candidat.teaser_remuneration || candidat.teaser_package || salaryBand(candidat.package_souhaite_min, candidat.package_souhaite) || '');
-    if (tRemuneration) condItems.push({ label: 'R\u00e9mun\u00e9ration cible', value: tRemuneration });
+    if (tRemuneration) condItems.push({ label: candidat.teaser_label_remuneration || 'R\u00e9mun\u00e9ration cible', value: tRemuneration });
     const tPreavis = _stripEmojis(candidat.teaser_preavis || candidat.preavis || '');
-    if (tPreavis) condItems.push({ label: 'Pr\u00e9avis', value: tPreavis });
+    if (tPreavis) condItems.push({ label: candidat.teaser_label_preavis || 'Pr\u00e9avis', value: tPreavis });
 
     const gap = 5;
     const impactW = PAGE.contentWidth * 0.58;
