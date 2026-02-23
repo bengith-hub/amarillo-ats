@@ -29,6 +29,7 @@
     --amarillo-body-text: #333333;
     --amarillo-footer-text: #e2e1e6;
     --amarillo-conditions-bg: #ECEBF0;
+    --amarillo-email: #fec005;
 
     --font-main: 'Montserrat', -apple-system, BlinkMacSystemFont, sans-serif;
   }
@@ -114,7 +115,7 @@
     font-weight: 700;
     color: var(--amarillo-text);
     text-align: center;
-    padding: 18px 10px 18px 10px;
+    padding: 22px 10px 22px 10px;
     flex-shrink: 0;
   }
 
@@ -129,7 +130,7 @@
     flex-shrink: 0;
     border-top: 1px solid var(--amarillo-border);
     border-bottom: 1px solid var(--amarillo-border);
-    margin-bottom: 18px;
+    margin-bottom: 20px;
   }
 
   .metadata-col {
@@ -170,30 +171,24 @@
   }
 
   /* ============================================================
-     MAIN CONTENT ROW — Impact+Lecture left, Conditions right
+     IMPACT ROW — Impact left + Conditions right (same height)
      ============================================================ */
-  .main-content-row {
+  .impact-row {
     display: flex;
     gap: 15px;
-    flex: 1;
-    min-height: 0;
-  }
-
-  .left-column {
-    flex: 6;
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
+    flex-shrink: 0;
   }
 
   /* ============================================================
      IMPACT STRATÉGIQUE — Montserrat 12 line-height 1.8
      ============================================================ */
   .impact-box {
-    flex: 1;
+    flex: 6;
     border-radius: 8px;
     overflow: hidden;
     border-left: 5px solid var(--amarillo-yellow);
+    display: flex;
+    flex-direction: column;
   }
 
   .impact-box .section-title {
@@ -202,11 +197,13 @@
     font-weight: 700;
     color: var(--amarillo-white);
     padding: 10px 16px;
+    flex-shrink: 0;
   }
 
   .impact-body {
     background: var(--amarillo-yellow-light);
     padding: 12px 16px;
+    flex: 1;
   }
 
   .impact-body ul {
@@ -225,48 +222,7 @@
   }
 
   /* ============================================================
-     LECTURE STRATÉGIQUE — Montserrat 14 line-height 1.8
-     White bg, gray top/bottom borders, orange left border
-     ============================================================ */
-  .lecture-box {
-    flex: 1;
-    background: var(--amarillo-white);
-    border-top: 2px solid #CCCCCC;
-    border-bottom: 2px solid #CCCCCC;
-    border-left: 5px solid var(--amarillo-yellow);
-    border-right: none;
-    border-radius: 6px 0 0 6px;
-    padding: 14px 16px;
-  }
-
-  .lecture-box .section-title {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--amarillo-text);
-    margin-bottom: 8px;
-  }
-
-  .lecture-box .section-title .amarillo-accent {
-    color: var(--amarillo-yellow);
-  }
-
-  .lecture-box ul {
-    list-style: disc;
-    padding-left: 18px;
-    margin: 0;
-  }
-
-  .lecture-box li {
-    font-size: 14px;
-    font-weight: 400;
-    font-family: var(--font-main);
-    color: var(--amarillo-body-text);
-    line-height: 1.8;
-    margin-bottom: 2px;
-  }
-
-  /* ============================================================
-     CONDITIONS — Portrait right, spans Impact + Lecture height
+     CONDITIONS — Same height as Impact, right side
      ============================================================ */
   .conditions-box {
     flex: 4;
@@ -311,6 +267,48 @@
   }
 
   /* ============================================================
+     LECTURE STRATÉGIQUE — Montserrat 14 line-height 1.8
+     Full width below Impact+Conditions
+     ============================================================ */
+  .lecture-box {
+    background: var(--amarillo-white);
+    border-top: 2px solid #CCCCCC;
+    border-bottom: 2px solid #CCCCCC;
+    border-left: 5px solid var(--amarillo-yellow);
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    padding: 14px 16px;
+    margin-top: 20px;
+    flex-shrink: 0;
+  }
+
+  .lecture-box .section-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--amarillo-text);
+    margin-bottom: 8px;
+  }
+
+  .lecture-box .section-title .amarillo-accent {
+    color: var(--amarillo-yellow);
+  }
+
+  .lecture-box ul {
+    list-style: disc;
+    padding-left: 18px;
+    margin: 0;
+  }
+
+  .lecture-box li {
+    font-size: 14px;
+    font-weight: 400;
+    font-family: var(--font-main);
+    color: var(--amarillo-body-text);
+    line-height: 1.8;
+    margin-bottom: 2px;
+  }
+
+  /* ============================================================
      MENTION CONFIDENTIELLE
      ============================================================ */
   .confidential {
@@ -318,13 +316,13 @@
     font-style: italic;
     color: var(--amarillo-confidential);
     text-align: center;
-    padding: 10px 20px;
+    padding: 18px 20px 10px 20px;
     flex-shrink: 0;
     margin-top: auto;
   }
 
   /* ============================================================
-     FOOTER — 45mm, Montserrat 10, #e2e1e6
+     FOOTER — 45mm
      ============================================================ */
   .footer-yellow-line {
     height: 4px;
@@ -371,11 +369,11 @@
     font-size: 10px;
     font-weight: 700;
     font-family: var(--font-main);
-    color: var(--amarillo-footer-text);
+    color: var(--amarillo-email);
   }
 
   .footer-baseline {
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 400;
     font-family: var(--font-main);
     color: var(--amarillo-footer-text);
@@ -501,7 +499,7 @@
   <!-- HEADER 42mm -->
   <div class="header">
     <div class="header-logo">
-      <img src="AS_black_transp_smaller.png" alt="Amarillo Search">
+      <img src="AS_white_transp.png" alt="Amarillo Search">
     </div>
     <div class="header-title">
       TALENT<br>IMPACT
@@ -522,31 +520,19 @@
       <!-- Colonnes injectées dynamiquement -->
     </div>
 
-    <!-- MAIN CONTENT: Impact+Lecture gauche, Conditions portrait droite -->
-    <div class="main-content-row">
-      <div class="left-column">
-
-        <!-- IMPACT STRATÉGIQUE -->
-        <div class="impact-box">
-          <div class="section-title">Impact stratégique &amp; opérationnel</div>
-          <div class="impact-body">
-            <ul id="impact-list">
-              <!-- Items injectés dynamiquement -->
-            </ul>
-          </div>
-        </div>
-
-        <!-- LECTURE STRATÉGIQUE -->
-        <div class="lecture-box">
-          <div class="section-title">Lecture stratégique <span class="amarillo-accent">Amarillo</span></div>
-          <ul id="lecture-list">
+    <!-- IMPACT + CONDITIONS (même hauteur, côte à côte) -->
+    <div class="impact-row">
+      <!-- IMPACT STRATÉGIQUE -->
+      <div class="impact-box">
+        <div class="section-title">Impact stratégique &amp; opérationnel</div>
+        <div class="impact-body">
+          <ul id="impact-list">
             <!-- Items injectés dynamiquement -->
           </ul>
         </div>
-
       </div>
 
-      <!-- CONDITIONS — Portrait, pleine hauteur droite -->
+      <!-- CONDITIONS — même hauteur qu'Impact -->
       <div class="conditions-box">
         <div class="section-title">Conditions &amp; Disponibilité</div>
         <div class="conditions-separator"></div>
@@ -554,6 +540,14 @@
           <!-- Items injectés dynamiquement -->
         </ul>
       </div>
+    </div>
+
+    <!-- LECTURE STRATÉGIQUE — pleine largeur -->
+    <div class="lecture-box">
+      <div class="section-title">Lecture stratégique <span class="amarillo-accent">Amarillo</span></div>
+      <ul id="lecture-list">
+        <!-- Items injectés dynamiquement -->
+      </ul>
     </div>
 
     <!-- MENTION CONFIDENTIELLE -->
@@ -568,7 +562,7 @@
   <div class="footer">
     <div class="footer-main">
       <div class="footer-logo">
-        <img src="AS_black_transp_smaller.png" alt="Amarillo Search">
+        <img src="AS_white_transp.png" alt="Amarillo Search">
       </div>
       <div class="footer-text">
         <div class="footer-description">
@@ -589,8 +583,6 @@
 (function() {
   'use strict';
 
-  // Récupérer les données candidat : soit depuis window.teaserData (injecté par l'ouvreur),
-  // soit depuis les paramètres URL en base64
   let data = null;
 
   if (window.teaserData) {
@@ -608,7 +600,6 @@
   }
 
   if (!data) {
-    // Données de démonstration (mock-up)
     data = {
       titre_poste: "DSI industriel – Transformation & structuration multi-sites",
       metadonnees: [
@@ -641,7 +632,6 @@
     };
   }
 
-  // Helper : échappe le HTML
   function esc(str) {
     const div = document.createElement('div');
     div.textContent = str || '';
@@ -666,11 +656,18 @@
     `).join('');
   }
 
-  // ── Impact items ──
+  // ── Impact items + adaptive font size ──
   const impactList = document.getElementById('impact-list');
   if (data.impact_items && data.impact_items.length > 0) {
+    const count = data.impact_items.length;
+    // Adaptive: fewer items → bigger font, more items → smaller font
+    let fontSize;
+    if (count <= 4) fontSize = '14px';
+    else if (count <= 6) fontSize = '12px';
+    else fontSize = '10.5px';
+
     impactList.innerHTML = data.impact_items
-      .map(item => `<li>${esc(item)}</li>`).join('');
+      .map(item => `<li style="font-size:${fontSize}">${esc(item)}</li>`).join('');
   }
 
   // ── Conditions ──
@@ -684,11 +681,17 @@
     }).join('');
   }
 
-  // ── Lecture items ──
+  // ── Lecture items + adaptive font size ──
   const lectureList = document.getElementById('lecture-list');
   if (data.lecture_items && data.lecture_items.length > 0) {
+    const count = data.lecture_items.length;
+    let fontSize;
+    if (count <= 3) fontSize = '15px';
+    else if (count <= 5) fontSize = '13px';
+    else fontSize = '11.5px';
+
     lectureList.innerHTML = data.lecture_items
-      .map(item => `<li>${esc(item)}</li>`).join('');
+      .map(item => `<li style="font-size:${fontSize}">${esc(item)}</li>`).join('');
   }
 
 })();
