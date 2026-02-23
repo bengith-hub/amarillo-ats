@@ -6,7 +6,7 @@
 <title>Talent à Impact — Amarillo Search</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   /* ============================================================
      RESET & BASE
@@ -14,7 +14,7 @@
   *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
   /* ============================================================
-     CSS VARIABLES — Spec Canva
+     CSS VARIABLES
      ============================================================ */
   :root {
     --amarillo-yellow: #F5B731;
@@ -27,9 +27,10 @@
     --amarillo-white: #FFFFFF;
     --amarillo-confidential: #999999;
     --amarillo-body-text: #333333;
+    --amarillo-footer-text: #e2e1e6;
+    --amarillo-conditions-bg: #ECEBF0;
 
-    --font-serif: 'DM Serif Display', 'Playfair Display', Georgia, 'Times New Roman', serif;
-    --font-sans: 'Inter', 'Open Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-main: 'Montserrat', -apple-system, BlinkMacSystemFont, sans-serif;
   }
 
   /* ============================================================
@@ -38,7 +39,7 @@
   html, body {
     width: 210mm;
     min-height: 297mm;
-    font-family: var(--font-sans);
+    font-family: var(--font-main);
     color: var(--amarillo-text);
     background: #f0f0f0;
     -webkit-print-color-adjust: exact;
@@ -59,32 +60,32 @@
   }
 
   /* ============================================================
-     HEADER — Spec §4.1
+     HEADER — 42mm
      ============================================================ */
   .header {
     background: var(--amarillo-dark);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 28px 40px;
-    min-height: 155px;
+    padding: 0 10mm;
+    height: 42mm;
     flex-shrink: 0;
   }
 
   .header-logo img {
-    width: 170px;
+    width: 85mm;
     height: auto;
     display: block;
   }
 
   .header-title {
-    font-family: var(--font-serif);
-    font-size: 36px;
-    font-weight: 400; /* DM Serif Display is already bold-looking */
+    font-family: var(--font-main);
+    font-size: 30px;
+    font-weight: 400;
     color: var(--amarillo-white);
     text-align: right;
-    line-height: 1.1;
-    letter-spacing: 1px;
+    line-height: 1.4;
+    margin-right: 43mm;
   }
 
   .header-yellow-line {
@@ -98,36 +99,37 @@
      ============================================================ */
   .body-content {
     flex: 1;
-    padding: 0 40px;
+    padding: 0 10mm;
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
 
   /* ============================================================
-     TITRE DU POSTE — Spec §4.2
+     TITRE DU POSTE — Montserrat 20 bold
      ============================================================ */
   .titre-poste {
-    font-family: var(--font-serif);
+    font-family: var(--font-main);
     font-size: 20px;
-    font-weight: 400;
+    font-weight: 700;
     color: var(--amarillo-text);
     text-align: center;
-    padding: 15px 20px 10px 20px;
+    padding: 18px 10px 18px 10px;
     flex-shrink: 0;
   }
 
   /* ============================================================
-     BARRE MÉTADONNÉES — Spec §4.3
+     BARRE MÉTADONNÉES — Montserrat 14
      ============================================================ */
   .metadata-bar {
     display: flex;
     align-items: stretch;
-    min-height: 55px;
+    min-height: 50px;
     padding: 8px 0;
     flex-shrink: 0;
     border-top: 1px solid var(--amarillo-border);
     border-bottom: 1px solid var(--amarillo-border);
+    margin-bottom: 18px;
   }
 
   .metadata-col {
@@ -145,123 +147,100 @@
   }
 
   .metadata-label {
-    font-size: 11px;
-    font-weight: 400;
+    font-size: 10px;
+    font-weight: 500;
     color: var(--amarillo-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 4px;
+    margin-bottom: 3px;
   }
 
   .metadata-value {
     font-size: 14px;
     font-weight: 700;
+    font-family: var(--font-main);
     color: var(--amarillo-text);
   }
 
   .metadata-sub {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 400;
     color: var(--amarillo-text-secondary);
     margin-top: 2px;
   }
 
   /* ============================================================
-     SECTION 2 COLONNES — Spec §4.4
+     MAIN CONTENT ROW — Impact+Lecture left, Conditions right
      ============================================================ */
-  .two-columns {
+  .main-content-row {
     display: flex;
     gap: 15px;
-    margin-top: 14px;
-    flex-shrink: 0;
+    flex: 1;
+    min-height: 0;
   }
 
-  /* Impact — 60% */
-  .impact-box {
+  .left-column {
     flex: 6;
-    background: var(--amarillo-yellow-light);
-    border-left: 5px solid var(--amarillo-yellow);
-    border-radius: 10px;
-    padding: 14px 16px;
-  }
-
-  .impact-box .section-title {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--amarillo-text);
-    margin-bottom: 8px;
-  }
-
-  .impact-box ul {
-    list-style: disc;
-    padding-left: 18px;
-    margin: 0;
-  }
-
-  .impact-box li {
-    font-size: 12.5px;
-    font-weight: 400;
-    color: var(--amarillo-body-text);
-    line-height: 1.4;
-    margin-bottom: 3px;
-  }
-
-  /* Conditions — 40% */
-  .conditions-box {
-    flex: 4;
-    background: var(--amarillo-white);
-    border: 1px solid var(--amarillo-border);
-    border-radius: 10px;
-    padding: 14px 16px;
-  }
-
-  .conditions-box .section-title {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--amarillo-text);
-    text-align: center;
-    margin-bottom: 8px;
-  }
-
-  .conditions-separator {
-    width: 60%;
-    height: 2px;
-    background: var(--amarillo-yellow);
-    margin: 0 auto 10px auto;
-  }
-
-  .conditions-box ul {
-    list-style: disc;
-    padding-left: 18px;
-    margin: 0;
-  }
-
-  .conditions-box li {
-    font-size: 12.5px;
-    font-weight: 400;
-    color: var(--amarillo-body-text);
-    line-height: 1.4;
-    margin-bottom: 3px;
-  }
-
-  .conditions-box li strong {
-    font-weight: 700;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
   }
 
   /* ============================================================
-     LECTURE STRATÉGIQUE — Spec §4.5
+     IMPACT STRATÉGIQUE — Montserrat 12 line-height 1.8
+     ============================================================ */
+  .impact-box {
+    flex: 1;
+    border-radius: 8px;
+    overflow: hidden;
+    border-left: 5px solid var(--amarillo-yellow);
+  }
+
+  .impact-box .section-title {
+    background: var(--amarillo-yellow);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--amarillo-white);
+    padding: 10px 16px;
+  }
+
+  .impact-body {
+    background: var(--amarillo-yellow-light);
+    padding: 12px 16px;
+  }
+
+  .impact-body ul {
+    list-style: disc;
+    padding-left: 18px;
+    margin: 0;
+  }
+
+  .impact-body li {
+    font-size: 12px;
+    font-weight: 400;
+    font-family: var(--font-main);
+    color: var(--amarillo-body-text);
+    line-height: 1.8;
+    margin-bottom: 2px;
+  }
+
+  /* ============================================================
+     LECTURE STRATÉGIQUE — Montserrat 14 line-height 1.8
+     White bg, gray top/bottom borders, orange left border
      ============================================================ */
   .lecture-box {
-    background: var(--amarillo-yellow-light);
+    flex: 1;
+    background: var(--amarillo-white);
+    border-top: 2px solid #CCCCCC;
+    border-bottom: 2px solid #CCCCCC;
     border-left: 5px solid var(--amarillo-yellow);
-    border-radius: 10px;
+    border-right: none;
+    border-radius: 6px 0 0 6px;
     padding: 14px 16px;
-    margin-top: 14px;
-    flex-shrink: 0;
   }
 
   .lecture-box .section-title {
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 700;
     color: var(--amarillo-text);
     margin-bottom: 8px;
@@ -278,28 +257,74 @@
   }
 
   .lecture-box li {
-    font-size: 12.5px;
+    font-size: 14px;
     font-weight: 400;
+    font-family: var(--font-main);
     color: var(--amarillo-body-text);
-    line-height: 1.4;
-    margin-bottom: 3px;
+    line-height: 1.8;
+    margin-bottom: 2px;
   }
 
   /* ============================================================
-     MENTION CONFIDENTIELLE — Spec §4.6
+     CONDITIONS — Portrait right, spans Impact + Lecture height
+     ============================================================ */
+  .conditions-box {
+    flex: 4;
+    background: var(--amarillo-conditions-bg);
+    border-radius: 10px;
+    padding: 18px 16px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .conditions-box .section-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--amarillo-text);
+    text-align: center;
+    margin-bottom: 8px;
+  }
+
+  .conditions-separator {
+    width: 60%;
+    height: 2px;
+    background: var(--amarillo-yellow);
+    margin: 0 auto 12px auto;
+  }
+
+  .conditions-box ul {
+    list-style: disc;
+    padding-left: 18px;
+    margin: 0;
+  }
+
+  .conditions-box li {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--amarillo-body-text);
+    line-height: 1.8;
+    margin-bottom: 4px;
+  }
+
+  .conditions-box li strong {
+    font-weight: 700;
+  }
+
+  /* ============================================================
+     MENTION CONFIDENTIELLE
      ============================================================ */
   .confidential {
-    font-size: 10.5px;
+    font-size: 10px;
     font-style: italic;
     color: var(--amarillo-confidential);
     text-align: center;
-    padding: 12px 20px;
+    padding: 10px 20px;
     flex-shrink: 0;
     margin-top: auto;
   }
 
   /* ============================================================
-     FOOTER — Spec §4.7
+     FOOTER — 45mm, Montserrat 10, #e2e1e6
      ============================================================ */
   .footer-yellow-line {
     height: 4px;
@@ -310,7 +335,11 @@
   .footer {
     background: var(--amarillo-dark);
     flex-shrink: 0;
-    padding: 14px 30px 6px 30px;
+    height: 45mm;
+    padding: 12px 10mm 8px 10mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
   }
 
   .footer-main {
@@ -320,7 +349,7 @@
   }
 
   .footer-logo img {
-    width: 110px;
+    width: 52mm;
     height: auto;
     display: block;
   }
@@ -330,26 +359,30 @@
   }
 
   .footer-description {
-    font-size: 10.5px;
+    font-size: 10px;
     font-weight: 400;
-    color: var(--amarillo-white);
-    line-height: 1.4;
+    font-family: var(--font-main);
+    color: var(--amarillo-footer-text);
+    line-height: 1.5;
     margin-bottom: 4px;
   }
 
   .footer-email {
-    font-size: 11.5px;
+    font-size: 10px;
     font-weight: 700;
-    color: var(--amarillo-yellow);
+    font-family: var(--font-main);
+    color: var(--amarillo-footer-text);
   }
 
   .footer-baseline {
-    font-size: 10.5px;
+    font-size: 10px;
     font-weight: 400;
-    color: var(--amarillo-yellow);
+    font-family: var(--font-main);
+    color: var(--amarillo-footer-text);
+    opacity: 0.46;
     text-align: center;
-    padding-top: 6px;
-    margin-top: 6px;
+    padding-top: 8px;
+    margin-top: 8px;
   }
 
   /* ============================================================
@@ -425,7 +458,7 @@
     cursor: pointer;
     font-size: 14px;
     font-weight: 600;
-    font-family: var(--font-sans);
+    font-family: var(--font-main);
   }
 
   .toolbar .btn-print {
@@ -465,10 +498,10 @@
   <!-- WATERMARK -->
   <div class="watermark">CONFIDENTIEL</div>
 
-  <!-- HEADER -->
+  <!-- HEADER 42mm -->
   <div class="header">
     <div class="header-logo">
-      <img src="AS_white_transp.png" alt="Amarillo Search">
+      <img src="AS_black_transp_smaller.png" alt="Amarillo Search">
     </div>
     <div class="header-title">
       TALENT<br>IMPACT
@@ -489,15 +522,31 @@
       <!-- Colonnes injectées dynamiquement -->
     </div>
 
-    <!-- 2 COLONNES : Impact + Conditions -->
-    <div class="two-columns">
-      <div class="impact-box">
-        <div class="section-title">Impact stratégique &amp; opérationnel</div>
-        <ul id="impact-list">
-          <!-- Items injectés dynamiquement -->
-        </ul>
+    <!-- MAIN CONTENT: Impact+Lecture gauche, Conditions portrait droite -->
+    <div class="main-content-row">
+      <div class="left-column">
+
+        <!-- IMPACT STRATÉGIQUE -->
+        <div class="impact-box">
+          <div class="section-title">Impact stratégique &amp; opérationnel</div>
+          <div class="impact-body">
+            <ul id="impact-list">
+              <!-- Items injectés dynamiquement -->
+            </ul>
+          </div>
+        </div>
+
+        <!-- LECTURE STRATÉGIQUE -->
+        <div class="lecture-box">
+          <div class="section-title">Lecture stratégique <span class="amarillo-accent">Amarillo</span></div>
+          <ul id="lecture-list">
+            <!-- Items injectés dynamiquement -->
+          </ul>
+        </div>
+
       </div>
 
+      <!-- CONDITIONS — Portrait, pleine hauteur droite -->
       <div class="conditions-box">
         <div class="section-title">Conditions &amp; Disponibilité</div>
         <div class="conditions-separator"></div>
@@ -507,14 +556,6 @@
       </div>
     </div>
 
-    <!-- LECTURE STRATÉGIQUE -->
-    <div class="lecture-box">
-      <div class="section-title">Lecture stratégique <span class="amarillo-accent">Amarillo</span></div>
-      <ul id="lecture-list">
-        <!-- Items injectés dynamiquement -->
-      </ul>
-    </div>
-
     <!-- MENTION CONFIDENTIELLE -->
     <div class="confidential">
       Ce document est confidentiel. L'identité du candidat sera communiquée après accord mutuel pour poursuivre le processus.
@@ -522,12 +563,12 @@
 
   </div><!-- /body-content -->
 
-  <!-- FOOTER -->
+  <!-- FOOTER 45mm -->
   <div class="footer-yellow-line"></div>
   <div class="footer">
     <div class="footer-main">
       <div class="footer-logo">
-        <img src="AS_white_transp.png" alt="Amarillo Search">
+        <img src="AS_black_transp_smaller.png" alt="Amarillo Search">
       </div>
       <div class="footer-text">
         <div class="footer-description">
@@ -573,8 +614,8 @@
       metadonnees: [
         { label: "FONCTION", valeur: "DSI" },
         { label: "ZONE", valeur: "NANTES", sous_valeur: "Multi-sites – Groupe industriel" },
+        { label: "PÉRIMÈTRE", valeur: "Groupe Industriel" },
         { label: "ÉQUIPE", valeur: "25 pers." },
-        { label: "BUDGET IT", valeur: "6 M€" },
       ],
       impact_items: [
         "Structuration DSI post-acquisition (3 sociétés intégrées)",
@@ -586,6 +627,7 @@
       ],
       conditions: [
         { texte: "En poste actuellement" },
+        { texte: "Ouvert à discussion cible" },
         { label: "Mobilité", texte: "Grand Ouest / Nationale" },
         { label: "Rémunération cible", texte: "120 - 135k€ fixe + variable" },
         { label: "Préavis", texte: "3 mois" }
