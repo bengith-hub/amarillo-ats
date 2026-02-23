@@ -76,13 +76,13 @@
     display: flex;
     align-items: center;
     height: 100%;
+    overflow: hidden;
   }
 
   .header-logo img {
     width: 85mm;
     height: auto;
     display: block;
-    object-fit: contain;
   }
 
   .header-title {
@@ -345,10 +345,10 @@
     background: var(--amarillo-dark);
     flex-shrink: 0;
     height: 35mm;
-    padding: 0 10mm;
+    padding: 10px 10mm 0 10mm;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
   }
 
   .footer-main {
