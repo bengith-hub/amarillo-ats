@@ -130,7 +130,7 @@
     flex-shrink: 0;
     border-top: 1px solid var(--amarillo-border);
     border-bottom: 1px solid var(--amarillo-border);
-    margin-bottom: 20px;
+    margin-bottom: 58px;
   }
 
   .metadata-col {
@@ -278,18 +278,20 @@
     border-right: none;
     border-radius: 6px 0 0 6px;
     padding: 14px 16px;
-    margin-top: 20px;
+    margin-top: 0;
     flex-shrink: 0;
   }
 
-  .lecture-box .section-title {
+  .lecture-title-above {
     font-size: 14px;
     font-weight: 700;
+    font-family: var(--font-main);
     color: var(--amarillo-text);
-    margin-bottom: 8px;
+    margin-top: 30px;
+    margin-bottom: 6px;
   }
 
-  .lecture-box .section-title .amarillo-accent {
+  .lecture-title-above .amarillo-accent {
     color: var(--amarillo-yellow);
   }
 
@@ -334,10 +336,10 @@
     background: var(--amarillo-dark);
     flex-shrink: 0;
     height: 45mm;
-    padding: 12px 10mm 8px 10mm;
+    padding: 14px 10mm 8px 10mm;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
   }
 
   .footer-main {
@@ -379,8 +381,8 @@
     color: var(--amarillo-footer-text);
     opacity: 0.46;
     text-align: center;
-    padding-top: 8px;
-    margin-top: 8px;
+    padding-top: 4px;
+    margin-top: 4px;
   }
 
   /* ============================================================
@@ -499,7 +501,7 @@
   <!-- HEADER 42mm -->
   <div class="header">
     <div class="header-logo">
-      <img src="AS_white_transp.png" alt="Amarillo Search">
+      <img src="AS_blanc_transparent.png" alt="Amarillo Search">
     </div>
     <div class="header-title">
       TALENT<br>IMPACT
@@ -543,8 +545,8 @@
     </div>
 
     <!-- LECTURE STRATÉGIQUE — pleine largeur -->
+    <div class="lecture-title-above">Lecture stratégique <span class="amarillo-accent">Amarillo</span></div>
     <div class="lecture-box">
-      <div class="section-title">Lecture stratégique <span class="amarillo-accent">Amarillo</span></div>
       <ul id="lecture-list">
         <!-- Items injectés dynamiquement -->
       </ul>
@@ -562,7 +564,7 @@
   <div class="footer">
     <div class="footer-main">
       <div class="footer-logo">
-        <img src="AS_white_transp.png" alt="Amarillo Search">
+        <img src="AS_blanc_transparent.png" alt="Amarillo Search">
       </div>
       <div class="footer-text">
         <div class="footer-description">
