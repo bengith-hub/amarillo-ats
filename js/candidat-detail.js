@@ -2900,10 +2900,13 @@
 
     function _flushTeaserSave() {
       if (_teaserSaveTimer) clearTimeout(_teaserSaveTimer);
+      _teaserSaveTimer = null;
       if (Object.keys(_teaserPendingUpdates).length === 0) return;
       const updates = { ..._teaserPendingUpdates };
       _teaserPendingUpdates = {};
-      Store.update('candidats', id, updates);
+      Store.update('candidats', id, updates).catch(() => {
+        // Sync errors are already handled by Store._notifySyncError
+      });
     }
 
     function _debouncedTeaserSave(fieldKey, val) {
@@ -3096,7 +3099,17 @@ Ne mentionne AUCUN nom de personne ni d'entreprise.`;
       _flushTeaserSave(); // flush pending debounced saves before preview
       const data = buildTeaserData();
       const encoded = btoa(encodeURIComponent(JSON.stringify(data)));
-      window.open('teaser-template.html?data=' + encoded, '_blank');
+      const url = 'teaser-template.html?data=' + encoded;
+
+      // Use <a> click to avoid popup blockers (treated as navigation, not popup)
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     }
 
     // ── Preview button (new tab — template HTML) ──
@@ -3105,7 +3118,7 @@ Ne mentionne AUCUN nom de personne ni d'entreprise.`;
         openTeaserTemplate();
       } catch (e) {
         console.error('Preview error:', e);
-        UI.toast('Erreur : ' + e.message, 'error');
+        UI.toast('Erreur prévisualisation : ' + e.message, 'error');
       }
     });
 
@@ -3116,7 +3129,7 @@ Ne mentionne AUCUN nom de personne ni d'entreprise.`;
         UI.toast('Utilisez Ctrl+P ou le bouton "Imprimer" pour enregistrer en PDF');
       } catch (e) {
         console.error('Teaser error:', e);
-        UI.toast('Erreur : ' + e.message, 'error');
+        UI.toast('Erreur téléchargement : ' + e.message, 'error');
       }
     });
   }
