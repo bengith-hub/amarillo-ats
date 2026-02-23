@@ -186,6 +186,7 @@
     const e = existing || {};
 
     const bodyHtml = `
+      <div id="dup-warning-entreprise"></div>
       <div class="form-group"><label>Nom</label><input type="text" id="e-nom" value="${UI.escHtml(e.nom||'')}" /></div>
       <div class="form-row">
         <div class="form-group"><label>Secteur</label>
@@ -256,5 +257,13 @@
       }
     });
     UI.localisationAutocomplete('e-loc');
+
+    if (!isEdit) {
+      DuplicateDetector.attachLiveCheck(
+        { nom: 'e-nom' },
+        (vals) => DuplicateDetector.findEntrepriseDuplicates(vals.nom),
+        'dup-warning-entreprise'
+      );
+    }
   }
 })();

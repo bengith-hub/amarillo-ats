@@ -193,7 +193,10 @@
           </div>
 
           <div class="card">
-            <div class="card-header"><h2>Candidats employés (${candidats.length})</h2></div>
+            <div class="card-header">
+              <h2>Candidats employés (${candidats.length})</h2>
+              <button class="btn btn-primary btn-sm" onclick="showAddCandidatModal()">+ Candidat</button>
+            </div>
             <div class="card-body">
               ${candidats.length === 0 ? '<div class="empty-state"><p>Aucun candidat</p></div>' :
                 candidats.map(c => `
@@ -669,6 +672,7 @@
 
   function showAddDecideurModal() {
     const body = `
+      <div id="dup-warning-decideur-ent"></div>
       <div class="form-row">
         <div class="form-group"><label>Prénom</label><input type="text" id="nd-prenom"></div>
         <div class="form-group"><label>Nom</label><input type="text" id="nd-nom"></div>
@@ -732,6 +736,126 @@
         UI.toast('Décideur ajouté');
       }
     });
+
+    DuplicateDetector.attachLiveCheck(
+      { prenom: 'nd-prenom', nom: 'nd-nom', email: 'nd-email', entreprise_id: { value: entId } },
+      (vals) => DuplicateDetector.findDecideurDuplicates({ ...vals, entreprise_id: entId }),
+      'dup-warning-decideur-ent'
+    );
+  }
+
+  function showAddCandidatModal() {
+    const body = `
+      <div id="dup-warning-candidat-ent"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Prénom</label><input type="text" id="nc-prenom"></div>
+        <div class="form-group"><label>Nom</label><input type="text" id="nc-nom"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Poste actuel</label><input type="text" id="nc-poste"></div>
+        <div class="form-group"><label>Poste cible</label><input type="text" id="nc-poste-cible"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Statut</label>
+          <select id="nc-statut">
+            ${Referentiels.get('candidat_statuts').map(s => '<option value="' + s + '">' + s + '</option>').join('')}
+          </select>
+        </div>
+        <div class="form-group"><label>Niveau</label>
+          <select id="nc-niveau">
+            <option value="">—</option>
+            ${Referentiels.get('candidat_niveaux').map(s => '<option value="' + s + '">' + s + '</option>').join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Email</label><input type="email" id="nc-email"></div>
+        <div class="form-group"><label>Téléphone</label><input type="tel" id="nc-telephone"></div>
+      </div>
+      <div class="form-group"><label>LinkedIn</label><input type="url" id="nc-linkedin"></div>
+      <div class="form-group"><label>Localisation</label><input type="text" id="nc-localisation" value="${UI.escHtml(currentEntreprise.localisation || '')}"></div>
+      <div class="form-group"><label>Notes</label><textarea id="nc-notes"></textarea></div>
+      <p style="font-size:0.75rem;color:#64748b;margin-top:4px;">L'entreprise <strong>${UI.escHtml(currentEntreprise.nom)}</strong> sera automatiquement associée.</p>
+    `;
+
+    UI.modal('Ajouter un candidat', body, {
+      width: 600,
+      onSave: async () => {
+        const nom = document.getElementById('nc-nom').value.trim();
+        const prenom = document.getElementById('nc-prenom').value.trim();
+        if (!nom) {
+          UI.toast('Le nom est obligatoire', 'error');
+          throw new Error('validation');
+        }
+
+        const candidat = {
+          id: API.generateId('cand'),
+          prenom,
+          nom,
+          poste_actuel: document.getElementById('nc-poste').value.trim(),
+          poste_cible: document.getElementById('nc-poste-cible').value.trim(),
+          entreprise_actuelle_id: entId,
+          statut: document.getElementById('nc-statut').value,
+          niveau: document.getElementById('nc-niveau').value,
+          email: document.getElementById('nc-email').value.trim(),
+          telephone: document.getElementById('nc-telephone').value.trim(),
+          linkedin: document.getElementById('nc-linkedin').value.trim(),
+          localisation: document.getElementById('nc-localisation').value.trim(),
+          notes: document.getElementById('nc-notes').value.trim(),
+          open_to_work: null,
+          ambassadeur: null,
+          salaire_fixe_actuel: 0,
+          variable_actuel: 0,
+          package_souhaite_min: 0,
+          package_souhaite: 0,
+          preavis: '',
+          diplome: '',
+          origine: '',
+          recommande_par: '',
+          date_disponibilite: '',
+          teletravail: '',
+          rtt: null,
+          date_naissance: '',
+          adresse_ligne1: '',
+          code_postal: '',
+          ville: '',
+          profile_code: '',
+          debut_poste_actuel: '',
+          debut_carriere: '',
+          synthese_30s: '',
+          parcours_cible: '',
+          package_attentes: '',
+          motivation_drivers: '',
+          motivation_changement: '',
+          fit_poste: '',
+          fit_culture: '',
+          risques: '',
+          lecture_recruteur: '',
+          nb_rtt: 0,
+          missions_ids: [],
+          decideur_connu_ids: [],
+          candidats_lies_ids: [],
+          manager_id: null,
+          n2_id: null,
+          documents: [],
+          google_drive_url: '',
+          dernier_contact: null,
+          prochaine_relance: null,
+          created_at: new Date().toISOString(),
+        };
+        await Store.add('candidats', candidat);
+        renderEntreprisePage();
+        UI.toast('Candidat ajouté');
+      }
+    });
+
+    UI.localisationAutocomplete('nc-localisation');
+
+    DuplicateDetector.attachLiveCheck(
+      { prenom: 'nc-prenom', nom: 'nc-nom', email: 'nc-email', telephone: 'nc-telephone', linkedin: 'nc-linkedin' },
+      (vals) => DuplicateDetector.findCandidatDuplicates(vals),
+      'dup-warning-candidat-ent'
+    );
   }
 
   (async function() {

@@ -189,6 +189,7 @@
     const entreprises = Store.get('entreprises');
 
     const bodyHtml = `
+      <div id="dup-warning-decideur"></div>
       <div class="form-row">
         <div class="form-group"><label>Prénom</label><input type="text" id="d-prenom" value="${UI.escHtml(d.prenom||'')}" /></div>
         <div class="form-group"><label>Nom</label><input type="text" id="d-nom" value="${UI.escHtml(d.nom||'')}" /></div>
@@ -271,5 +272,13 @@
       }
     });
     UI.localisationAutocomplete('d-loc');
+
+    if (!isEdit) {
+      DuplicateDetector.attachLiveCheck(
+        { prenom: 'd-prenom', nom: 'd-nom', email: 'd-email', entreprise_id: 'd-entreprise' },
+        (vals) => DuplicateDetector.findDecideurDuplicates(vals),
+        'dup-warning-decideur'
+      );
+    }
   }
 })();
