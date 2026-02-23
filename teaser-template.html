@@ -67,7 +67,6 @@
     background: var(--amarillo-dark);
     display: flex;
     justify-content: space-between;
-    align-items: center;
     padding: 0 10mm;
     height: 42mm;
     flex-shrink: 0;
@@ -83,6 +82,7 @@
     width: 85mm;
     height: auto;
     display: block;
+    object-fit: contain;
   }
 
   .header-title {
@@ -93,6 +93,9 @@
     text-align: right;
     line-height: 1.4;
     margin-right: 43mm;
+    display: flex;
+    align-items: center;
+    height: 100%;
   }
 
   .header-yellow-line {
@@ -341,7 +344,7 @@
   .footer {
     background: var(--amarillo-dark);
     flex-shrink: 0;
-    height: 45mm;
+    height: 35mm;
     padding: 0 10mm;
     display: flex;
     flex-direction: column;
