@@ -191,7 +191,7 @@
 
     // Check if CV completion feature is available
     const cvDoc = (candidat.documents || []).find(d => d.type === 'CV' && d.url);
-    const hasDriveCv = cvDoc && typeof GoogleDrive !== 'undefined' && GoogleDrive.isConfigured();
+    const hasDriveCv = cvDoc && typeof GoogleDrive !== 'undefined';
     const hasOpenAI = typeof CVParser !== 'undefined' && CVParser.getOpenAIKey && CVParser.getOpenAIKey();
     const showCvCompletion = hasDriveCv || hasOpenAI;
 
@@ -663,7 +663,7 @@
 
     // Check if candidate has a CV in documents (for Drive fetch)
     const cvDoc = (candidat.documents || []).find(d => d.type === 'CV' && d.url);
-    const hasDriveCv = cvDoc && typeof GoogleDrive !== 'undefined' && GoogleDrive.isConfigured();
+    const hasDriveCv = cvDoc && typeof GoogleDrive !== 'undefined';
     const hasExistingContent = [candidat.synthese_30s, candidat.parcours_cible, candidat.motivation_drivers, candidat.lecture_recruteur].some(f => f && f.trim());
 
     document.getElementById('tab-entretien').innerHTML = `
