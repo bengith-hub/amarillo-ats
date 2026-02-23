@@ -191,7 +191,7 @@
 
     // Check if CV completion feature is available
     const cvDoc = (candidat.documents || []).find(d => d.type === 'CV' && d.url);
-    const hasDriveCv = cvDoc && typeof GoogleDrive !== 'undefined';
+    const hasDriveCv = (cvDoc || candidat.google_drive_url) && typeof GoogleDrive !== 'undefined';
     const hasOpenAI = typeof CVParser !== 'undefined' && CVParser.getOpenAIKey && CVParser.getOpenAIKey();
     const showCvCompletion = hasDriveCv || hasOpenAI;
 
@@ -446,16 +446,36 @@
 
       // Drive button
       document.getElementById('btn-cv-complete-drive')?.addEventListener('click', async () => {
-        const match = cvDoc.url.match(/\/d\/([^/]+)/);
-        if (!match) { UI.toast('URL Drive invalide', 'error'); return; }
-
         const driveBtn = document.getElementById('btn-cv-complete-drive');
         driveBtn.disabled = true;
         cvCompleteStatus.innerHTML = '<span style="color:#64748b;"><span class="ia-spinner"></span> Téléchargement depuis Drive...</span>';
 
         try {
           await GoogleDrive.authenticate();
-          const downloaded = await GoogleDrive.downloadFile(match[1]);
+
+          let fileId;
+          if (cvDoc && cvDoc.url) {
+            const match = cvDoc.url.match(/\/d\/([^/]+)/);
+            if (match) fileId = match[1];
+          }
+
+          // Fallback: search CV in the candidate's Drive folder
+          if (!fileId && candidat.google_drive_url) {
+            const folderMatch = candidat.google_drive_url.match(/\/folders\/([^/?]+)/);
+            if (folderMatch) {
+              cvCompleteStatus.innerHTML = '<span style="color:#64748b;"><span class="ia-spinner"></span> Recherche du CV dans le dossier Drive...</span>';
+              const files = await GoogleDrive.listFilesInFolder(folderMatch[1]);
+              const cvFile = files.find(f => /cv/i.test(f.name) && f.mimeType === 'application/pdf')
+                          || files.find(f => f.mimeType === 'application/pdf')
+                          || files.find(f => /cv/i.test(f.name));
+              if (cvFile) fileId = cvFile.id;
+            }
+          }
+
+          if (!fileId) { UI.toast('Aucun CV trouvé dans le dossier Drive', 'error'); driveBtn.disabled = false; cvCompleteStatus.innerHTML = ''; return; }
+
+          cvCompleteStatus.innerHTML = '<span style="color:#64748b;"><span class="ia-spinner"></span> Téléchargement depuis Drive...</span>';
+          const downloaded = await GoogleDrive.downloadFile(fileId);
           const file = new File([downloaded.blob], downloaded.name, { type: downloaded.mimeType });
           await processCvForCompletion(file);
         } catch (err) {
@@ -663,7 +683,7 @@
 
     // Check if candidate has a CV in documents (for Drive fetch)
     const cvDoc = (candidat.documents || []).find(d => d.type === 'CV' && d.url);
-    const hasDriveCv = cvDoc && typeof GoogleDrive !== 'undefined';
+    const hasDriveCv = (cvDoc || candidat.google_drive_url) && typeof GoogleDrive !== 'undefined';
     const hasExistingContent = [candidat.synthese_30s, candidat.parcours_cible, candidat.motivation_drivers, candidat.lecture_recruteur].some(f => f && f.trim());
 
     document.getElementById('tab-entretien').innerHTML = `
@@ -961,12 +981,33 @@
 
     // Google Drive CV fetch
     document.getElementById('ia-fetch-cv-drive')?.addEventListener('click', async () => {
-      const match = cvDoc.url.match(/\/d\/([^/]+)/);
-      if (!match) { UI.toast('URL Drive invalide', 'error'); return; }
       cvStatus.innerHTML = '<span style="color:#64748b;">T\u00e9l\u00e9chargement depuis Drive...</span>';
       try {
         await GoogleDrive.authenticate();
-        const downloaded = await GoogleDrive.downloadFile(match[1]);
+
+        let fileId;
+        if (cvDoc && cvDoc.url) {
+          const match = cvDoc.url.match(/\/d\/([^/]+)/);
+          if (match) fileId = match[1];
+        }
+
+        // Fallback: search CV in the candidate's Drive folder
+        if (!fileId && candidat.google_drive_url) {
+          const folderMatch = candidat.google_drive_url.match(/\/folders\/([^/?]+)/);
+          if (folderMatch) {
+            cvStatus.innerHTML = '<span style="color:#64748b;">Recherche du CV dans le dossier Drive...</span>';
+            const files = await GoogleDrive.listFilesInFolder(folderMatch[1]);
+            const cvFile = files.find(f => /cv/i.test(f.name) && f.mimeType === 'application/pdf')
+                        || files.find(f => f.mimeType === 'application/pdf')
+                        || files.find(f => /cv/i.test(f.name));
+            if (cvFile) fileId = cvFile.id;
+          }
+        }
+
+        if (!fileId) { UI.toast('Aucun CV trouvé dans le dossier Drive', 'error'); cvStatus.innerHTML = ''; return; }
+
+        cvStatus.innerHTML = '<span style="color:#64748b;">T\u00e9l\u00e9chargement depuis Drive...</span>';
+        const downloaded = await GoogleDrive.downloadFile(fileId);
         const file = new File([downloaded.blob], downloaded.name, { type: downloaded.mimeType });
         await loadCVFile(file);
       } catch (err) {

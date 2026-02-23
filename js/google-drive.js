@@ -127,6 +127,13 @@ const GoogleDrive = (function() {
     };
   }
 
+  // Lister les fichiers dans un dossier Drive
+  async function listFilesInFolder(folderId) {
+    const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
+    const result = await _driveRequest(`/files?q=${q}&fields=files(id,name,mimeType,webViewLink)&orderBy=modifiedTime desc`);
+    return result.files || [];
+  }
+
   // --- Flow complet : créer dossier + uploader CV ---
 
   async function createCandidatFolderAndUploadCV(candidatName, file) {
@@ -229,6 +236,7 @@ const GoogleDrive = (function() {
     createFolder,
     uploadFile,
     downloadFile,
+    listFilesInFolder,
     createCandidatFolderAndUploadCV,
     showConfigModal
   };
