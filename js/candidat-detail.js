@@ -2778,6 +2778,10 @@
     const savedLabelImpact = candidat.teaser_label_impact || '';
     const savedLabelConditions = candidat.teaser_label_conditions || '';
     const savedLabelLecture = candidat.teaser_label_lecture || '';
+    const savedLabelStatut = candidat.teaser_label_statut || '';
+    const savedLabelMobilite = candidat.teaser_label_mobilite || '';
+    const savedLabelRemuneration = candidat.teaser_label_remuneration || '';
+    const savedLabelPreavis = candidat.teaser_label_preavis || '';
 
     // Style for editable label inputs (look like static labels, editable on click)
     const labelInputStyle = 'background:transparent;border:none;border-bottom:1px dashed transparent;font-size:inherit;font-weight:inherit;color:inherit;padding:0;width:100%;font-family:inherit;outline:none;cursor:text;transition:border-color 0.2s;';
@@ -2825,19 +2829,19 @@
         </div>
 
         <div class="card" data-accent="gold">
-          <div class="card-header"><h2><input type="text" id="teaser-f-label-conditions" value="${UI.escHtml(savedLabelConditions)}" placeholder="Conditions & Disponibilit\u00e9" maxlength="60" style="${titleInputStyle}" /></h2><span class="edit-hint">statut, mobilit\u00e9, r\u00e9mun\u00e9ration</span></div>
+          <div class="card-header"><h2 style="flex:1;min-width:0;"><input type="text" id="teaser-f-label-conditions" value="${UI.escHtml(savedLabelConditions)}" placeholder="Conditions & Disponibilit\u00e9" maxlength="60" style="${titleInputStyle}" /></h2><span class="edit-hint">statut, mobilit\u00e9, r\u00e9mun\u00e9ration</span></div>
           <div class="card-body">
-            <div class="form-group" style="margin-bottom:10px;"><label>Statut</label><input type="text" id="teaser-f-statut" value="${UI.escHtml(savedStatut)}" maxlength="60" placeholder="Ex: En poste actuellement" />${charCountHtml('teaser-f-statut', 60)}</div>
-            <div class="form-group" style="margin-bottom:10px;"><label>Mobilit\u00e9</label><input type="text" id="teaser-f-mobilite" value="${UI.escHtml(savedMobilite)}" maxlength="60" placeholder="Ex: Grand Ouest / Nationale" />${charCountHtml('teaser-f-mobilite', 60)}</div>
-            <div class="form-group" style="margin-bottom:10px;"><label>R\u00e9mun\u00e9ration cible</label><input type="text" id="teaser-f-remuneration" value="${UI.escHtml(savedRemuneration)}" maxlength="60" placeholder="Ex: 120-135k\u20ac fixe + variable" />${charCountHtml('teaser-f-remuneration', 60)}</div>
-            <div class="form-group"><label>Pr\u00e9avis</label><input type="text" id="teaser-f-preavis" value="${UI.escHtml(savedPreavis)}" maxlength="40" placeholder="Ex: 3 mois" />${charCountHtml('teaser-f-preavis', 40)}</div>
+            <div class="form-group" style="margin-bottom:10px;"><label><input type="text" id="teaser-f-label-statut" value="${UI.escHtml(savedLabelStatut)}" placeholder="Statut" maxlength="30" style="${labelInputStyle}" /></label><input type="text" id="teaser-f-statut" value="${UI.escHtml(savedStatut)}" maxlength="60" placeholder="Ex: En poste actuellement" />${charCountHtml('teaser-f-statut', 60)}</div>
+            <div class="form-group" style="margin-bottom:10px;"><label><input type="text" id="teaser-f-label-mobilite" value="${UI.escHtml(savedLabelMobilite)}" placeholder="Mobilit\u00e9" maxlength="30" style="${labelInputStyle}" /></label><input type="text" id="teaser-f-mobilite" value="${UI.escHtml(savedMobilite)}" maxlength="60" placeholder="Ex: Grand Ouest / Nationale" />${charCountHtml('teaser-f-mobilite', 60)}</div>
+            <div class="form-group" style="margin-bottom:10px;"><label><input type="text" id="teaser-f-label-remuneration" value="${UI.escHtml(savedLabelRemuneration)}" placeholder="R\u00e9mun\u00e9ration cible" maxlength="30" style="${labelInputStyle}" /></label><input type="text" id="teaser-f-remuneration" value="${UI.escHtml(savedRemuneration)}" maxlength="60" placeholder="Ex: 120-135k\u20ac fixe + variable" />${charCountHtml('teaser-f-remuneration', 60)}</div>
+            <div class="form-group"><label><input type="text" id="teaser-f-label-preavis" value="${UI.escHtml(savedLabelPreavis)}" placeholder="Pr\u00e9avis" maxlength="30" style="${labelInputStyle}" /></label><input type="text" id="teaser-f-preavis" value="${UI.escHtml(savedPreavis)}" maxlength="40" placeholder="Ex: 3 mois" />${charCountHtml('teaser-f-preavis', 40)}</div>
           </div>
         </div>
       </div>
 
       <div class="card" data-accent="gold" style="margin-bottom:16px;">
         <div class="card-header">
-          <h2><input type="text" id="teaser-f-label-impact" value="${UI.escHtml(savedLabelImpact)}" placeholder="Impact strat\u00e9gique & op\u00e9rationnel" maxlength="60" style="${titleInputStyle}" /></h2>
+          <h2 style="flex:1;min-width:0;"><input type="text" id="teaser-f-label-impact" value="${UI.escHtml(savedLabelImpact)}" placeholder="Impact strat\u00e9gique & op\u00e9rationnel" maxlength="60" style="${titleInputStyle}" /></h2>
           <button class="btn btn-secondary" id="teaser-ai-impact-btn" style="background:#2D3436;color:#F5B731;border-color:#2D3436;font-size:0.75rem;padding:4px 10px;">
             <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
             IA
@@ -2851,7 +2855,7 @@
 
       <div class="card" data-accent="gold" style="margin-bottom:16px;">
         <div class="card-header">
-          <h2><input type="text" id="teaser-f-label-lecture" value="${UI.escHtml(savedLabelLecture)}" placeholder="Lecture strat\u00e9gique Amarillo" maxlength="60" style="${titleInputStyle}" /></h2>
+          <h2 style="flex:1;min-width:0;"><input type="text" id="teaser-f-label-lecture" value="${UI.escHtml(savedLabelLecture)}" placeholder="Lecture strat\u00e9gique Amarillo" maxlength="60" style="${titleInputStyle}" /></h2>
           <button class="btn btn-secondary" id="teaser-ai-lecture-btn" style="background:#2D3436;color:#F5B731;border-color:#2D3436;font-size:0.75rem;padding:4px 10px;">
             <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
             IA
@@ -2915,6 +2919,10 @@
       'teaser-f-label-impact': 'teaser_label_impact',
       'teaser-f-label-conditions': 'teaser_label_conditions',
       'teaser-f-label-lecture': 'teaser_label_lecture',
+      'teaser-f-label-statut': 'teaser_label_statut',
+      'teaser-f-label-mobilite': 'teaser_label_mobilite',
+      'teaser-f-label-remuneration': 'teaser_label_remuneration',
+      'teaser-f-label-preavis': 'teaser_label_preavis',
     };
 
     // Add hover/focus effect for editable label inputs
@@ -3090,6 +3098,10 @@ Ne mentionne AUCUN nom de personne ni d'entreprise.`;
       pdfCandidat.teaser_label_impact = document.getElementById('teaser-f-label-impact')?.value.trim() || '';
       pdfCandidat.teaser_label_conditions = document.getElementById('teaser-f-label-conditions')?.value.trim() || '';
       pdfCandidat.teaser_label_lecture = document.getElementById('teaser-f-label-lecture')?.value.trim() || '';
+      pdfCandidat.teaser_label_statut = document.getElementById('teaser-f-label-statut')?.value.trim() || '';
+      pdfCandidat.teaser_label_mobilite = document.getElementById('teaser-f-label-mobilite')?.value.trim() || '';
+      pdfCandidat.teaser_label_remuneration = document.getElementById('teaser-f-label-remuneration')?.value.trim() || '';
+      pdfCandidat.teaser_label_preavis = document.getElementById('teaser-f-label-preavis')?.value.trim() || '';
       return pdfCandidat;
     }
 
@@ -3117,12 +3129,15 @@ Ne mentionne AUCUN nom de personne ni d'entreprise.`;
       if (c.teaser_equipe) metadonnees.push({ label: (c.teaser_label_equipe || '\u00c9QUIPE').toUpperCase(), valeur: anon(c.teaser_equipe) });
       if (c.teaser_budget) metadonnees.push({ label: (c.teaser_label_budget || 'BUDGET IT').toUpperCase(), valeur: anon(c.teaser_budget) });
 
-      // Conditions
+      // Conditions — custom labels with fallbacks
       const conditions = [];
-      if (c.teaser_statut) conditions.push({ texte: anon(c.teaser_statut) });
-      if (c.teaser_mobilite) conditions.push({ label: 'Mobilit\u00e9', texte: anon(c.teaser_mobilite) });
-      if (c.teaser_remuneration) conditions.push({ label: 'R\u00e9mun\u00e9ration cible', texte: anon(c.teaser_remuneration) });
-      if (c.teaser_preavis) conditions.push({ label: 'Pr\u00e9avis', texte: anon(c.teaser_preavis) });
+      if (c.teaser_statut) {
+        const statLabel = c.teaser_label_statut || '';
+        conditions.push(statLabel ? { label: statLabel, texte: anon(c.teaser_statut) } : { texte: anon(c.teaser_statut) });
+      }
+      if (c.teaser_mobilite) conditions.push({ label: c.teaser_label_mobilite || 'Mobilit\u00e9', texte: anon(c.teaser_mobilite) });
+      if (c.teaser_remuneration) conditions.push({ label: c.teaser_label_remuneration || 'R\u00e9mun\u00e9ration cible', texte: anon(c.teaser_remuneration) });
+      if (c.teaser_preavis) conditions.push({ label: c.teaser_label_preavis || 'Pr\u00e9avis', texte: anon(c.teaser_preavis) });
 
       return {
         titre_poste: anon(c.teaser_titre_accrocheur),
