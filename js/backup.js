@@ -223,17 +223,58 @@ const Backup = (() => {
     let binId = ATS_CONFIG.bins.backups;
 
     if (!binId) {
+      // Check localStorage first (may have been created in a previous session)
+      try {
+        const saved = localStorage.getItem('ats_config');
+        if (saved) {
+          const cfg = JSON.parse(saved);
+          if (cfg.bins && cfg.bins.backups) {
+            binId = cfg.bins.backups;
+            ATS_CONFIG.bins.backups = binId;
+            const apiCfg = API.getConfig();
+            apiCfg.bins = apiCfg.bins || {};
+            apiCfg.bins.backups = binId;
+            API.saveConfig(apiCfg);
+            return binId;
+          }
+        }
+      } catch (_) {}
+
       // Create the backup bin on first use
-      binId = await API.createBin('backups', { snapshots: [] });
+      const res = await fetch('https://api.jsonbin.io/v3/b', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Master-Key': ATS_CONFIG.apiKey,
+          'X-Bin-Name': 'ats-backups'
+        },
+        body: JSON.stringify({ snapshots: [], status: {} })
+      });
+
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).message || ''; } catch (_) {}
+        throw new Error(`Impossible de créer le bin backup (${res.status}) : ${detail}`);
+      }
+
+      const created = await res.json();
+      binId = created.metadata.id;
       ATS_CONFIG.bins.backups = binId;
 
-      // Sync to API module's internal config so API.updateBin('backups', ...) works
+      // Sync to API module and localStorage
       const apiCfg = API.getConfig();
       apiCfg.bins = apiCfg.bins || {};
       apiCfg.bins.backups = binId;
       API.saveConfig(apiCfg);
 
       console.log('Backup bin created:', binId);
+    }
+
+    // Ensure API module knows about this bin
+    const apiCfg = API.getConfig();
+    if (!apiCfg.bins.backups) {
+      apiCfg.bins.backups = binId;
+      API.saveConfig(apiCfg);
     }
 
     return binId;
@@ -255,9 +296,26 @@ const Backup = (() => {
   }
 
   async function _saveSnapshots(container) {
-    // Use API.updateBin for consistency (retry logic, same headers as other bins)
-    await _getBackupsBin(); // ensure bin exists and is registered in API config
-    await API.updateBin('backups', container);
+    const binId = await _getBackupsBin();
+    const payload = JSON.stringify(container);
+    const sizeKB = Math.round(payload.length / 1024);
+    console.log(`Saving snapshots to ${binId}, payload: ${sizeKB} KB`);
+
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': ATS_CONFIG.apiKey
+      },
+      body: payload
+    });
+
+    if (!res.ok) {
+      let detail = '';
+      try { detail = (await res.json()).message || ''; } catch (_) {}
+      console.error(`Snapshot save failed: ${res.status} — ${detail} (payload: ${sizeKB} KB)`);
+      throw new Error(`Sauvegarde snapshot échouée (${res.status}) : ${detail || 'erreur inconnue'}`);
+    }
     return true;
   }
 
