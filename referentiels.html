@@ -673,10 +673,23 @@
         const cardInner = card.querySelector('.card');
 
         if (!status || !status.last_success) {
-          iconEl.innerHTML = '&#9888;&#65039;';
-          textEl.textContent = 'Backup automatique non configur\u00e9';
-          detailEl.textContent = 'Configurez JSONBIN_BACKUP_BIN dans Netlify pour activer les backups automatiques.';
-          cardInner.style.borderLeftColor = '#f59e0b';
+          // Check if there's a recent local/manual backup success
+          const localSuccess = localStorage.getItem('ats_backup_last_success');
+          if (localSuccess) {
+            const localDate = new Date(localSuccess).toLocaleDateString('fr-FR', {
+              day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+            });
+            iconEl.innerHTML = '&#9989;';
+            textEl.textContent = 'Backup manuel actif';
+            textEl.style.color = '#16a34a';
+            detailEl.textContent = 'Dernier backup r\u00e9ussi : ' + localDate + '. Cr\u00e9ez un snapshot pour activer le suivi automatique.';
+            cardInner.style.borderLeftColor = '#22c55e';
+          } else {
+            iconEl.innerHTML = '&#9888;&#65039;';
+            textEl.textContent = 'Backup automatique non configur\u00e9';
+            detailEl.textContent = 'Cr\u00e9ez un premier snapshot ci-dessous pour activer le suivi automatique des backups.';
+            cardInner.style.borderLeftColor = '#f59e0b';
+          }
           return;
         }
 
