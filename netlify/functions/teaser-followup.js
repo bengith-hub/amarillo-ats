@@ -1,35 +1,23 @@
 // Amarillo ATS — Teaser Follow-up Scheduled Function
 // Runs daily at 8:00 AM to check for due teaser relances.
 //
+// V2: Uses Netlify Blobs instead of JSONBin.
 // V1: Creates CRM actions "Relance teaser à faire" (no auto email send).
 // The actual email send is done manually from the ATS UI.
 
-const JSONBIN_BASE = 'https://api.jsonbin.io/v3/b';
+import { getStore } from "@netlify/blobs";
 
 export default async function handler(req) {
-  // Fallback to hardcoded values from config.js (already public in frontend code)
-  const apiKey = process.env.JSONBIN_API_KEY || '$2a$10$FvDIogJwH4l87MiEdExg6udcabOSwaFpjoL1xTc5KQgUojd6JA4Be';
-  const candidatsBin = process.env.JSONBIN_CANDIDATS_BIN || '698a4deeae596e708f1e4f33';
-  const actionsBin = process.env.JSONBIN_ACTIONS_BIN || '698a4defd0ea881f40ade482';
-
   const today = new Date().toISOString().split('T')[0];
 
   try {
+    const store = getStore("ats-data");
+
     // 1. Fetch candidats
-    const candidatsRes = await fetch(`${JSONBIN_BASE}/${candidatsBin}/latest`, {
-      headers: { 'X-Master-Key': apiKey }
-    });
-    if (!candidatsRes.ok) throw new Error(`Failed to fetch candidats: ${candidatsRes.status}`);
-    const candidatsData = await candidatsRes.json();
-    const candidats = candidatsData.record || [];
+    const candidats = await store.get("candidats", { type: "json" }) || [];
 
     // 2. Fetch actions
-    const actionsRes = await fetch(`${JSONBIN_BASE}/${actionsBin}/latest`, {
-      headers: { 'X-Master-Key': apiKey }
-    });
-    if (!actionsRes.ok) throw new Error(`Failed to fetch actions: ${actionsRes.status}`);
-    const actionsData = await actionsRes.json();
-    const actions = actionsData.record || [];
+    const actions = await store.get("actions", { type: "json" }) || [];
 
     // 3. Process teaser relances
     let updatedCandidats = false;
@@ -108,29 +96,13 @@ export default async function handler(req) {
 
     // 4. Save updated candidats
     if (updatedCandidats) {
-      const updateRes = await fetch(`${JSONBIN_BASE}/${candidatsBin}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Master-Key': apiKey
-        },
-        body: JSON.stringify(candidats)
-      });
-      if (!updateRes.ok) throw new Error(`Failed to update candidats: ${updateRes.status}`);
+      await store.setJSON("candidats", candidats);
     }
 
     // 5. Save new actions
     if (newActions.length > 0) {
       const allActions = [...actions, ...newActions];
-      const actionsUpdateRes = await fetch(`${JSONBIN_BASE}/${actionsBin}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Master-Key': apiKey
-        },
-        body: JSON.stringify(allActions)
-      });
-      if (!actionsUpdateRes.ok) throw new Error(`Failed to update actions: ${actionsUpdateRes.status}`);
+      await store.setJSON("actions", allActions);
     }
 
     return new Response(JSON.stringify({

@@ -1,36 +1,20 @@
-// Amarillo ATS — JSONBin API Layer
+// Amarillo ATS — API Layer (Netlify Blobs via Netlify Functions)
+// Migrated from JSONBin to Netlify Blobs for unlimited storage.
 
 const API = (() => {
-  // Load config from config.js (hardcoded) or fallback to localStorage
+  const STORE_URL = '/.netlify/functions/store';
+
+  // Legacy config (kept for backward compat with config.js references)
   let config = {
     apiKey: '',
-    bins: {
-      candidats: '',
-      entreprises: '',
-      decideurs: '',
-      missions: '',
-      actions: '',
-      facturation: '',
-      references: '',
-      notes: ''
-    }
+    bins: {}
   };
 
-  const BASE_URL = 'https://api.jsonbin.io/v3/b';
-
   function loadConfig() {
-    // Priority 1: hardcoded config from config.js
-    if (typeof ATS_CONFIG !== 'undefined' && ATS_CONFIG.apiKey) {
+    if (typeof ATS_CONFIG !== 'undefined') {
       config = { ...config, ...ATS_CONFIG };
-      return true;
     }
-    // Priority 2: localStorage (legacy fallback)
-    const saved = localStorage.getItem('ats_config');
-    if (saved) {
-      config = JSON.parse(saved);
-      return true;
-    }
-    return false;
+    return true;
   }
 
   function saveConfig(newConfig) {
@@ -39,23 +23,23 @@ const API = (() => {
   }
 
   function isConfigured() {
-    return config.apiKey && Object.values(config.bins).some(b => b);
+    // Always configured — Netlify Blobs doesn't need API keys
+    return true;
   }
 
-  // Retry-aware fetch: handles 429 rate limits with exponential backoff
+  // Retry-aware fetch with exponential backoff
   async function fetchWithRetry(url, options, retries = 3) {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const res = await fetch(url, options);
         if (res.status === 429 && attempt < retries) {
-          const delay = (attempt + 1) * 1500; // 1.5s, 3s, 4.5s
+          const delay = (attempt + 1) * 1500;
           console.warn(`Rate limited, retrying in ${delay}ms...`);
           await new Promise(r => setTimeout(r, delay));
           continue;
         }
         return res;
       } catch (e) {
-        // Network/CORS error — often caused by 429 without CORS headers
         if (attempt < retries) {
           const delay = (attempt + 1) * 2000;
           console.warn(`Fetch failed (${e.message}), retrying in ${delay}ms...`);
@@ -68,31 +52,18 @@ const API = (() => {
   }
 
   async function fetchBin(entity) {
-    const binId = config.bins[entity];
-    if (!binId) throw new Error(`No bin configured for ${entity}`);
-
-    const res = await fetchWithRetry(`${BASE_URL}/${binId}/latest`, {
-      headers: { 'X-Master-Key': config.apiKey }
-    });
-
+    const res = await fetchWithRetry(`${STORE_URL}?entity=${entity}`);
     if (!res.ok) throw new Error(`Failed to fetch ${entity}: ${res.status}`);
-    const data = await res.json();
-    return data.record || [];
+    return await res.json();
   }
 
   async function updateBin(entity, records) {
-    const binId = config.bins[entity];
-    if (!binId) throw new Error(`No bin configured for ${entity}`);
-
     const body = JSON.stringify(records);
     const sizeKB = Math.round(body.length / 1024);
 
-    const res = await fetchWithRetry(`${BASE_URL}/${binId}`, {
+    const res = await fetchWithRetry(`${STORE_URL}?entity=${entity}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Master-Key': config.apiKey
-      },
+      headers: { 'Content-Type': 'application/json' },
       body
     });
 
@@ -104,36 +75,10 @@ const API = (() => {
     return true;
   }
 
-  async function createBin(entity, initialData = []) {
-    const res = await fetch('https://api.jsonbin.io/v3/b', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Master-Key': config.apiKey,
-        'X-Bin-Name': `ats-${entity}`
-      },
-      body: JSON.stringify(initialData)
-    });
+  // Legacy — no longer needed with Netlify Blobs, kept for compat
+  async function createBin() { return 'netlify-blob'; }
+  async function initAllBins() { return config.bins; }
 
-    if (!res.ok) throw new Error(`Failed to create bin for ${entity}: ${res.status}`);
-    const data = await res.json();
-    return data.metadata.id;
-  }
-
-  // Initialize all bins if not yet created
-  async function initAllBins() {
-    const entities = Object.keys(config.bins);
-    for (const entity of entities) {
-      if (!config.bins[entity]) {
-        const binId = await createBin(entity);
-        config.bins[entity] = binId;
-      }
-    }
-    saveConfig(config);
-    return config.bins;
-  }
-
-  // Generate unique ID
   function generateId(prefix) {
     const ts = Date.now().toString(36);
     const rand = Math.random().toString(36).substr(2, 5);
