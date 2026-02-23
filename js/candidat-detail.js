@@ -2879,7 +2879,7 @@
       updateCount(); // Initial
     }
 
-    // ── Auto-save on blur for all teaser fields ──
+    // ── Auto-save on blur for all teaser fields (debounced to avoid API rate limits) ──
     const fieldMap = {
       'teaser-f-titre': 'teaser_titre_accrocheur',
       'teaser-f-fonction': 'teaser_fonction',
@@ -2895,14 +2895,31 @@
       'teaser-f-lecture': 'teaser_lecture_strategique',
     };
 
+    let _teaserSaveTimer = null;
+    let _teaserPendingUpdates = {};
+
+    function _flushTeaserSave() {
+      if (_teaserSaveTimer) clearTimeout(_teaserSaveTimer);
+      if (Object.keys(_teaserPendingUpdates).length === 0) return;
+      const updates = { ..._teaserPendingUpdates };
+      _teaserPendingUpdates = {};
+      Store.update('candidats', id, updates);
+    }
+
+    function _debouncedTeaserSave(fieldKey, val) {
+      candidat[fieldKey] = val;
+      _teaserPendingUpdates[fieldKey] = val;
+      if (_teaserSaveTimer) clearTimeout(_teaserSaveTimer);
+      _teaserSaveTimer = setTimeout(_flushTeaserSave, 1500);
+    }
+
     for (const [elemId, fieldKey] of Object.entries(fieldMap)) {
       const el = document.getElementById(elemId);
       if (!el) continue;
-      el.addEventListener('blur', async () => {
+      el.addEventListener('blur', () => {
         const val = el.value.trim();
         if (candidat[fieldKey] !== val) {
-          candidat[fieldKey] = val;
-          await Store.update('candidats', id, { [fieldKey]: val });
+          _debouncedTeaserSave(fieldKey, val);
         }
       });
     }
@@ -3076,6 +3093,7 @@ Ne mentionne AUCUN nom de personne ni d'entreprise.`;
 
     // ── Ouvrir le template HTML dans un nouvel onglet avec les données ──
     function openTeaserTemplate() {
+      _flushTeaserSave(); // flush pending debounced saves before preview
       const data = buildTeaserData();
       const encoded = btoa(encodeURIComponent(JSON.stringify(data)));
       window.open('teaser-template.html?data=' + encoded, '_blank');
