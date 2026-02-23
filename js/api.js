@@ -84,16 +84,23 @@ const API = (() => {
     const binId = config.bins[entity];
     if (!binId) throw new Error(`No bin configured for ${entity}`);
 
+    const body = JSON.stringify(records);
+    const sizeKB = Math.round(body.length / 1024);
+
     const res = await fetchWithRetry(`${BASE_URL}/${binId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'X-Master-Key': config.apiKey
       },
-      body: JSON.stringify(records)
+      body
     });
 
-    if (!res.ok) throw new Error(`Failed to update ${entity}: ${res.status}`);
+    if (!res.ok) {
+      let detail = '';
+      try { detail = await res.text(); } catch (_) {}
+      throw new Error(`Sync ${entity} failed: HTTP ${res.status} (payload ${sizeKB}KB)${detail ? ' — ' + detail.substring(0, 200) : ''}`);
+    }
     return true;
   }
 

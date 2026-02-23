@@ -1732,8 +1732,10 @@ const UI = (() => {
 
 // Sync error feedback — show toast when API sync fails
 if (typeof Store !== 'undefined' && Store.onSyncError) {
-  Store.onSyncError(({ entity }) => {
-    UI.toast(`Erreur de synchronisation (${entity}). Modifications sauvegardées localement.`, 'error');
+  Store.onSyncError(({ entity, error }) => {
+    const detail = error && error.message ? ` [${error.message}]` : '';
+    console.error(`Sync error (${entity}):`, error);
+    UI.toast(`Erreur de synchronisation (${entity}). Modifications sauvegardées localement.${detail}`, 'error');
   });
 }
 
