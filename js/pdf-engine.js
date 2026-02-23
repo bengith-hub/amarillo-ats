@@ -1582,6 +1582,7 @@ const PDFEngine = (() => {
       x: startX = PAGE.marginLeft,
       w: cardW = PAGE.contentWidth,
       maxY: limitY = PAGE.maxY,
+      title: cardTitle = 'Conditions & Disponibilit\u00e9',
     } = options;
 
     const pad = 6;
@@ -1604,7 +1605,7 @@ const PDFEngine = (() => {
     doc.setFont(BRAND.font, 'bold');
     doc.setFontSize(9);
     doc.setTextColor(...BRAND.text);
-    doc.text('Conditions & Disponibilit\u00e9', startX + cardW / 2, ty + 3, { align: 'center' });
+    doc.text(cardTitle, startX + cardW / 2, ty + 3, { align: 'center' });
     ty += titleH;
 
     // Yellow separator line (~60% width, centered)
@@ -1685,15 +1686,15 @@ const PDFEngine = (() => {
     // ─── B) BARRE DE MÉTADONNÉES (colonnes horizontales, séparateurs verticaux) ───
     const metaItems = [];
     const tFonction = _stripEmojis(candidat.teaser_fonction || candidat.poste_actuel || '');
-    if (tFonction) metaItems.push({ label: 'FONCTION', value: tFonction });
+    if (tFonction) metaItems.push({ label: (candidat.teaser_label_fonction || 'FONCTION').toUpperCase(), value: tFonction });
     const tZone = _stripEmojis(candidat.teaser_zone || candidat.localisation || '');
-    if (tZone) metaItems.push({ label: 'ZONE', value: tZone });
+    if (tZone) metaItems.push({ label: (candidat.teaser_label_zone || 'ZONE').toUpperCase(), value: tZone });
     const tPerimetre = _stripEmojis(candidat.teaser_perimetre || '');
-    if (tPerimetre) metaItems.push({ label: 'P\u00c9RIM\u00c8TRE', value: tPerimetre });
+    if (tPerimetre) metaItems.push({ label: (candidat.teaser_label_perimetre || 'P\u00c9RIM\u00c8TRE').toUpperCase(), value: tPerimetre });
     const tEquipe = _stripEmojis(candidat.teaser_equipe || '');
-    if (tEquipe) metaItems.push({ label: '\u00c9QUIPE', value: tEquipe });
+    if (tEquipe) metaItems.push({ label: (candidat.teaser_label_equipe || '\u00c9QUIPE').toUpperCase(), value: tEquipe });
     const tBudget = _stripEmojis(candidat.teaser_budget || '');
-    if (tBudget) metaItems.push({ label: 'BUDGET IT', value: tBudget });
+    if (tBudget) metaItems.push({ label: (candidat.teaser_label_budget || 'BUDGET IT').toUpperCase(), value: tBudget });
 
     if (metaItems.length > 0) {
       const metaBarH = 18;
@@ -1761,7 +1762,7 @@ const PDFEngine = (() => {
     // Impact card (left, 58%)
     let impactEndY = twoColY;
     if (impactBullets.length > 0) {
-      impactEndY = _addBulletCard(doc, twoColY, 'Impact strat\u00e9gique & op\u00e9rationnel', impactBullets, {
+      impactEndY = _addBulletCard(doc, twoColY, candidat.teaser_label_impact || 'Impact strat\u00e9gique & op\u00e9rationnel', impactBullets, {
         x: PAGE.marginLeft,
         w: impactW,
         bgColor: BRAND.primaryLight,
@@ -1777,6 +1778,7 @@ const PDFEngine = (() => {
         x: condX,
         w: condW,
         maxY: contentMaxY - 50,
+        title: candidat.teaser_label_conditions || 'Conditions & Disponibilit\u00e9',
       });
     }
 
@@ -1788,7 +1790,7 @@ const PDFEngine = (() => {
     const lectureBullets = _parseBullets(lectureText);
 
     if (lectureBullets.length > 0 && y < contentMaxY - 25) {
-      y = _addBulletCard(doc, y, 'Lecture strat\u00e9gique Amarillo', lectureBullets, {
+      y = _addBulletCard(doc, y, candidat.teaser_label_lecture || 'Lecture strat\u00e9gique Amarillo', lectureBullets, {
         x: PAGE.marginLeft,
         w: PAGE.contentWidth,
         bgColor: BRAND.primaryLight,
