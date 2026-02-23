@@ -368,6 +368,7 @@
 
   .footer-text {
     flex: 1;
+    margin-top: 4px;
   }
 
   .footer-description {
@@ -415,6 +416,32 @@
     letter-spacing: 15px;
     white-space: nowrap;
     z-index: 10;
+  }
+
+  /* ============================================================
+     EDITABLE TITLES
+     ============================================================ */
+  [contenteditable] {
+    outline: none;
+    cursor: text;
+  }
+
+  [contenteditable]:hover {
+    outline: 1px dashed rgba(245, 183, 49, 0.4);
+    outline-offset: 2px;
+  }
+
+  [contenteditable]:focus {
+    outline: 2px solid var(--amarillo-yellow);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  @media print {
+    [contenteditable]:hover,
+    [contenteditable]:focus {
+      outline: none;
+    }
   }
 
   /* ============================================================
@@ -540,7 +567,7 @@
     <div class="impact-row">
       <!-- IMPACT STRATÉGIQUE -->
       <div class="impact-box">
-        <div class="section-title">Impact stratégique &amp; opérationnel</div>
+        <div class="section-title" contenteditable="true">Impact stratégique &amp; opérationnel</div>
         <div class="impact-body">
           <ul id="impact-list">
             <!-- Items injectés dynamiquement -->
@@ -550,7 +577,7 @@
 
       <!-- CONDITIONS — même hauteur qu'Impact -->
       <div class="conditions-box">
-        <div class="section-title">Conditions &amp; Disponibilité</div>
+        <div class="section-title" contenteditable="true">Conditions &amp; Disponibilité</div>
         <div class="conditions-separator"></div>
         <ul id="conditions-list">
           <!-- Items injectés dynamiquement -->
@@ -559,7 +586,7 @@
     </div>
 
     <!-- LECTURE STRATÉGIQUE — pleine largeur -->
-    <div class="lecture-title-above">Lecture stratégique <span class="amarillo-accent">Amarillo</span></div>
+    <div class="lecture-title-above" contenteditable="true">Lecture stratégique <span class="amarillo-accent">Amarillo</span></div>
     <div class="lecture-box">
       <ul id="lecture-list">
         <!-- Items injectés dynamiquement -->
@@ -667,7 +694,7 @@
     const filtered = data.metadonnees.filter(m => m.valeur);
     metaBar.innerHTML = filtered.map(m => `
       <div class="metadata-col">
-        <div class="metadata-label">${esc(m.label)}</div>
+        <div class="metadata-label" contenteditable="true">${esc(m.label)}</div>
         <div class="metadata-value">${esc(m.valeur)}</div>
         ${m.sous_valeur ? `<div class="metadata-sub">${esc(m.sous_valeur)}</div>` : ''}
       </div>
