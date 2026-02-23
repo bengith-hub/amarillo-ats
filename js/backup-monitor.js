@@ -33,8 +33,25 @@ const BackupMonitor = (() => {
     const cached = _getCachedStatus();
     if (cached) return cached;
 
-    const backupBinId = (typeof ATS_CONFIG !== 'undefined' && ATS_CONFIG.bins && ATS_CONFIG.bins.backups)
+    let backupBinId = (typeof ATS_CONFIG !== 'undefined' && ATS_CONFIG.bins && ATS_CONFIG.bins.backups)
       ? ATS_CONFIG.bins.backups : '';
+
+    // Also check localStorage (bin may have been auto-created by a manual snapshot)
+    if (!backupBinId) {
+      try {
+        const saved = localStorage.getItem('ats_config');
+        if (saved) {
+          const cfg = JSON.parse(saved);
+          if (cfg.bins && cfg.bins.backups) {
+            backupBinId = cfg.bins.backups;
+            // Sync back to in-memory config so future checks work immediately
+            if (typeof ATS_CONFIG !== 'undefined' && ATS_CONFIG.bins) {
+              ATS_CONFIG.bins.backups = backupBinId;
+            }
+          }
+        }
+      } catch (_) {}
+    }
 
     if (!backupBinId) return null;
 

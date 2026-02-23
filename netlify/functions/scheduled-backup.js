@@ -1,11 +1,21 @@
-// Amarillo ATS — Scheduled Backup Status Check
-// Runs daily at 3:00 AM to verify all entity bins are accessible.
-// Records lightweight status metadata in the backup bin for frontend monitoring.
-// Full snapshot data is stored on Google Drive (from the frontend UI).
-// Sends alert via webhook on failure (if BACKUP_ALERT_WEBHOOK is configured).
-// Sends alert email via Gmail API on failure (if GOOGLE_REFRESH_TOKEN is configured).
+// Amarillo ATS — Scheduled Backup to Google Drive
+// Runs daily at 3:00 AM.
+// 1. Downloads all entity data from JSONBin
+// 2. Uploads a full backup snapshot to Google Drive
+// 3. Cleans up old snapshots (keeps last 7)
+// 4. Records status metadata in the backup bin for frontend monitoring
+// 5. Sends alerts on failure (webhook + email)
+//
+// Required env vars for Google Drive backup:
+//   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN
+// Optional env vars:
+//   GOOGLE_DRIVE_BACKUP_FOLDER — Drive folder ID (auto-created if missing)
+//   JSONBIN_BACKUP_BIN — backup metadata bin (auto-created if missing)
+//   BACKUP_ALERT_WEBHOOK — Slack/webhook URL for failure alerts
+//   BACKUP_ALERT_EMAIL — email address for failure alerts
 
 const JSONBIN_BASE = 'https://api.jsonbin.io/v3/b';
+const MAX_SNAPSHOTS = 7;
 
 // All entity bins (same values as config.js, overridable via env vars)
 const ENTITY_BINS = {
@@ -19,18 +29,165 @@ const ENTITY_BINS = {
   notes:        { env: 'JSONBIN_NOTES_BIN',         default: '698a4df143b1c97be9727ea2' }
 };
 
+// ─── Helpers ────────────────────────────────────────────
+
 async function fetchWithDelay(url, options, delayMs = 300) {
   await new Promise(r => setTimeout(r, delayMs));
   const res = await fetch(url, options);
   if (res.status === 429) {
-    // Rate limited — wait and retry once
     await new Promise(r => setTimeout(r, 2000));
     return fetch(url, options);
   }
   return res;
 }
 
-// Send alert to configured webhook on failure
+// ─── Google OAuth2 ──────────────────────────────────────
+
+async function getGoogleAccessToken() {
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+  if (!refreshToken || !clientId || !clientSecret) {
+    return null;
+  }
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret
+    })
+  });
+
+  if (!tokenRes.ok) {
+    const err = await tokenRes.text().catch(() => '');
+    throw new Error(`Google OAuth2 token refresh failed (${tokenRes.status}): ${err}`);
+  }
+
+  const { access_token } = await tokenRes.json();
+  return access_token;
+}
+
+// ─── Google Drive ───────────────────────────────────────
+
+async function findDriveFolder(accessToken, folderName) {
+  const query = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&pageSize=1`,
+    { headers: { 'Authorization': `Bearer ${accessToken}` } }
+  );
+
+  if (!res.ok) return null;
+  const data = await res.json();
+  return (data.files && data.files.length > 0) ? data.files[0].id : null;
+}
+
+async function createDriveFolder(accessToken, folderName) {
+  const res = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      name: folderName,
+      mimeType: 'application/vnd.google-apps.folder'
+    })
+  });
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    throw new Error(`Failed to create Drive folder (${res.status}): ${err}`);
+  }
+
+  const data = await res.json();
+  return data.id;
+}
+
+async function getOrCreateBackupFolder(accessToken) {
+  // Use env var if set
+  const envFolder = process.env.GOOGLE_DRIVE_BACKUP_FOLDER;
+  if (envFolder) {
+    // Verify it still exists
+    const checkRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${envFolder}?fields=id,trashed`,
+      { headers: { 'Authorization': `Bearer ${accessToken}` } }
+    );
+    if (checkRes.ok) {
+      const meta = await checkRes.json();
+      if (!meta.trashed) return envFolder;
+    }
+    console.warn('GOOGLE_DRIVE_BACKUP_FOLDER folder not found or trashed, searching by name...');
+  }
+
+  // Search by name
+  const folderId = await findDriveFolder(accessToken, 'Amarillo Backups');
+  if (folderId) return folderId;
+
+  // Create it
+  const newId = await createDriveFolder(accessToken, 'Amarillo Backups');
+  console.log(`Backup folder created on Drive: ${newId} — Set GOOGLE_DRIVE_BACKUP_FOLDER=${newId} in env vars to speed up.`);
+  return newId;
+}
+
+async function uploadToDrive(accessToken, folderId, fileName, jsonContent) {
+  const boundary = 'backup_boundary_' + Date.now();
+  const metadata = JSON.stringify({ name: fileName, parents: [folderId] });
+
+  const body = [
+    `--${boundary}`,
+    'Content-Type: application/json; charset=UTF-8',
+    '',
+    metadata,
+    `--${boundary}`,
+    'Content-Type: application/json',
+    '',
+    jsonContent,
+    `--${boundary}--`
+  ].join('\r\n');
+
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`
+    },
+    body
+  });
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    throw new Error(`Drive upload failed (${res.status}): ${err}`);
+  }
+
+  return await res.json();
+}
+
+async function listDriveBackups(accessToken, folderId) {
+  const query = `'${folderId}' in parents and mimeType='application/json' and trashed=false`;
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime)&orderBy=createdTime desc&pageSize=50`,
+    { headers: { 'Authorization': `Bearer ${accessToken}` } }
+  );
+
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.files || [];
+}
+
+async function deleteDriveFile(accessToken, fileId) {
+  await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${accessToken}` }
+  });
+}
+
+// ─── Alerts ─────────────────────────────────────────────
+
 async function sendAlertWebhook(errorMessage) {
   const webhookUrl = process.env.BACKUP_ALERT_WEBHOOK;
   if (!webhookUrl) return;
@@ -40,53 +197,34 @@ async function sendAlertWebhook(errorMessage) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text: `⚠️ Amarillo ATS — Échec du backup automatique\n${new Date().toISOString()}\nErreur : ${errorMessage}`,
+        text: `Amarillo ATS — Echec du backup automatique\n${new Date().toISOString()}\nErreur : ${errorMessage}`,
         blocks: [{
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `⚠️ *Amarillo ATS — Échec du backup automatique*\n📅 ${new Date().toISOString()}\n❌ Erreur : ${errorMessage}`
+            text: `*Amarillo ATS — Echec du backup automatique*\n${new Date().toISOString()}\nErreur : ${errorMessage}`
           }
         }]
       })
     });
-    console.log('Alert webhook sent successfully');
+    console.log('Alert webhook sent');
   } catch (e) {
     console.error('Failed to send alert webhook:', e.message);
   }
 }
 
-// Send alert email via Gmail API using OAuth2 refresh token
 async function sendAlertEmail(errorMessage) {
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const alertEmail = process.env.BACKUP_ALERT_EMAIL || 'benjamin.fetu@amarillosearch.com';
-
-  if (!refreshToken || !clientId || !clientSecret) {
-    console.log('Gmail alert not configured (missing GOOGLE_REFRESH_TOKEN, GOOGLE_CLIENT_ID, or GOOGLE_CLIENT_SECRET)');
+  let accessToken;
+  try {
+    accessToken = await getGoogleAccessToken();
+  } catch (_) {
     return;
   }
+  if (!accessToken) return;
+
+  const alertEmail = process.env.BACKUP_ALERT_EMAIL || 'benjamin.fetu@amarillosearch.com';
 
   try {
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-        client_id: clientId,
-        client_secret: clientSecret
-      })
-    });
-
-    if (!tokenRes.ok) {
-      console.error('Failed to refresh Gmail token:', tokenRes.status);
-      return;
-    }
-
-    const { access_token } = await tokenRes.json();
-
     const now = new Date();
     const dateStr = now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     const subject = `[Amarillo ATS] Echec du backup automatique — ${dateStr}`;
@@ -124,14 +262,14 @@ async function sendAlertEmail(errorMessage) {
     const sendRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${access_token}`,
+        'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ raw })
     });
 
     if (sendRes.ok) {
-      console.log('Alert email sent successfully to', alertEmail);
+      console.log('Alert email sent to', alertEmail);
     } else {
       console.error('Failed to send alert email:', sendRes.status);
     }
@@ -140,12 +278,13 @@ async function sendAlertEmail(errorMessage) {
   }
 }
 
-// Auto-create backup bin if none configured
+// ─── JSONBin backup bin ─────────────────────────────────
+
 async function getOrCreateBackupBin(apiKey) {
   const envBin = process.env.JSONBIN_BACKUP_BIN;
   if (envBin) return envBin;
 
-  console.log('JSONBIN_BACKUP_BIN not set — creating backup bin automatically...');
+  console.log('JSONBIN_BACKUP_BIN not set — creating backup bin...');
   const res = await fetch('https://api.jsonbin.io/v3/b', {
     method: 'POST',
     headers: {
@@ -156,35 +295,32 @@ async function getOrCreateBackupBin(apiKey) {
     body: JSON.stringify({ snapshots: [], status: {} })
   });
 
-  if (!res.ok) {
-    throw new Error(`Failed to create backup bin: ${res.status}`);
-  }
+  if (!res.ok) throw new Error(`Failed to create backup bin: ${res.status}`);
 
   const data = await res.json();
   const binId = data.metadata.id;
-  console.log(`Backup bin created: ${binId} — Add JSONBIN_BACKUP_BIN=${binId} to Netlify env vars to avoid re-creation.`);
+  console.log(`Backup bin created: ${binId} — Set JSONBIN_BACKUP_BIN=${binId} in Netlify env vars.`);
   return binId;
 }
 
+// ─── Main handler ───────────────────────────────────────
+
 export default async function handler(req) {
   const apiKey = process.env.JSONBIN_API_KEY || '$2a$10$FvDIogJwH4l87MiEdExg6udcabOSwaFpjoL1xTc5KQgUojd6JA4Be';
+  const headers = { 'X-Master-Key': apiKey };
 
+  // 1. Get/create backup metadata bin
   let backupBin;
   try {
     backupBin = await getOrCreateBackupBin(apiKey);
   } catch (e) {
     const errMsg = `Cannot get/create backup bin: ${e.message}`;
     console.error(errMsg);
-    await Promise.all([
-      sendAlertWebhook(errMsg),
-      sendAlertEmail(errMsg)
-    ]);
+    await Promise.all([sendAlertWebhook(errMsg), sendAlertEmail(errMsg)]);
     return new Response(JSON.stringify({ error: errMsg }), { status: 500 });
   }
 
-  const headers = { 'X-Master-Key': apiKey };
-
-  // Read existing metadata from backup bin
+  // 2. Read existing metadata
   let meta = { snapshots: [], status: {} };
   try {
     const backupRes = await fetchWithDelay(`${JSONBIN_BASE}/${backupBin}/latest`, { headers });
@@ -199,41 +335,116 @@ export default async function handler(req) {
   }
 
   try {
-    // Verify all entity bins are accessible and count records
+    // 3. Download all entity data from JSONBin
+    const data = {};
     const counts = {};
-    let errors = [];
+    const errors = [];
 
     for (const [entity, cfg] of Object.entries(ENTITY_BINS)) {
       const binId = process.env[cfg.env] || cfg.default;
-
       const res = await fetchWithDelay(`${JSONBIN_BASE}/${binId}/latest`, { headers });
+
       if (!res.ok) {
         console.warn(`Failed to fetch ${entity}: ${res.status}`);
         errors.push(`${entity}: ${res.status}`);
+        data[entity] = [];
         counts[entity] = 0;
         continue;
       }
 
       const result = await res.json();
       const records = result.record || [];
-      counts[entity] = Array.isArray(records) ? records.length : 0;
+      data[entity] = Array.isArray(records) ? records : [];
+      counts[entity] = data[entity].length;
     }
 
     if (errors.length > 0) {
       throw new Error(`Bins inaccessibles : ${errors.join(', ')}`);
     }
 
-    // Update status — success (lightweight, no full data)
+    const totalRecords = Object.values(counts).reduce((a, b) => a + b, 0);
+    console.log(`Downloaded ${totalRecords} records across ${Object.keys(counts).length} entities`);
+
+    // 4. Upload to Google Drive
+    let driveFileId = null;
+    let driveFileName = null;
+    let driveUploadOk = false;
+
+    const accessToken = await getGoogleAccessToken();
+
+    if (accessToken) {
+      try {
+        const folderId = await getOrCreateBackupFolder(accessToken);
+
+        const snapshotId = 'snap_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
+        const now = new Date();
+        const dateStr = now.toISOString().slice(0, 10);
+        const timeStr = now.toISOString().slice(11, 16).replace(':', 'h');
+        driveFileName = `amarillo-snapshot-${dateStr}-${timeStr}.json`;
+
+        const backup = {
+          _meta: {
+            version: '1.0',
+            id: snapshotId,
+            date: now.toISOString(),
+            source: 'scheduled',
+            counts
+          },
+          data
+        };
+
+        const jsonContent = JSON.stringify(backup);
+        const uploaded = await uploadToDrive(accessToken, folderId, driveFileName, jsonContent);
+        driveFileId = uploaded.id;
+        driveUploadOk = true;
+
+        console.log(`Backup uploaded to Drive: ${driveFileName} (${uploaded.id})`);
+
+        // 5. Add snapshot to metadata
+        meta.snapshots.unshift({
+          id: snapshotId,
+          date: now.toISOString(),
+          source: 'scheduled',
+          counts,
+          driveFileId: uploaded.id,
+          driveFileName
+        });
+
+        // 6. Clean up old snapshots (keep last MAX_SNAPSHOTS)
+        if (meta.snapshots.length > MAX_SNAPSHOTS) {
+          const toRemove = meta.snapshots.splice(MAX_SNAPSHOTS);
+          for (const old of toRemove) {
+            if (old.driveFileId) {
+              try {
+                await deleteDriveFile(accessToken, old.driveFileId);
+                console.log(`Deleted old snapshot from Drive: ${old.driveFileName || old.driveFileId}`);
+              } catch (e) {
+                console.warn(`Could not delete old Drive file ${old.driveFileId}:`, e.message);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Google Drive upload failed:', e.message);
+        // Continue — still record status as health-check-only success
+      }
+    } else {
+      console.log('Google Drive not configured (missing GOOGLE_REFRESH_TOKEN/CLIENT_ID/CLIENT_SECRET) — skipping Drive upload, health check only.');
+    }
+
+    // 7. Update status metadata
     const now = new Date().toISOString();
     meta.status = {
       last_success: now,
       last_run: now,
       result: 'ok',
       error: null,
-      counts
+      counts,
+      drive_backup: driveUploadOk,
+      drive_file: driveFileName
     };
 
-    // Save lightweight metadata back to backup bin
+    // 8. Save metadata to JSONBin
     await new Promise(r => setTimeout(r, 500));
     const saveRes = await fetch(`${JSONBIN_BASE}/${backupBin}`, {
       method: 'PUT',
@@ -248,21 +459,21 @@ export default async function handler(req) {
       throw new Error(`Failed to save backup status: ${saveRes.status}`);
     }
 
-    const totalRecords = Object.values(counts).reduce((a, b) => a + b, 0);
-
-    console.log(`Backup check OK: ${totalRecords} records across ${Object.keys(counts).length} entities`);
+    console.log(`Backup complete: ${totalRecords} records, Drive upload: ${driveUploadOk ? 'OK' : 'skipped'}, snapshots: ${meta.snapshots.length}`);
 
     return new Response(JSON.stringify({
       status: 'ok',
       totalRecords,
       counts,
+      driveBackup: driveUploadOk,
+      driveFile: driveFileName,
       snapshotsOnDrive: meta.snapshots.length
     }));
 
   } catch (error) {
     console.error('scheduled-backup error:', error);
 
-    // Record failure status
+    // Record failure
     meta.status = {
       ...meta.status,
       last_run: new Date().toISOString(),
@@ -270,25 +481,17 @@ export default async function handler(req) {
       error: error.message
     };
 
-    // Try to save error status
     try {
       await fetch(`${JSONBIN_BASE}/${backupBin}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Master-Key': apiKey
-        },
+        headers: { 'Content-Type': 'application/json', 'X-Master-Key': apiKey },
         body: JSON.stringify(meta)
       });
     } catch (_) {
-      console.error('Could not even save error status');
+      console.error('Could not save error status');
     }
 
-    // Send alerts
-    await Promise.all([
-      sendAlertWebhook(error.message),
-      sendAlertEmail(error.message)
-    ]);
+    await Promise.all([sendAlertWebhook(error.message), sendAlertEmail(error.message)]);
 
     return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   }
