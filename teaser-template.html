@@ -76,13 +76,14 @@
     display: flex;
     align-items: center;
     height: 100%;
-    overflow: hidden;
   }
 
   .header-logo img {
     width: 85mm;
-    height: auto;
+    height: 38mm;
     display: block;
+    object-fit: cover;
+    object-position: center center;
   }
 
   .header-title {
@@ -345,10 +346,10 @@
     background: var(--amarillo-dark);
     flex-shrink: 0;
     height: 35mm;
-    padding: 10px 10mm 0 10mm;
+    padding: 0 10mm;
     display: flex;
     flex-direction: column;
-    justify-content: flex-start;
+    justify-content: center;
   }
 
   .footer-main {
@@ -359,8 +360,10 @@
 
   .footer-logo img {
     width: 52mm;
-    height: auto;
+    height: 22mm;
     display: block;
+    object-fit: cover;
+    object-position: center center;
   }
 
   .footer-text {
