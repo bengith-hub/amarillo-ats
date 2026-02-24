@@ -731,7 +731,16 @@ const UI = (() => {
           dropdown.appendChild(item);
         });
 
-        // Add "Créer cette entreprise" option
+        // Add "Créer cette entreprise" option with duplicate warning
+        const fuzzyDups = (typeof DuplicateDetector !== 'undefined')
+          ? DuplicateDetector.findEntrepriseDuplicates(input.value).filter(d => !matches.some(m => m.id === d.record.id))
+          : [];
+        if (fuzzyDups.length > 0) {
+          const warnItem = document.createElement('div');
+          warnItem.style.cssText = 'padding:6px 12px;font-size:0.75rem;color:#92400e;background:#fef3c7;border-top:1px solid #fde68a;';
+          warnItem.textContent = `Entreprise(s) similaire(s) : ${fuzzyDups.map(d => d.record.nom).join(', ')}`;
+          dropdown.appendChild(warnItem);
+        }
         const createItem = document.createElement('div');
         createItem.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.8125rem;color:#c9a000;font-weight:600;';
         createItem.textContent = `+ Créer "${input.value}"`;
@@ -1204,8 +1213,17 @@ const UI = (() => {
             item.addEventListener('mouseleave', () => item.style.background = '#fff');
             acDropdown.appendChild(item);
           });
-          // "Créer cette entreprise" option
+          // "Créer cette entreprise" option with duplicate warning
           if (!entreprises.some(e => (e.nom || '').toLowerCase() === q)) {
+            const fuzzyDups = (typeof DuplicateDetector !== 'undefined')
+              ? DuplicateDetector.findEntrepriseDuplicates(input.value.trim()).filter(d => !matches.some(m => m.id === d.record.id))
+              : [];
+            if (fuzzyDups.length > 0) {
+              const warnItem = document.createElement('div');
+              warnItem.style.cssText = 'padding:6px 12px;font-size:0.75rem;color:#92400e;background:#fef3c7;border-top:1px solid #fde68a;';
+              warnItem.textContent = `Similaire(s) : ${fuzzyDups.map(d => d.record.nom).join(', ')}`;
+              acDropdown.appendChild(warnItem);
+            }
             const createItem = document.createElement('div');
             createItem.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.8125rem;color:#c9a000;font-weight:600;border-top:1px solid #e2e8f0;';
             createItem.textContent = `+ Créer "${input.value.trim()}"`;
@@ -1727,6 +1745,179 @@ const UI = (() => {
     documentsSection, drawer,
     linkedinBadge, rowCount,
     escHtml, renderRichText, normalizeUrl, formatDate, formatMonthYear, formatCurrency, getParam
+  };
+})();
+
+// ─── Duplicate Detector ──────────────────────────────────
+// Finds potential duplicates in the database when creating records.
+const DuplicateDetector = (() => {
+
+  function normalize(str) {
+    if (!str) return '';
+    return str
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // strip accents
+      .replace(/[^a-z0-9\s]/g, '') // strip special chars
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  // Similarity score between two strings (0-1), based on common tokens
+  function similarity(a, b) {
+    const na = normalize(a);
+    const nb = normalize(b);
+    if (!na || !nb) return 0;
+    if (na === nb) return 1;
+    // Token-based Jaccard similarity
+    const tokensA = new Set(na.split(' '));
+    const tokensB = new Set(nb.split(' '));
+    const intersection = [...tokensA].filter(t => tokensB.has(t)).length;
+    const union = new Set([...tokensA, ...tokensB]).size;
+    const jaccard = union > 0 ? intersection / union : 0;
+    // Also check if one contains the other
+    const containsBonus = (na.includes(nb) || nb.includes(na)) ? 0.3 : 0;
+    return Math.min(1, jaccard + containsBonus);
+  }
+
+  // Find duplicate entreprises by name
+  function findEntrepriseDuplicates(nom) {
+    if (!nom || nom.trim().length < 2) return [];
+    const entreprises = Store.get('entreprises');
+    const results = [];
+    for (const e of entreprises) {
+      const score = similarity(nom, e.nom);
+      if (score >= 0.5) {
+        results.push({ record: e, score, entity: 'entreprises' });
+      }
+    }
+    return results.sort((a, b) => b.score - a.score).slice(0, 5);
+  }
+
+  // Find duplicate candidats by name + optional email/phone/linkedin
+  function findCandidatDuplicates({ prenom, nom, email, telephone, linkedin }) {
+    if ((!prenom && !nom) || (prenom + ' ' + nom).trim().length < 2) return [];
+    const candidats = Store.get('candidats');
+    const fullName = `${prenom || ''} ${nom || ''}`.trim();
+    const results = [];
+    for (const c of candidats) {
+      const cName = `${c.prenom || ''} ${c.nom || ''}`.trim();
+      let score = similarity(fullName, cName);
+      // Boost score for exact email/phone/linkedin match
+      if (email && c.email && normalize(email) === normalize(c.email)) score = Math.max(score, 0.9);
+      if (telephone && c.telephone && normalize(telephone) === normalize(c.telephone)) score = Math.max(score, 0.8);
+      if (linkedin && c.linkedin && normalize(linkedin) === normalize(c.linkedin)) score = Math.max(score, 0.95);
+      if (score >= 0.5) {
+        results.push({ record: c, score, entity: 'candidats' });
+      }
+    }
+    return results.sort((a, b) => b.score - a.score).slice(0, 5);
+  }
+
+  // Find duplicate décideurs by name + entreprise
+  function findDecideurDuplicates({ prenom, nom, email, entreprise_id }) {
+    if ((!prenom && !nom) || (prenom + ' ' + nom).trim().length < 2) return [];
+    const decideurs = Store.get('decideurs');
+    const fullName = `${prenom || ''} ${nom || ''}`.trim();
+    const results = [];
+    for (const d of decideurs) {
+      const dName = `${d.prenom || ''} ${d.nom || ''}`.trim();
+      let score = similarity(fullName, dName);
+      // Boost if same entreprise
+      if (entreprise_id && d.entreprise_id === entreprise_id) score = Math.min(1, score + 0.2);
+      // Boost for email match
+      if (email && d.email && normalize(email) === normalize(d.email)) score = Math.max(score, 0.9);
+      if (score >= 0.5) {
+        results.push({ record: d, score, entity: 'decideurs' });
+      }
+    }
+    return results.sort((a, b) => b.score - a.score).slice(0, 5);
+  }
+
+  // Render a duplicate warning banner inside a modal
+  function renderWarningBanner(duplicates, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    if (duplicates.length === 0) {
+      container.innerHTML = '';
+      container.style.display = 'none';
+      return;
+    }
+
+    const pages = { candidats: 'candidat.html', entreprises: 'entreprise.html', decideurs: 'decideur.html' };
+
+    container.style.display = 'block';
+    container.innerHTML = `
+      <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-bottom:16px;">
+        <div style="font-size:0.8125rem;font-weight:600;color:#92400e;margin-bottom:6px;">
+          Doublons potentiels d\u00e9tect\u00e9s (${duplicates.length})
+        </div>
+        ${duplicates.map(dup => {
+          const r = dup.record;
+          const entity = dup.entity;
+          const page = pages[entity] || '#';
+          let label = '';
+          let sub = '';
+          if (entity === 'entreprises') {
+            label = r.nom || '';
+            sub = [r.secteur, r.localisation].filter(Boolean).join(' \u2022 ');
+          } else if (entity === 'candidats') {
+            label = ((r.prenom || '') + ' ' + (r.nom || '')).trim();
+            sub = [r.poste_actuel, r.email].filter(Boolean).join(' \u2022 ');
+          } else if (entity === 'decideurs') {
+            label = ((r.prenom || '') + ' ' + (r.nom || '')).trim();
+            const entName = r.entreprise_id ? (Store.resolve('entreprises', r.entreprise_id)?.displayName || '') : '';
+            sub = [r.fonction, entName].filter(Boolean).join(' \u2022 ');
+          }
+          const pct = Math.round(dup.score * 100);
+          return '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid #fde68a;">' +
+            '<div>' +
+              '<a href="' + page + '?id=' + r.id + '" target="_blank" style="color:#92400e;font-weight:600;text-decoration:underline;font-size:0.8125rem;">' + UI.escHtml(label) + '</a>' +
+              (sub ? '<div style="font-size:0.75rem;color:#a16207;">' + UI.escHtml(sub) + '</div>' : '') +
+            '</div>' +
+            '<span style="font-size:0.6875rem;color:#a16207;white-space:nowrap;">' + pct + '% similaire</span>' +
+          '</div>';
+        }).join('')}
+        <div style="font-size:0.75rem;color:#a16207;margin-top:6px;font-style:italic;">V\u00e9rifiez avant de cr\u00e9er un nouveau doublon.</div>
+      </div>
+    `;
+  }
+
+  // Setup live duplicate checking on form fields (debounced)
+  function attachLiveCheck(fields, detectFn, containerId) {
+    let debounce;
+    const check = () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        const values = {};
+        for (const [key, elementOrId] of Object.entries(fields)) {
+          const el = typeof elementOrId === 'string' ? document.getElementById(elementOrId) : elementOrId;
+          const raw = el ? (typeof el.value === 'string' ? el.value : String(el.value || '')) : '';
+          values[key] = raw.trim();
+        }
+        const duplicates = detectFn(values);
+        renderWarningBanner(duplicates, containerId);
+      }, 400);
+    };
+
+    setTimeout(() => {
+      for (const [, elementOrId] of Object.entries(fields)) {
+        const el = typeof elementOrId === 'string' ? document.getElementById(elementOrId) : elementOrId;
+        if (el && typeof el.addEventListener === 'function') {
+          el.addEventListener('input', check);
+          el.addEventListener('change', check);
+        }
+      }
+    }, 100);
+  }
+
+  return {
+    normalize,
+    similarity,
+    findEntrepriseDuplicates,
+    findCandidatDuplicates,
+    findDecideurDuplicates,
+    renderWarningBanner,
+    attachLiveCheck,
   };
 })();
 
