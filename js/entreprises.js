@@ -186,6 +186,7 @@
     const e = existing || {};
 
     const bodyHtml = `
+      <div id="dup-warning-entreprise"></div>
       <div class="form-group">
         <label>Nom</label>
         <div style="display:flex;gap:8px;align-items:center;">
@@ -266,6 +267,14 @@
       }
     });
     UI.localisationAutocomplete('e-loc');
+
+    if (!isEdit) {
+      DuplicateDetector.attachLiveCheck(
+        { nom: 'e-nom' },
+        (vals) => DuplicateDetector.findEntrepriseDuplicates(vals.nom),
+        'dup-warning-entreprise'
+      );
+    }
 
     // Autofill IA handler
     setTimeout(() => {
