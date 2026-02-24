@@ -402,6 +402,38 @@ Je vous joins une synthèse anonymisée. Si ça vous parle, on en discute quand 
 À bientôt,`
       }
     ]
+  },
+
+  // =============================================
+  // FEEDBACK REFUS — RETOUR CANDIDAT NON RETENU
+  // =============================================
+  feedbackRefus: {
+    title: "Email de retour — Candidat non retenu",
+    icon: "💬",
+    sections: [
+      {
+        title: "Objet",
+        content: "Retour suite à votre candidature — {{poste_candidat}}"
+      },
+      {
+        title: "Corps",
+        content: `Bonjour {{prenom_candidat}},
+
+Je souhaitais revenir vers vous suite à notre échange et au processus de recrutement pour le poste de {{poste_candidat}}.
+
+Après étude approfondie de votre candidature et un retour détaillé de notre client, je dois malheureusement vous informer que le choix s'est porté sur un autre profil.
+
+{{feedback_ia}}
+
+Je tenais à vous remercier pour votre disponibilité et la qualité de nos échanges tout au long de ce processus.
+
+Votre profil reste dans notre vivier et je ne manquerai pas de vous recontacter si une opportunité correspondant à vos aspirations se présente.
+
+N'hésitez pas à me solliciter si vous avez des questions.
+
+Bien cordialement,`
+      }
+    ]
   }
 };
 
@@ -413,7 +445,7 @@ const TemplatesStore = (() => {
   const CATEGORIES_KEY = 'ats_templates_categories';
 
   const DEFAULT_CATEGORIES = {
-    'Candidats': ['entretien', 'reference', 'messageCandidats'],
+    'Candidats': ['entretien', 'reference', 'messageCandidats', 'feedbackRefus'],
     'Missions': ['cadreMission', 'suiviJ3', 'suiviM1', 'suiviM2'],
     'Prospection': ['pitchs', 'objections'],
     'Teaser': ['teaserInitial', 'teaserRelance', 'teaserChaleureux']

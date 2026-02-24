@@ -1734,17 +1734,23 @@
     } else {
       container.innerHTML = `
         <div class="data-table-wrapper"><table class="data-table"><thead><tr>
-          <th>Entreprise</th><th>Date d'envoi</th><th>Anonymisé</th><th>Statut retour</th><th>Notes</th><th></th>
+          <th>Entreprise</th><th>Date d'envoi</th><th>Anonymisé</th><th>Statut retour</th><th>Notes</th><th>Feedback</th><th></th>
         </tr></thead><tbody>
         ${missions.map((p) => {
           const originalIdx = presentations.indexOf(p);
           const ent = p.entreprise_id ? Store.resolve('entreprises', p.entreprise_id) : null;
+          const fbStatus = p.feedback_statut;
+          const fbLabel = fbStatus === 'email_envoye' ? '&#9989; Envoyé' :
+                          fbStatus === 'appel_fait' ? '&#128222; Appel fait' :
+                          fbStatus === 'brouillon' ? '&#128221; Brouillon' : '&#128172; Feedback';
+          const fbStyle = fbStatus ? 'btn-secondary' : 'btn-primary';
           return `<tr>
             <td><strong>${ent ? UI.entityLink('entreprises', ent.id, ent.displayName) : UI.escHtml(p.entreprise_nom || '—')}</strong></td>
             <td>${UI.formatDate(p.date_envoi)}</td>
             <td>${p.anonymise ? '<span style="color:#c9a000;font-weight:600;">Oui</span>' : 'Non'}</td>
             <td>${UI.badge(p.statut_retour || 'En attente')}</td>
             <td style="font-size:0.75rem;color:#64748b;max-width:200px;overflow:hidden;text-overflow:ellipsis;">${UI.escHtml(p.notes || '')}</td>
+            <td>${p.statut_retour === 'Refusé' ? `<button class="btn btn-sm ${fbStyle}" data-feedback-idx="${originalIdx}" style="font-size:0.6875rem;">${fbLabel}</button>` : ''}</td>
             <td><button class="btn btn-sm btn-danger" data-pres-delete="${originalIdx}">✕</button></td>
           </tr>`;
         }).join('')}
@@ -1762,6 +1768,14 @@
         await Store.update('candidats', id, { presentations: updated });
         UI.toast('Entrée supprimée');
         location.reload();
+      });
+    });
+
+    // Feedback buttons
+    document.getElementById('tab-presentations').querySelectorAll('[data-feedback-idx]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.feedbackIdx);
+        showFeedbackModal(candidat, id, idx);
       });
     });
 
@@ -2299,6 +2313,451 @@
       renderPresentations(); // re-render with new statuses
       UI.toast('Statuts teaser mis à jour (réponses détectées)');
     }
+  }
+
+  // ============================================================
+  // FEEDBACK REFUS — retour constructif candidat non retenu
+  // ============================================================
+  function showFeedbackModal(candidat, candidatId, presentationIdx) {
+    const presentations = candidat.presentations || [];
+    const pres = presentations[presentationIdx];
+    if (!pres) return;
+
+    const ent = pres.entreprise_id ? Store.resolve('entreprises', pres.entreprise_id) : null;
+    const entName = ent ? ent.displayName || ent.nom : pres.entreprise_nom || 'Entreprise';
+    const candidatNom = (candidat.prenom || '') + ' ' + (candidat.nom || '');
+    const poste = candidat.poste_cible || candidat.poste_actuel || '';
+    const today = new Date().toISOString().split('T')[0];
+
+    // State
+    let feedbackNotes = pres.feedback_notes_debrief || '';
+    let feedbackSubject = pres.feedback_objet || '';
+    let feedbackText = pres.feedback_final_text || pres.feedback_generated_text || '';
+    let feedbackStatut = pres.feedback_statut || '';
+    let currentStep = feedbackStatut === 'email_envoye' ? 3 :
+                      feedbackStatut === 'appel_fait' ? 2 :
+                      feedbackStatut === 'brouillon' ? 2 : 1;
+    let callDone = feedbackStatut === 'appel_fait' || feedbackStatut === 'email_envoye';
+
+    async function saveFeedbackToPresentation(updates) {
+      const updated = [...presentations];
+      updated[presentationIdx] = { ...updated[presentationIdx], ...updates };
+      await Store.update('candidats', candidatId, { presentations: updated });
+      candidat.presentations = updated;
+      Object.assign(pres, updates);
+    }
+
+    function renderModal() {
+      if (currentStep === 1) renderStep1();
+      else if (currentStep === 2) renderStep2();
+      else if (currentStep === 3) renderStep3();
+    }
+
+    // STEP 1: Debriefing notes + AI generation
+    function renderStep1() {
+      const bodyHtml = `
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:16px;">
+          <div style="font-size:0.8125rem;"><strong>Candidat :</strong> ${UI.escHtml(candidatNom)}</div>
+          <div style="font-size:0.8125rem;"><strong>Poste :</strong> ${UI.escHtml(poste || 'Non renseigné')}</div>
+          <div style="font-size:0.8125rem;"><strong>Entreprise :</strong> ${UI.escHtml(entName)}</div>
+        </div>
+
+        <div class="form-group">
+          <label style="font-weight:600;">Notes de débriefing client</label>
+          <textarea id="fb-debrief-notes" style="min-height:200px;font-size:0.875rem;line-height:1.6;" placeholder="Saisissez les notes du débriefing avec le client : raisons du refus, éléments factuels, retour sur les entretiens...">${UI.escHtml(feedbackNotes)}</textarea>
+          <small style="color:#94a3b8;font-size:0.6875rem;">Ces notes servent de base pour générer un retour constructif via IA. Soyez factuel.</small>
+        </div>
+
+        <div id="fb-gen-error" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;margin-top:8px;font-size:0.8125rem;color:#dc2626;"></div>
+      `;
+
+      const { close } = UI.modal('Retour candidat — Étape 1/3 : Notes de débriefing', bodyHtml, {
+        width: 650,
+        saveLabel: 'Générer le feedback IA',
+        draftKey: `feedback_refus_${candidatId}_${presentationIdx}`,
+        onSave: async (overlay) => {
+          const notes = overlay.querySelector('#fb-debrief-notes').value.trim();
+          if (!notes) {
+            UI.toast('Saisissez les notes de débriefing', 'error');
+            throw new Error('validation');
+          }
+
+          feedbackNotes = notes;
+
+          // Show loading
+          const saveBtn = overlay.querySelector('.modal-save');
+          const origLabel = saveBtn ? saveBtn.textContent : '';
+          if (saveBtn) { saveBtn.textContent = 'Génération en cours...'; saveBtn.disabled = true; }
+          const errDiv = overlay.querySelector('#fb-gen-error');
+          if (errDiv) errDiv.style.display = 'none';
+
+          try {
+            const context = {
+              candidatNom,
+              poste,
+              entreprise: entName,
+              datePresentation: pres.date_envoi || '',
+              synthese: candidat.synthese_30s || ''
+            };
+            const result = await InterviewAnalyzer.generateRejectionFeedback(notes, context);
+
+            // Assemble full feedback text
+            let assembled = result.feedback_text || '';
+            if (result.points_forts) {
+              assembled += '\n\nPoints forts identifiés :\n' + result.points_forts;
+            }
+            if (result.axes_amelioration) {
+              assembled += '\n\nAxes de progression :\n' + result.axes_amelioration;
+            }
+            if (result.encouragement) {
+              assembled += '\n\n' + result.encouragement;
+            }
+
+            feedbackSubject = result.objet_email || 'Retour suite à votre candidature — ' + poste;
+            feedbackText = assembled;
+
+            // Save to presentation
+            await saveFeedbackToPresentation({
+              feedback_notes_debrief: notes,
+              feedback_generated_text: assembled,
+              feedback_final_text: assembled,
+              feedback_objet: feedbackSubject,
+              feedback_statut: 'brouillon',
+              feedback_date_generation: today
+            });
+            feedbackStatut = 'brouillon';
+
+            close();
+            currentStep = 2;
+            renderModal();
+          } catch (e) {
+            console.error('Feedback generation error:', e);
+            if (saveBtn) { saveBtn.textContent = origLabel; saveBtn.disabled = false; }
+            if (errDiv) {
+              errDiv.style.display = 'block';
+              errDiv.textContent = 'Erreur : ' + e.message + ' — Vous pouvez réessayer ou passer à l\'étape suivante pour rédiger manuellement.';
+            }
+
+            // Save notes anyway and allow manual proceed
+            await saveFeedbackToPresentation({
+              feedback_notes_debrief: notes,
+              feedback_statut: 'brouillon',
+              feedback_date_generation: today
+            });
+            feedbackStatut = 'brouillon';
+
+            // Add manual proceed button
+            if (!overlay.querySelector('#fb-manual-proceed')) {
+              const manualBtn = document.createElement('button');
+              manualBtn.id = 'fb-manual-proceed';
+              manualBtn.className = 'btn btn-secondary';
+              manualBtn.style.cssText = 'margin-top:10px;width:100%;';
+              manualBtn.textContent = 'Rédiger manuellement (sans IA)';
+              manualBtn.addEventListener('click', () => {
+                // Load template as fallback
+                const tpl = TemplatesStore.get('feedbackRefus');
+                if (tpl) {
+                  const bodySection = tpl.sections.find(s => s.title === 'Corps');
+                  const subjectSection = tpl.sections.find(s => s.title === 'Objet');
+                  feedbackText = bodySection ? bodySection.content
+                    .replace('{{prenom_candidat}}', candidat.prenom || '')
+                    .replace('{{poste_candidat}}', poste)
+                    .replace('{{feedback_ia}}', '') : '';
+                  feedbackSubject = subjectSection ? subjectSection.content
+                    .replace('{{poste_candidat}}', poste) : 'Retour suite à votre candidature';
+                }
+                close();
+                currentStep = 2;
+                renderModal();
+              });
+              errDiv.parentElement.appendChild(manualBtn);
+            }
+          }
+        }
+      });
+    }
+
+    // STEP 2: Preview, edit, phone call
+    function renderStep2() {
+      const phone = candidat.telephone || '';
+      const phoneDisplay = phone
+        ? `<a href="tel:${UI.escHtml(phone)}" style="font-size:0.875rem;font-weight:600;color:#1e293b;text-decoration:none;">${UI.escHtml(phone)}</a>`
+        : '<span style="color:#94a3b8;font-size:0.8125rem;">Non renseigné</span>';
+
+      const bodyHtml = `
+        <div style="background:#FFFDF0;border:1px solid #FEE566;border-radius:8px;padding:12px;margin-bottom:16px;">
+          <div style="font-size:0.8125rem;color:#92780c;font-weight:600;">Relisez le feedback ci-dessous. Utilisez-le comme guide pour votre appel téléphonique au candidat, puis envoyez-le par email ensuite.</div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:12px;">
+          <label style="font-weight:600;">Objet de l'email</label>
+          <input type="text" id="fb-subject" value="${UI.escHtml(feedbackSubject)}" />
+        </div>
+
+        <div class="form-group" style="margin-bottom:16px;">
+          <label style="font-weight:600;">Corps du feedback</label>
+          <textarea id="fb-body" style="min-height:280px;font-size:0.875rem;line-height:1.6;">${UI.escHtml(feedbackText)}</textarea>
+        </div>
+
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:4px;">Appel téléphonique</div>
+              <div style="font-size:0.8125rem;">${UI.escHtml(candidatNom)} — ${phoneDisplay}</div>
+            </div>
+            <button class="btn btn-sm ${callDone ? 'btn-secondary' : 'btn-primary'}" id="fb-mark-call" style="${callDone ? 'background:#16a34a;color:#fff;border-color:#16a34a;' : ''}">
+              ${callDone ? '&#9989; Appel fait' : '&#128222; Marquer l\'appel comme fait'}
+            </button>
+          </div>
+          ${pres.feedback_date_appel ? `<div style="font-size:0.6875rem;color:#94a3b8;margin-top:6px;">Appel marqué le ${UI.formatDate(pres.feedback_date_appel)}</div>` : ''}
+        </div>
+
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm btn-secondary" id="fb-regenerate" style="flex:0;">Regénérer (IA)</button>
+          <button class="btn btn-sm btn-secondary" id="fb-copy-text" style="flex:0;">Copier le texte</button>
+        </div>
+      `;
+
+      const { close } = UI.modal('Retour candidat — Étape 2/3 : Relecture & Appel', bodyHtml, {
+        width: 680,
+        saveLabel: 'Suivant — Envoyer par email',
+        onSave: async (overlay) => {
+          feedbackSubject = overlay.querySelector('#fb-subject').value.trim();
+          feedbackText = overlay.querySelector('#fb-body').value.trim();
+
+          if (!feedbackSubject || !feedbackText) {
+            UI.toast('L\'objet et le corps du feedback sont requis', 'error');
+            throw new Error('validation');
+          }
+
+          await saveFeedbackToPresentation({
+            feedback_objet: feedbackSubject,
+            feedback_final_text: feedbackText
+          });
+
+          // Warn if call not done
+          if (!callDone) {
+            const proceed = confirm('L\'appel n\'a pas encore été marqué comme fait. Souhaitez-vous quand même passer à l\'envoi email ?');
+            if (!proceed) throw new Error('cancelled');
+          }
+
+          close();
+          currentStep = 3;
+          renderModal();
+        }
+      });
+
+      setTimeout(() => {
+        // Mark call as done
+        document.getElementById('fb-mark-call')?.addEventListener('click', async () => {
+          callDone = true;
+          await saveFeedbackToPresentation({
+            feedback_statut: 'appel_fait',
+            feedback_date_appel: today
+          });
+          feedbackStatut = 'appel_fait';
+          UI.toast('Appel marqué comme fait');
+          // Update button visually
+          const btn = document.getElementById('fb-mark-call');
+          if (btn) {
+            btn.innerHTML = '&#9989; Appel fait';
+            btn.className = 'btn btn-sm btn-secondary';
+            btn.style.cssText = 'background:#16a34a;color:#fff;border-color:#16a34a;';
+          }
+        });
+
+        // Regenerate
+        document.getElementById('fb-regenerate')?.addEventListener('click', async () => {
+          if (!feedbackNotes) {
+            UI.toast('Aucune note de débriefing pour regénérer', 'error');
+            return;
+          }
+          const btn = document.getElementById('fb-regenerate');
+          if (btn) { btn.textContent = 'Génération...'; btn.disabled = true; }
+          try {
+            const context = {
+              candidatNom, poste, entreprise: entName,
+              datePresentation: pres.date_envoi || '',
+              synthese: candidat.synthese_30s || ''
+            };
+            const result = await InterviewAnalyzer.generateRejectionFeedback(feedbackNotes, context);
+            let assembled = result.feedback_text || '';
+            if (result.points_forts) assembled += '\n\nPoints forts identifiés :\n' + result.points_forts;
+            if (result.axes_amelioration) assembled += '\n\nAxes de progression :\n' + result.axes_amelioration;
+            if (result.encouragement) assembled += '\n\n' + result.encouragement;
+
+            feedbackSubject = result.objet_email || feedbackSubject;
+            feedbackText = assembled;
+
+            const subjectInput = document.getElementById('fb-subject');
+            const bodyTextarea = document.getElementById('fb-body');
+            if (subjectInput) subjectInput.value = feedbackSubject;
+            if (bodyTextarea) bodyTextarea.value = feedbackText;
+
+            await saveFeedbackToPresentation({
+              feedback_generated_text: assembled,
+              feedback_final_text: assembled,
+              feedback_objet: feedbackSubject
+            });
+            UI.toast('Feedback regénéré');
+          } catch (e) {
+            UI.toast('Erreur : ' + e.message, 'error');
+          }
+          if (btn) { btn.textContent = 'Regénérer (IA)'; btn.disabled = false; }
+        });
+
+        // Copy text
+        document.getElementById('fb-copy-text')?.addEventListener('click', () => {
+          const body = document.getElementById('fb-body')?.value || feedbackText;
+          navigator.clipboard.writeText(body).then(() => UI.toast('Texte copié'));
+        });
+      }, 100);
+    }
+
+    // STEP 3: Email preview & send
+    function renderStep3() {
+      const email = candidat.email || '';
+      const isAlreadySent = feedbackStatut === 'email_envoye';
+
+      const bodyHtml = `
+        ${isAlreadySent ? `
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;margin-bottom:16px;">
+            <div style="font-size:0.8125rem;color:#16a34a;font-weight:600;">Ce feedback a déjà été envoyé${pres.feedback_date_email ? ' le ' + UI.formatDate(pres.feedback_date_email) : ''}. Vous pouvez le renvoyer si nécessaire.</div>
+          </div>
+        ` : ''}
+
+        <div class="form-group" style="margin-bottom:12px;">
+          <label style="font-weight:600;">Email du candidat</label>
+          <input type="email" id="fb-email" value="${UI.escHtml(email)}" placeholder="adresse@email.com" />
+          ${!email ? '<small style="color:#ca8a04;font-size:0.6875rem;">Aucune adresse email renseignée pour ce candidat.</small>' : ''}
+        </div>
+
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:12px;">
+          <div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:6px;">Objet : ${UI.escHtml(feedbackSubject)}</div>
+          <div style="font-size:0.8125rem;color:#334155;white-space:pre-wrap;line-height:1.6;max-height:300px;overflow-y:auto;">${UI.escHtml(feedbackText)}</div>
+        </div>
+
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.8125rem;">
+            <input type="checkbox" id="fb-draft-mode" />
+            Créer un brouillon Gmail au lieu d'envoyer
+          </label>
+        </div>
+
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm btn-secondary" id="fb-copy-final" style="flex:0;">Copier le texte</button>
+          <button class="btn btn-sm btn-secondary" id="fb-back-step2" style="flex:0;">Retour (modifier)</button>
+        </div>
+
+        <div id="fb-send-error" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;margin-top:8px;font-size:0.8125rem;color:#dc2626;"></div>
+      `;
+
+      const { close } = UI.modal('Retour candidat — Étape 3/3 : Envoi email', bodyHtml, {
+        width: 650,
+        saveLabel: 'Envoyer le feedback',
+        onSave: async (overlay) => {
+          const toEmail = overlay.querySelector('#fb-email').value.trim();
+          const draftMode = overlay.querySelector('#fb-draft-mode').checked;
+          const errDiv = overlay.querySelector('#fb-send-error');
+          if (errDiv) errDiv.style.display = 'none';
+
+          if (!toEmail) {
+            UI.toast('Adresse email requise', 'error');
+            throw new Error('validation');
+          }
+
+          const saveBtn = overlay.querySelector('.modal-save');
+          const origLabel = saveBtn ? saveBtn.textContent : '';
+          if (saveBtn) { saveBtn.textContent = draftMode ? 'Création du brouillon...' : 'Envoi en cours...'; saveBtn.disabled = true; }
+
+          try {
+            await GoogleAuth.authenticate();
+            const htmlBody = Gmail.buildHtmlBody(feedbackText);
+
+            let result;
+            if (draftMode) {
+              result = await Gmail.createDraft({ to: toEmail, subject: feedbackSubject, htmlBody });
+            } else {
+              result = await Gmail.sendEmail({ to: toEmail, subject: feedbackSubject, htmlBody });
+            }
+
+            // Save on presentation
+            await saveFeedbackToPresentation({
+              feedback_final_text: feedbackText,
+              feedback_objet: feedbackSubject,
+              feedback_statut: 'email_envoye',
+              feedback_date_email: today,
+              feedback_gmail_message_id: result?.id || result?.message?.id || null
+            });
+
+            // Update candidate email if it was empty
+            if (!candidat.email && toEmail) {
+              await Store.update('candidats', candidatId, { email: toEmail });
+              candidat.email = toEmail;
+            }
+
+            // Create CRM action
+            const action = {
+              id: API.generateId('act'),
+              action: `Feedback refus envoyé — ${entName}`,
+              type_action: 'Suivi candidat',
+              canal: 'Email',
+              statut: 'Fait',
+              priorite: null,
+              date_action: today,
+              date_relance: null,
+              candidat_id: candidatId,
+              decideur_id: null,
+              mission_id: null,
+              entreprise_id: pres.entreprise_id || null,
+              reponse: false,
+              message_notes: `Feedback de refus ${draftMode ? '(brouillon)' : 'envoyé'} par email à ${toEmail}\nObjet : ${feedbackSubject}`,
+              next_step: '',
+              phase: '', finalite: '', objectif: '', moment_suivi: ''
+            };
+            await Store.add('actions', action);
+
+            UI.toast(draftMode ? 'Brouillon Gmail créé' : 'Feedback envoyé par email');
+            close();
+            location.reload();
+
+          } catch (e) {
+            console.error('Feedback send error:', e);
+            if (saveBtn) { saveBtn.textContent = origLabel; saveBtn.disabled = false; }
+            if (errDiv) {
+              errDiv.style.display = 'block';
+              errDiv.textContent = 'Erreur : ' + e.message;
+            }
+          }
+        }
+      });
+
+      setTimeout(() => {
+        // Update save button label based on draft checkbox
+        const draftCb = document.getElementById('fb-draft-mode');
+        draftCb?.addEventListener('change', () => {
+          const saveBtn = document.querySelector('.modal-overlay .modal-save');
+          if (saveBtn && !saveBtn.disabled) {
+            saveBtn.textContent = draftCb.checked ? 'Créer le brouillon' : 'Envoyer le feedback';
+          }
+        });
+
+        // Copy text
+        document.getElementById('fb-copy-final')?.addEventListener('click', () => {
+          navigator.clipboard.writeText(feedbackText).then(() => UI.toast('Texte copié'));
+        });
+
+        // Back to step 2
+        document.getElementById('fb-back-step2')?.addEventListener('click', () => {
+          close();
+          currentStep = 2;
+          renderModal();
+        });
+      }, 100);
+    }
+
+    // Start workflow
+    renderModal();
   }
 
   // ============================================================
