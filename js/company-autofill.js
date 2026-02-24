@@ -168,12 +168,21 @@ const CompanyAutofill = (function() {
   // Pappers selection modal (quand plusieurs résultats)
   // ============================================================
 
-  function _showPappersSelectionModal(results, callback) {
-    const bodyHtml = `
-      <div style="margin-bottom:12px;font-size:0.8125rem;color:#475569;">
-        Plusieurs entreprises trouvées sur Pappers. Sélectionnez la bonne :
-      </div>
-      ${results.map((r, i) => {
+  function _showPappersSelectionModal(results, companyName, callback) {
+    let currentResults = results;
+    let resolved = false;
+
+    function _resolveWith(value) {
+      if (resolved) return;
+      resolved = true;
+      callback(value);
+    }
+
+    function _buildResultsHtml(resultsList) {
+      if (resultsList.length === 0) {
+        return '<div style="padding:20px;text-align:center;color:#94a3b8;font-size:0.8125rem;">Aucun résultat trouvé sur Pappers. Essayez un autre nom.</div>';
+      }
+      return resultsList.map((r, i) => {
         const siege = r.siege || {};
         return '<div class="pappers-result" data-idx="' + i + '" style="padding:12px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;cursor:pointer;transition:background 0.15s;" ' +
           'onmouseover="this.style.background=\'#f0f9ff\'" onmouseout="this.style.background=\'\'">' +
@@ -189,25 +198,79 @@ const CompanyAutofill = (function() {
           '</div>' +
           (r.tranche_effectif ? '<div style="font-size:0.6875rem;color:#64748b;margin-top:4px;">' + UI.escHtml(r.tranche_effectif) + (r.chiffre_affaires ? ' — CA: ' + (r.chiffre_affaires / 1000000).toFixed(1) + ' M€' : '') + '</div>' : '') +
         '</div>';
-      }).join('')}
+      }).join('');
+    }
+
+    function _bindResultClicks(closeModal) {
+      document.querySelectorAll('.pappers-result').forEach(el => {
+        el.addEventListener('click', () => {
+          const idx = parseInt(el.dataset.idx);
+          closeModal();
+          _resolveWith(currentResults[idx]);
+        });
+      });
+    }
+
+    const bodyHtml = `
+      <div style="margin-bottom:12px;">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="text" id="pappers-manual-search" value="${UI.escHtml(companyName)}" placeholder="Nom de l'entreprise..." style="flex:1;font-size:0.8125rem;padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;font-family:inherit;" />
+          <button type="button" class="btn btn-primary btn-sm" id="pappers-search-btn" style="white-space:nowrap;">Rechercher</button>
+        </div>
+      </div>
+      <div id="pappers-results-label" style="margin-bottom:8px;font-size:0.8125rem;color:#475569;">
+        ${results.length > 0 ? 'Sélectionnez la bonne entreprise :' : ''}
+      </div>
+      <div id="pappers-results-list" style="max-height:350px;overflow-y:auto;">
+        ${_buildResultsHtml(results)}
+      </div>
       <div style="margin-top:12px;text-align:center;">
         <button type="button" class="btn btn-sm btn-secondary" id="pappers-skip" style="font-size:0.75rem;">Aucune ne correspond — continuer avec l'IA</button>
       </div>
     `;
 
-    const { close } = UI.modal('Résultats Pappers', bodyHtml, { width: 560 });
+    const { close } = UI.modal('Recherche Pappers', bodyHtml, {
+      width: 560,
+      onClose: () => _resolveWith(false),
+    });
 
     setTimeout(() => {
-      document.querySelectorAll('.pappers-result').forEach(el => {
-        el.addEventListener('click', () => {
-          const idx = parseInt(el.dataset.idx);
-          close();
-          callback(results[idx]);
-        });
-      });
+      _bindResultClicks(close);
+
       document.getElementById('pappers-skip')?.addEventListener('click', () => {
         close();
-        callback(null);
+        _resolveWith(null);
+      });
+
+      document.getElementById('pappers-search-btn')?.addEventListener('click', async () => {
+        const searchName = document.getElementById('pappers-manual-search')?.value.trim();
+        if (!searchName || searchName.length < 2) return;
+
+        const searchBtn = document.getElementById('pappers-search-btn');
+        const resultsContainer = document.getElementById('pappers-results-list');
+        const resultsLabel = document.getElementById('pappers-results-label');
+        searchBtn.disabled = true;
+        searchBtn.textContent = '...';
+
+        try {
+          const newResults = await _searchPappers(searchName);
+          currentResults = newResults || [];
+          resultsLabel.textContent = currentResults.length > 0 ? 'Sélectionnez la bonne entreprise :' : '';
+          resultsContainer.innerHTML = _buildResultsHtml(currentResults);
+          _bindResultClicks(close);
+        } catch (err) {
+          resultsContainer.innerHTML = '<div style="padding:12px;color:#dc2626;font-size:0.8125rem;">' + UI.escHtml(err.message) + '</div>';
+        } finally {
+          searchBtn.disabled = false;
+          searchBtn.textContent = 'Rechercher';
+        }
+      });
+
+      document.getElementById('pappers-manual-search')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          document.getElementById('pappers-search-btn')?.click();
+        }
       });
     }, 50);
   }
@@ -492,22 +555,23 @@ Pour "ca", la tranche de CA réelle du GROUPE. Cherche sur le site web ou dans t
 
       const results = await _searchPappers(companyName);
 
-      if (results && results.length > 0) {
-        if (results.length === 1 || autoSelectFirst) {
-          // Single result or auto-select mode → use first result directly
-          pappersData = _mapPappersToFields(results[0]);
-        } else {
-          // Multiple results → let user choose
-          pappersData = await new Promise((resolve) => {
-            _showPappersSelectionModal(results, (selected) => {
-              if (selected) {
-                resolve(_mapPappersToFields(selected));
-              } else {
-                resolve(null); // User skipped
-              }
-            });
-          });
+      if (results && results.length === 1 && autoSelectFirst) {
+        // Auto-select mode with single result → use directly
+        pappersData = _mapPappersToFields(results[0]);
+      } else {
+        // 0 or 2+ results (or 1 without autoSelect) → let user choose or search
+        const selection = await new Promise((resolve) => {
+          _showPappersSelectionModal(results || [], companyName, resolve);
+        });
+
+        if (selection === false) {
+          // User dismissed the modal → cancel
+          return null;
         }
+        if (selection) {
+          pappersData = _mapPappersToFields(selection);
+        }
+        // selection === null → skip Pappers, continue with OpenAI
       }
     }
 

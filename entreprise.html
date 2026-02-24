@@ -431,6 +431,8 @@
           onStatusUpdate: (msg) => { statusEl.innerHTML = '<span style="color:#3b82f6;">' + UI.escHtml(msg) + '</span>'; },
         });
 
+        if (!extracted) { statusEl.innerHTML = ''; return; } // User cancelled
+
         CompanyAutofill.showReviewModal(extracted, currentValues, {
           title: 'Résultats Autofill — ' + e.nom,
           onApply: async (updates) => {

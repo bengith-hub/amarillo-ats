@@ -264,7 +264,7 @@ const UI = (() => {
   }
 
   // Modal
-  function modal(title, bodyHtml, { onSave, saveLabel = 'Enregistrer', width, draftKey } = {}) {
+  function modal(title, bodyHtml, { onSave, onClose, saveLabel = 'Enregistrer', width, draftKey } = {}) {
     let overlay = document.getElementById('modal-overlay');
     if (!overlay) {
       overlay = document.createElement('div');
@@ -338,12 +338,13 @@ const UI = (() => {
     };
 
     const guardedClose = () => {
-      if (_dirty && !_saved) {
+      if (onSave && _dirty && !_saved) {
         if (!confirm('Vous avez des modifications non sauvegardées. Quitter sans enregistrer ?')) {
           return;
         }
       }
       close();
+      if (onClose && !_saved) onClose();
     };
 
     // --- Escape key ---
