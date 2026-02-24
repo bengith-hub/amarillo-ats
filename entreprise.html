@@ -415,15 +415,16 @@
       statusEl.innerHTML = '';
 
       try {
-        const extracted = await CompanyAutofill.fetchCompanyInfo(e.nom);
-
         const currentValues = {
           nom: e.nom || '', secteur: e.secteur || '', taille: e.taille || '',
           ca: e.ca || '', localisation: e.localisation || '', site_web: e.site_web || '',
           telephone: e.telephone || '', siege_adresse: e.siege_adresse || '',
           siege_code_postal: e.siege_code_postal || '', siege_ville: e.siege_ville || '',
           angle_approche: e.angle_approche || '', notes: e.notes || '',
+          _decideurs: decideurs.map(d => ({ prenom: d.prenom, nom: d.nom, fonction: d.fonction })),
         };
+
+        const extracted = await CompanyAutofill.fetchCompanyInfo(e.nom, currentValues);
 
         CompanyAutofill.showReviewModal(extracted, currentValues, {
           title: 'Résultats Autofill — ' + e.nom,

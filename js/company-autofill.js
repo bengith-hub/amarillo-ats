@@ -93,8 +93,36 @@ const CompanyAutofill = (function() {
     return '';
   }
 
+  // Construire un résumé des données existantes pour le contexte du prompt
+  function _buildExistingContext(currentValues) {
+    if (!currentValues) return '';
+
+    const lines = [];
+    const fieldLabels = {
+      nom: 'Nom', secteur: 'Secteur', taille: 'Taille', ca: 'CA',
+      localisation: 'Localisation', site_web: 'Site web', telephone: 'Téléphone',
+      siege_adresse: 'Adresse siège', siege_code_postal: 'Code postal',
+      siege_ville: 'Ville', angle_approche: "Angle d'approche", notes: 'Notes',
+    };
+
+    for (const [key, label] of Object.entries(fieldLabels)) {
+      const val = (currentValues[key] || '').toString().trim();
+      if (val) lines.push(`- ${label} : ${val}`);
+    }
+
+    // Décideurs connus
+    if (currentValues._decideurs && currentValues._decideurs.length > 0) {
+      const decList = currentValues._decideurs.map(d =>
+        `${d.prenom || ''} ${d.nom || ''}`.trim() + (d.fonction ? ` (${d.fonction})` : '')
+      ).join(', ');
+      lines.push(`- Décideurs connus : ${decList}`);
+    }
+
+    return lines.length > 0 ? lines.join('\n') : '';
+  }
+
   // Rechercher les informations d'une entreprise via OpenAI
-  async function fetchCompanyInfo(companyName) {
+  async function fetchCompanyInfo(companyName, currentValues) {
     if (!companyName || companyName.trim().length < 2) {
       throw new Error('Veuillez saisir un nom d\'entreprise valide.');
     }
@@ -103,10 +131,17 @@ const CompanyAutofill = (function() {
     const tailles = Referentiels.get('entreprise_tailles');
     const caOptions = ['< 5 M€', '5-20 M€', '20-50 M€', '50-100 M€', '100-250 M€', '250 M€+'];
 
+    const existingContext = _buildExistingContext(currentValues);
+
     const systemPrompt = `Tu es un assistant spécialisé dans la recherche d'informations sur les entreprises françaises et internationales pour un outil de CRM/ATS de recrutement.
 À partir du nom d'une entreprise, recherche dans tes connaissances les informations publiques disponibles et retourne-les au format JSON strict.
 Si une information n'est pas connue ou incertaine, laisse la valeur comme chaîne vide "".
 Pour les champs à choix multiples, choisis OBLIGATOIREMENT parmi les options fournies ci-dessous. Si aucune option ne correspond, laisse vide.
+
+IMPORTANT : Des informations sur cette entreprise sont peut-être déjà connues et te seront fournies comme contexte.
+- Si un champ existant est déjà renseigné et correct, REPRENDS-LE tel quel dans ta réponse (ne le remplace pas par une autre valeur).
+- Utilise ces informations existantes pour mieux identifier l'entreprise et fournir des données plus précises.
+- Complète uniquement les champs vides ou améliore ceux qui semblent incomplets.
 
 Secteur (champ "secteur"), choisis parmi :
 ${secteurs.join(', ')}
@@ -119,7 +154,16 @@ ${caOptions.join(', ')}
 
 Réponds UNIQUEMENT avec le JSON, sans commentaires ni markdown.`;
 
-    const userPrompt = `Recherche les informations publiques sur l'entreprise suivante : "${companyName.trim()}"
+    let userPrompt = `Recherche les informations publiques sur l'entreprise suivante : "${companyName.trim()}"`;
+
+    if (existingContext) {
+      userPrompt += `
+
+Voici les informations DÉJÀ CONNUES sur cette entreprise dans notre base (à conserver si correctes, à utiliser comme contexte) :
+${existingContext}`;
+    }
+
+    userPrompt += `
 
 Format JSON attendu :
 {
@@ -141,7 +185,7 @@ Pour "nom", retourne le nom officiel/complet de l'entreprise.
 Pour "localisation", indique la région ou grande ville où se situe le siège (ex: "Paris", "Lyon", "Île-de-France").
 Pour "angle_approche", suggère 1-2 phrases sur comment approcher cette entreprise dans un contexte de recrutement IT/Digital (projets en cours, transformation digitale, croissance, etc.).
 Pour "notes", fournis un résumé factuel de 2-3 phrases sur l'entreprise (activité principale, positionnement marché, fait notable récent si connu).
-Pour "site_web", donne l'URL complète avec https://.
+Pour "site_web", donne l'URL complète avec https://. Si un site web est déjà renseigné dans les données existantes, conserve-le.
 Pour "telephone", donne le numéro du standard si connu, au format français (+33 ou 0x xx xx xx xx).`;
 
     const result = await _callOpenAI(systemPrompt, userPrompt);

@@ -298,10 +298,9 @@
         statusEl.innerHTML = '';
 
         try {
-          const extracted = await CompanyAutofill.fetchCompanyInfo(companyName);
+          // Collecter les valeurs actuelles du formulaire pour le contexte
           const overlay = document.querySelector('.modal-overlay');
           if (!overlay) return;
-
           const fieldMap = {
             nom: '#e-nom', secteur: '#e-secteur', taille: '#e-taille',
             ca: '#e-ca', localisation: '#e-loc', site_web: '#e-site',
@@ -309,6 +308,15 @@
             siege_code_postal: '#e-siege-cp', siege_ville: '#e-siege-ville',
             angle_approche: '#e-angle', notes: '#e-notes',
           };
+
+          // Collecter les valeurs déjà remplies pour le contexte IA
+          const formContext = {};
+          for (const [key, selector] of Object.entries(fieldMap)) {
+            const el = overlay.querySelector(selector);
+            if (el && el.value && el.value.trim()) formContext[key] = el.value.trim();
+          }
+
+          const extracted = await CompanyAutofill.fetchCompanyInfo(companyName, formContext);
 
           let filledCount = 0;
           for (const [key, selector] of Object.entries(fieldMap)) {
