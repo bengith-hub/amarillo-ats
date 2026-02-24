@@ -339,9 +339,9 @@
     UI.inlineEdit('ent-info-fields', {
       entity: 'entreprises', recordId: entId,
       fields: [
-        { key: 'secteur', label: 'Secteur', type: 'text' },
+        { key: 'secteur', label: 'Secteur', type: 'select', options: Referentiels.get('entreprise_secteurs') },
         { key: 'taille', label: 'Taille', type: 'select', options: Referentiels.get('entreprise_tailles') },
-        { key: 'ca', label: 'CA', type: 'text' },
+        { key: 'ca', label: 'CA', type: 'select', options: ['< 5 M€', '5-20 M€', '20-50 M€', '50-100 M€', '100-250 M€', '250 M€+'] },
         { key: 'localisation', label: 'Localisation', type: 'autocomplete', options: () => Referentiels.get('localisations'), refKey: 'localisations' },
         { key: 'telephone', label: 'Téléphone', type: 'text' },
         { key: 'site_web', label: 'Site web', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(v)}" target="_blank" class="entity-link">${UI.escHtml(v)}</a>` : '' },
