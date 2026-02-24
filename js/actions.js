@@ -166,7 +166,8 @@
         }},
         { key: 'type_action', label: 'Type', render: r => `<span style="font-size:0.75rem;color:#64748b;">${UI.escHtml(r.type_action || '')}</span>` },
         { key: 'canal', label: 'Canal', render: r => UI.badge(r.canal) },
-        { key: 'candidat', label: 'Candidat', render: r => r.candidat_id ? UI.resolveLink('candidats', r.candidat_id) : (r.decideur_id ? UI.resolveLink('decideurs', r.decideur_id) : '—') },
+        { key: 'candidat', label: 'Candidat', render: r => r.candidat_id ? UI.resolveLink('candidats', r.candidat_id) : '—' },
+        { key: 'decideur', label: 'Décideur', render: r => r.decideur_id ? UI.resolveLink('decideurs', r.decideur_id) : '—' },
         { key: 'mission', label: 'Mission', render: r => r.mission_id ? UI.resolveLink('missions', r.mission_id) : '—' },
         { key: 'date_action', label: 'Date', render: r => {
           const overdue = (r.statut === 'À faire' || r.statut === 'A faire') && r.date_action && r.date_action < todayStr;
