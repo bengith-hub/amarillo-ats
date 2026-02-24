@@ -49,9 +49,16 @@
     return !isDone(statut) && !isCancelled(statut);
   }
 
+  function isProspectionAction(a) {
+    return a.type_action === 'Prospection'
+        || a.type_action === 'Prise de contact'
+        || a.type_action === 'Relance décideur';
+  }
+
   renderKPIs();
   renderTeaserAlert();
   renderTeaserKPIs();
+  renderProspection();
   renderUrgentBlock();
   renderNextSteps();
   renderTodoActions();
@@ -175,6 +182,49 @@
     `;
   }
 
+  // ========== Prospection KPIs ==========
+  function renderProspection() {
+    const kpiContainer = document.getElementById('dashboard-prospection-kpis');
+    if (!kpiContainer) return;
+
+    const prospectionActions = actions.filter(isProspectionAction);
+
+    const todayPending = prospectionActions.filter(a =>
+      isPending(a.statut) && a.date_action && a.date_action <= today
+    ).length;
+
+    const doneThisWeek = prospectionActions.filter(a =>
+      isDone(a.statut) && a.date_action && a.date_action >= weekAgo
+    ).length;
+
+    const totalDone = prospectionActions.filter(a => isDone(a.statut)).length;
+    const withResponse = prospectionActions.filter(a => isDone(a.statut) && a.reponse).length;
+    const tauxReponse = totalDone > 0 ? Math.round(withResponse / totalDone * 100) : 0;
+
+    const totalPending = prospectionActions.filter(a => isPending(a.statut)).length;
+
+    kpiContainer.innerHTML = `
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:100px;background:#faf5ff;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:0.6875rem;color:#7c3aed;text-transform:uppercase;font-weight:600;">Appels aujourd'hui</div>
+          <div style="font-size:1.25rem;font-weight:700;color:#7c3aed;">${todayPending}</div>
+        </div>
+        <div style="flex:1;min-width:100px;background:#f5f3ff;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:0.6875rem;color:#8b5cf6;text-transform:uppercase;font-weight:600;">Faits cette semaine</div>
+          <div style="font-size:1.25rem;font-weight:700;color:#8b5cf6;">${doneThisWeek}</div>
+        </div>
+        <div style="flex:1;min-width:100px;background:#ede9fe;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:0.6875rem;color:#6d28d9;text-transform:uppercase;font-weight:600;">Taux réponse</div>
+          <div style="font-size:1.25rem;font-weight:700;color:#6d28d9;">${tauxReponse}%</div>
+        </div>
+        <div style="flex:1;min-width:100px;background:#f3e8ff;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:0.6875rem;color:#9333ea;text-transform:uppercase;font-weight:600;">En attente</div>
+          <div style="font-size:1.25rem;font-weight:700;color:#9333ea;">${totalPending}</div>
+        </div>
+      </div>
+    `;
+  }
+
   // ========== Bloc Urgent (overdue + relances dépassées) ==========
   function renderUrgentBlock() {
     const container = document.getElementById('dashboard-urgent');
@@ -254,9 +304,14 @@
                 <div style="font-size:0.8125rem;font-weight:600;color:#92400e;">→ ${UI.escHtml(a.next_step)}</div>
                 <div style="font-size:0.75rem;color:#64748b;">Suite de : ${UI.escHtml(a.action || '')}${who ? ' · ' + who : ''} · ${UI.formatDate(a.date_action)}</div>
               </div>
-              <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); window.__createFollowUp && window.__createFollowUp('${a.id}')" style="white-space:nowrap;font-size:0.75rem;">
-                Créer l'action
-              </button>
+              <div style="display:flex;gap:6px;flex-shrink:0;">
+                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); window.__createFollowUp && window.__createFollowUp('${a.id}')" style="white-space:nowrap;font-size:0.75rem;">
+                  Créer l'action
+                </button>
+                <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); window.__dismissNextStep && window.__dismissNextStep('${a.id}')" style="white-space:nowrap;font-size:0.75rem;color:#94a3b8;" title="Ignorer cette prochaine étape">
+                  Ignorer
+                </button>
+              </div>
             </div>
           `;
         }).join('')}
@@ -289,6 +344,15 @@
     };
     await Store.add('actions', followUp);
     UI.toast(`Action créée : ${followUp.action}`);
+    location.reload();
+  };
+
+  // Global handler for dismissing an orphan next step
+  window.__dismissNextStep = async (actionId) => {
+    const action = Store.findById('actions', actionId);
+    if (!action) return;
+    await Store.update('actions', actionId, { next_step: '' });
+    UI.toast('Prochaine étape ignorée');
     location.reload();
   };
 

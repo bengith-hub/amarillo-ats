@@ -94,18 +94,7 @@
         </div>
       </div>
 
-      <!-- Teaser KPIs -->
-      <div class="card" data-accent="gold" id="card-teaser-kpis">
-        <div class="card-header">
-          <h2>✈️ Teasers</h2>
-          <a href="actions.html" class="btn btn-sm btn-secondary" style="font-size:0.6875rem;">Voir les actions</a>
-        </div>
-        <div class="card-body">
-          <div id="dashboard-teaser-kpis"></div>
-        </div>
-      </div>
-
-      <!-- Bloc urgent -->
+      <!-- Bloc urgent (priorité haute) -->
       <div class="card" style="border-left:4px solid #dc2626;">
         <div class="card-header">
           <h2>⚠️ Urgent — Actions en retard & relances</h2>
@@ -123,6 +112,31 @@
         </div>
         <div class="card-body">
           <div id="dashboard-next-steps"></div>
+        </div>
+      </div>
+
+      <!-- Outbound: Prospection + Teasers côte à côte -->
+      <div class="dashboard-2col">
+        <!-- Prospection -->
+        <div class="card" data-accent="purple" id="card-prospection">
+          <div class="card-header">
+            <h2>📞 Prospection</h2>
+            <a href="actions.html#prospection" class="btn btn-sm btn-secondary" style="font-size:0.6875rem;">Vue prospection</a>
+          </div>
+          <div class="card-body">
+            <div id="dashboard-prospection-kpis"></div>
+          </div>
+        </div>
+
+        <!-- Teaser KPIs -->
+        <div class="card" data-accent="gold" id="card-teaser-kpis">
+          <div class="card-header">
+            <h2>✈️ Teasers</h2>
+            <a href="actions.html#teasers" class="btn btn-sm btn-secondary" style="font-size:0.6875rem;">Voir les actions</a>
+          </div>
+          <div class="card-body">
+            <div id="dashboard-teaser-kpis"></div>
+          </div>
         </div>
       </div>
 
