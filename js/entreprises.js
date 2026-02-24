@@ -256,5 +256,6 @@
       }
     });
     UI.localisationAutocomplete('e-loc');
+    UI.addressAutocomplete('e-siege-ville', 'e-siege-cp');
   }
 })();

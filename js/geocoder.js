@@ -99,6 +99,35 @@ const Geocoder = (() => {
     return null;
   }
 
+  // --- BAN Municipality Search (for address autocomplete) ---
+  const _municipalityCache = new Map();
+  const _MC_TTL = 5 * 60 * 1000; // 5 min
+
+  async function searchMunicipalities(query, { limit = 8 } = {}) {
+    const key = (query || '').trim().toLowerCase();
+    if (key.length < 2) return [];
+
+    const cached = _municipalityCache.get(key);
+    if (cached && (Date.now() - cached.ts) < _MC_TTL) return cached.results;
+
+    try {
+      const url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&type=municipality&limit=${limit}`;
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const data = await res.json();
+      const results = (data.features || []).map(f => ({
+        city: f.properties.city,
+        postcode: f.properties.postcode,
+        context: f.properties.context,
+        label: `${f.properties.city} (${f.properties.postcode})`,
+      }));
+      _municipalityCache.set(key, { results, ts: Date.now() });
+      return results;
+    } catch {
+      return [];
+    }
+  }
+
   function _delay(ms) {
     return new Promise(r => setTimeout(r, ms));
   }
@@ -194,6 +223,7 @@ const Geocoder = (() => {
     geocode,
     geocodeLocation,
     geocodeAll,
+    searchMunicipalities,
     isMobile,
     MOBILE_LOCALISATIONS,
     CITY_COORDS
