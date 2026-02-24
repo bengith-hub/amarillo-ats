@@ -554,7 +554,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
   // WATCHLIST MANAGEMENT
   // ============================================================
 
-  async function addToWatchlist(entry) {
+  async function addToWatchlist(entry, options) {
+    const silent = options?.silent || false;
     await _loadWatchlist();
     // Dedup by siren or nom
     const exists = _watchlist.find(w =>
@@ -562,7 +563,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       (entry.nom && w.nom.toLowerCase() === entry.nom.toLowerCase())
     );
     if (exists) {
-      UI.toast('Entreprise deja dans la watchlist', 'error');
+      if (!silent) UI.toast('Entreprise deja dans la watchlist', 'error');
       return null;
     }
 
@@ -586,7 +587,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
 
     _watchlist.push(wlEntry);
     await _saveWatchlist();
-    UI.toast('Ajoutee a la watchlist');
+    if (!silent) UI.toast('Ajoutee a la watchlist');
     return wlEntry;
   }
 
@@ -596,7 +597,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     await _saveWatchlist();
   }
 
-  async function addFromATS(entrepriseId) {
+  async function addFromATS(entrepriseId, options) {
     const ent = Store.findById('entreprises', entrepriseId);
     if (!ent) return null;
     return addToWatchlist({
@@ -607,7 +608,43 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       code_postal: ent.siege_code_postal || '',
       ville: ent.siege_ville || ent.localisation || '',
       source: 'ats_import',
+    }, options);
+  }
+
+  function _getATSSuggestions(activeRegion) {
+    const entreprises = Store.get('entreprises') || [];
+    const wl = _watchlist || [];
+    const wlIds = new Set(wl.map(w => w.entreprise_id).filter(Boolean));
+    const wlSirens = new Set(wl.map(w => w.siren).filter(Boolean));
+    const wlNoms = new Set(wl.map(w => w.nom.toLowerCase()));
+
+    return entreprises.filter(e => {
+      // Already in watchlist?
+      if (wlIds.has(e.id)) return false;
+      if (e._pappers_siren && wlSirens.has(e._pappers_siren)) return false;
+      if (e.nom && wlNoms.has(e.nom.toLowerCase())) return false;
+
+      // Match region via code postal
+      const cp = e.siege_code_postal || '';
+      if (!cp) return false;
+      const region = SignalRegions.codePostalToRegion(cp);
+      return region === activeRegion;
     });
+  }
+
+  async function _addBatchFromATS(entrepriseIds, containerId) {
+    let added = 0;
+    for (const id of entrepriseIds) {
+      const result = await addFromATS(id, { silent: true });
+      if (result) added++;
+    }
+    if (added > 0) {
+      UI.toast(added + ' entreprise' + (added > 1 ? 's ajoutees' : ' ajoutee') + ' a la watchlist');
+    } else {
+      UI.toast('Toutes ces entreprises sont deja dans la watchlist', 'error');
+    }
+    _watchlist = null;
+    renderPage(containerId);
   }
 
   // ============================================================
@@ -696,7 +733,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     if (_activeTab === 'signaux') {
       _renderSignauxTab(tabContent, filtered, regionDeps);
     } else if (_activeTab === 'watchlist') {
-      _renderWatchlistTab(tabContent, regionWatchlist);
+      _renderWatchlistTab(tabContent, regionWatchlist, activeRegion);
     } else if (_activeTab === 'decouverte') {
       _renderDecouverteTab(tabContent, activeRegion);
     } else if (_activeTab === 'carte') {
@@ -832,45 +869,121 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
   // UI — WATCHLIST TAB
   // ============================================================
 
-  function _renderWatchlistTab(container, watchlist) {
-    if (!watchlist.length) {
-      container.innerHTML = '<div class="empty-state"><p>Watchlist vide. Ajoutez des entreprises a surveiller.</p></div>';
-      return;
+  function _renderWatchlistTab(container, watchlist, activeRegion) {
+    // --- Suggestions banner: ATS companies from active region not yet in watchlist ---
+    const suggestions = _getATSSuggestions(activeRegion);
+    let suggestionsHtml = '';
+    if (suggestions.length > 0) {
+      const sugRows = suggestions.map(e => {
+        const ville = e.siege_ville || e.localisation || '';
+        const dep = SignalRegions.codePostalToDep(e.siege_code_postal || '') || '';
+        const info = [ville, dep].filter(Boolean).join(', ');
+        const extra = [e.secteur ? e.secteur : '', e.taille ? e.taille + ' sal.' : ''].filter(Boolean).join(' | ');
+        return `
+          <label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;cursor:pointer;transition:background .15s;"
+                 onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+            <input type="checkbox" class="se-suggest-cb" value="${e.id}" checked style="width:16px;height:16px;accent-color:#3b82f6;" />
+            <span style="font-weight:500;">${UI.escHtml(e.nom)}</span>
+            <span style="color:#64748b;font-size:0.8125rem;">${UI.escHtml(info)}</span>
+            ${extra ? '<span style="color:#94a3b8;font-size:0.75rem;">' + UI.escHtml(extra) + '</span>' : ''}
+          </label>`;
+      }).join('');
+
+      suggestionsHtml = `
+        <div style="background:linear-gradient(135deg,#eff6ff,#f0fdf4);border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin-bottom:18px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <div style="font-weight:600;font-size:0.9375rem;color:#1e40af;">
+              Suggestions ATS — ${UI.escHtml(activeRegion)}
+            </div>
+            <span style="font-size:0.75rem;color:#64748b;">${suggestions.length} entreprise${suggestions.length > 1 ? 's' : ''} disponible${suggestions.length > 1 ? 's' : ''}</span>
+          </div>
+          <div style="max-height:200px;overflow-y:auto;margin-bottom:10px;">
+            ${sugRows}
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button class="btn btn-secondary" id="se-suggest-all" style="font-size:0.75rem;padding:3px 10px;">Tout cocher</button>
+            <button class="btn btn-secondary" id="se-suggest-none" style="font-size:0.75rem;padding:3px 10px;">Aucun</button>
+            <button class="btn btn-primary" id="se-suggest-add" style="font-size:0.8125rem;padding:4px 14px;margin-left:auto;">
+              Ajouter <span id="se-suggest-count">${suggestions.length}</span> selectionnee${suggestions.length > 1 ? 's' : ''}
+            </button>
+          </div>
+        </div>`;
     }
 
-    const rows = watchlist.map(w => `
-      <tr>
-        <td style="font-weight:500;">${UI.escHtml(w.nom)}</td>
-        <td>${UI.escHtml(w.ville || '')} (${w.departement || ''})</td>
-        <td style="font-size:0.8125rem;">${UI.escHtml(w.siren || '—')}</td>
-        <td style="font-size:0.8125rem;">${w.site_web ? '<a href="' + UI.escHtml(w.site_web) + '" target="_blank" style="color:#3b82f6;">Site</a>' : '—'}</td>
-        <td style="font-size:0.8125rem;">${w.derniere_analyse || 'Jamais'}</td>
-        <td>
-          <button class="btn btn-secondary se-btn-scan-one" data-id="${w.id}" style="font-size:0.6875rem;padding:2px 8px;">Scanner</button>
-          <button class="btn btn-secondary se-btn-remove-wl" data-id="${w.id}" style="font-size:0.6875rem;padding:2px 8px;color:#dc2626;">Retirer</button>
-        </td>
-      </tr>
-    `).join('');
+    // --- Watchlist table ---
+    let tableHtml = '';
+    if (watchlist.length) {
+      const rows = watchlist.map(w => `
+        <tr>
+          <td style="font-weight:500;">${UI.escHtml(w.nom)}</td>
+          <td>${UI.escHtml(w.ville || '')} (${w.departement || ''})</td>
+          <td style="font-size:0.8125rem;">${UI.escHtml(w.siren || '—')}</td>
+          <td style="font-size:0.8125rem;">${w.site_web ? '<a href="' + UI.escHtml(w.site_web) + '" target="_blank" style="color:#3b82f6;">Site</a>' : '—'}</td>
+          <td style="font-size:0.8125rem;">${w.derniere_analyse || 'Jamais'}</td>
+          <td>
+            <button class="btn btn-secondary se-btn-scan-one" data-id="${w.id}" style="font-size:0.6875rem;padding:2px 8px;">Scanner</button>
+            <button class="btn btn-secondary se-btn-remove-wl" data-id="${w.id}" style="font-size:0.6875rem;padding:2px 8px;color:#dc2626;">Retirer</button>
+          </td>
+        </tr>
+      `).join('');
 
-    container.innerHTML = `
-      <div class="data-table-wrapper">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Entreprise</th>
-              <th>Localisation</th>
-              <th>SIREN</th>
-              <th>Site web</th>
-              <th>Dernier scan</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    `;
+      tableHtml = `
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Entreprise</th>
+                <th>Localisation</th>
+                <th>SIREN</th>
+                <th>Site web</th>
+                <th>Dernier scan</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    } else if (!suggestions.length) {
+      tableHtml = '<div class="empty-state"><p>Watchlist vide. Ajoutez des entreprises a surveiller.</p></div>';
+    }
 
-    // Events
+    container.innerHTML = suggestionsHtml + tableHtml;
+
+    // --- Suggestions events ---
+    const _updateSuggestCount = () => {
+      const checked = container.querySelectorAll('.se-suggest-cb:checked').length;
+      const countEl = document.getElementById('se-suggest-count');
+      if (countEl) countEl.textContent = checked;
+      const addBtn = document.getElementById('se-suggest-add');
+      if (addBtn) {
+        addBtn.textContent = 'Ajouter ' + checked + ' selectionnee' + (checked > 1 ? 's' : '');
+        addBtn.disabled = checked === 0;
+      }
+    };
+
+    container.querySelectorAll('.se-suggest-cb').forEach(cb => {
+      cb.addEventListener('change', _updateSuggestCount);
+    });
+
+    document.getElementById('se-suggest-all')?.addEventListener('click', () => {
+      container.querySelectorAll('.se-suggest-cb').forEach(cb => { cb.checked = true; });
+      _updateSuggestCount();
+    });
+
+    document.getElementById('se-suggest-none')?.addEventListener('click', () => {
+      container.querySelectorAll('.se-suggest-cb').forEach(cb => { cb.checked = false; });
+      _updateSuggestCount();
+    });
+
+    document.getElementById('se-suggest-add')?.addEventListener('click', async () => {
+      const selected = [...container.querySelectorAll('.se-suggest-cb:checked')].map(cb => cb.value);
+      if (!selected.length) { UI.toast('Aucune entreprise selectionnee', 'error'); return; }
+      const btn = document.getElementById('se-suggest-add');
+      if (btn) { btn.disabled = true; btn.textContent = 'Import en cours...'; }
+      await _addBatchFromATS(selected, 'signaux-content');
+    });
+
+    // --- Watchlist table events ---
     container.querySelectorAll('.se-btn-scan-one').forEach(btn => {
       btn.addEventListener('click', () => _scanOneEntreprise(btn.dataset.id));
     });
