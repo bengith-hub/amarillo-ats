@@ -1699,12 +1699,15 @@ const UI = (() => {
   function linkedinBadge(url, { compact = false } = {}) {
     if (!url) return '';
     const normalized = normalizeUrl(url);
-    // Extract username from LinkedIn URL
-    const match = normalized.match(/linkedin\.com\/in\/([^/?#]+)/);
+    // Extract username or company slug from LinkedIn URL
+    const matchPerson = normalized.match(/linkedin\.com\/in\/([^/?#]+)/);
+    const matchCompany = normalized.match(/linkedin\.com\/company\/([^/?#]+)/);
+    const match = matchPerson || matchCompany;
     const slug = match ? decodeURIComponent(match[1]).replace(/-/g, ' ') : null;
     const displayName = slug
       ? slug.replace(/\b\w/g, c => c.toUpperCase()).replace(/\s+\d+$/, '') // capitalize + strip trailing numbers
       : 'Voir le profil';
+    const badgeLabel = matchCompany ? 'Page entreprise' : 'Profil LinkedIn';
 
     if (compact) {
       return `<a href="${escHtml(normalized)}" target="_blank" rel="noopener" class="linkedin-badge-compact" title="${escHtml(normalized)}">
@@ -1719,7 +1722,7 @@ const UI = (() => {
       </div>
       <div class="linkedin-badge-info">
         <span class="linkedin-badge-name">${escHtml(displayName)}</span>
-        <span class="linkedin-badge-label">Profil LinkedIn</span>
+        <span class="linkedin-badge-label">${badgeLabel}</span>
       </div>
       <svg class="linkedin-badge-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M7 17L17 7M17 7H7M17 7v10"/></svg>
     </a>`;

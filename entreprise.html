@@ -345,6 +345,7 @@
         { key: 'localisation', label: 'Localisation', type: 'autocomplete', options: () => Referentiels.get('localisations'), refKey: 'localisations' },
         { key: 'telephone', label: 'Téléphone', type: 'text' },
         { key: 'site_web', label: 'Site web', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(v)}" target="_blank" class="entity-link">${UI.escHtml(v)}</a>` : '' },
+        { key: 'linkedin', label: 'LinkedIn', type: 'text', render: (v) => v ? UI.linkedinBadge(v, { compact: true }) : '' },
         { key: 'source', label: 'Source', type: 'text' },
         { key: 'siege_adresse', label: 'Adresse (siège)', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
         { key: 'siege_code_postal', label: 'Code postal', type: 'text' },
@@ -421,7 +422,7 @@
         const currentValues = {
           nom: e.nom || '', secteur: e.secteur || '', taille: e.taille || '',
           ca: e.ca || '', localisation: e.localisation || '', site_web: e.site_web || '',
-          telephone: e.telephone || '', siege_adresse: e.siege_adresse || '',
+          linkedin: e.linkedin || '', telephone: e.telephone || '', siege_adresse: e.siege_adresse || '',
           siege_code_postal: e.siege_code_postal || '', siege_ville: e.siege_ville || '',
           angle_approche: e.angle_approche || '', notes: e.notes || '',
           _decideurs: decideurs.map(d => ({ prenom: d.prenom, nom: d.nom, fonction: d.fonction })),
