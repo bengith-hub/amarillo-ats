@@ -127,6 +127,7 @@
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                   Rechercher les infos entreprise
                 </button>
+                <button class="btn btn-sm btn-secondary" id="btn-ent-pappers-config" style="font-size:0.6875rem;">Clé Pappers</button>
                 <button class="btn btn-sm btn-secondary" id="btn-ent-autofill-config" style="font-size:0.6875rem;">Clé OpenAI</button>
               </div>
               <div id="ent-autofill-status" style="margin-top:8px;font-size:0.8125rem;"></div>
@@ -403,8 +404,10 @@
 
     // Company Autofill IA — event handlers
     document.getElementById('btn-ent-autofill')?.addEventListener('click', async () => {
-      if (!CVParser.getOpenAIKey()) {
-        CVParser.showKeyConfigModal();
+      const hasPappers = !!CompanyAutofill.getPappersKey();
+      const hasOpenAI = !!CVParser.getOpenAIKey();
+      if (!hasPappers && !hasOpenAI) {
+        CompanyAutofill.showPappersConfigModal();
         return;
       }
 
@@ -415,15 +418,18 @@
       statusEl.innerHTML = '';
 
       try {
-        const extracted = await CompanyAutofill.fetchCompanyInfo(e.nom);
-
         const currentValues = {
           nom: e.nom || '', secteur: e.secteur || '', taille: e.taille || '',
           ca: e.ca || '', localisation: e.localisation || '', site_web: e.site_web || '',
           telephone: e.telephone || '', siege_adresse: e.siege_adresse || '',
           siege_code_postal: e.siege_code_postal || '', siege_ville: e.siege_ville || '',
           angle_approche: e.angle_approche || '', notes: e.notes || '',
+          _decideurs: decideurs.map(d => ({ prenom: d.prenom, nom: d.nom, fonction: d.fonction })),
         };
+
+        const extracted = await CompanyAutofill.fetchCompanyInfo(e.nom, currentValues, {
+          onStatusUpdate: (msg) => { statusEl.innerHTML = '<span style="color:#3b82f6;">' + UI.escHtml(msg) + '</span>'; },
+        });
 
         CompanyAutofill.showReviewModal(extracted, currentValues, {
           title: 'Résultats Autofill — ' + e.nom,
@@ -442,6 +448,10 @@
         btn.disabled = false;
         btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Rechercher les infos entreprise';
       }
+    });
+
+    document.getElementById('btn-ent-pappers-config')?.addEventListener('click', () => {
+      CompanyAutofill.showPappersConfigModal();
     });
 
     document.getElementById('btn-ent-autofill-config')?.addEventListener('click', () => {

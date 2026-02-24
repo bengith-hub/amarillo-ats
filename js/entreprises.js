@@ -287,8 +287,10 @@
           return;
         }
 
-        if (!CVParser.getOpenAIKey()) {
-          CVParser.showKeyConfigModal();
+        const hasPappers = !!CompanyAutofill.getPappersKey();
+        const hasOpenAI = !!CVParser.getOpenAIKey();
+        if (!hasPappers && !hasOpenAI) {
+          CompanyAutofill.showPappersConfigModal();
           return;
         }
 
@@ -299,10 +301,9 @@
         statusEl.innerHTML = '';
 
         try {
-          const extracted = await CompanyAutofill.fetchCompanyInfo(companyName);
+          // Collecter les valeurs actuelles du formulaire pour le contexte
           const overlay = document.querySelector('.modal-overlay');
           if (!overlay) return;
-
           const fieldMap = {
             nom: '#e-nom', secteur: '#e-secteur', taille: '#e-taille',
             ca: '#e-ca', localisation: '#e-loc', site_web: '#e-site',
@@ -310,6 +311,18 @@
             siege_code_postal: '#e-siege-cp', siege_ville: '#e-siege-ville',
             angle_approche: '#e-angle', notes: '#e-notes',
           };
+
+          // Collecter les valeurs déjà remplies pour le contexte IA
+          const formContext = {};
+          for (const [key, selector] of Object.entries(fieldMap)) {
+            const el = overlay.querySelector(selector);
+            if (el && el.value && el.value.trim()) formContext[key] = el.value.trim();
+          }
+
+          const extracted = await CompanyAutofill.fetchCompanyInfo(companyName, formContext, {
+            autoSelectFirst: true, // Can't show selection modal over creation modal
+            onStatusUpdate: (msg) => { statusEl.innerHTML = '<span style="color:#3b82f6;">' + UI.escHtml(msg) + '</span>'; },
+          });
 
           let filledCount = 0;
           for (const [key, selector] of Object.entries(fieldMap)) {
@@ -327,8 +340,9 @@
             filledCount++;
           }
 
+          const sourceLabel = extracted._pappers_siren ? 'Pappers + IA' : 'IA';
           statusEl.innerHTML = filledCount > 0
-            ? '<span style="color:#059669;">' + filledCount + ' champ(s) rempli(s) par l\'IA</span>'
+            ? '<span style="color:#059669;">' + filledCount + ' champ(s) rempli(s) (' + sourceLabel + ')</span>'
             : '<span style="color:#64748b;">Aucune nouvelle information trouvée</span>';
           setTimeout(() => { statusEl.innerHTML = ''; }, 5000);
         } catch (err) {
