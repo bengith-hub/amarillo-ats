@@ -145,6 +145,8 @@
             <div class="card-header"><h2>Actions liées (${actions.length})</h2></div>
             <div class="card-body"><div id="mission-timeline"></div></div>
           </div>
+
+          <div id="mission-documents"></div>
         </div>
 
         <div class="detail-sidebar">
@@ -170,6 +172,15 @@
               <div style="font-size:1.25rem;font-weight:700;margin-bottom:8px;">${actions.length}</div>
               <div style="font-size:0.75rem;color:#64748b;">Priorité</div>
               <div style="margin-bottom:8px;">${UI.badge(m.priorite)}</div>
+              ${m.google_drive_url ? `
+              <div style="margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;">
+                <div style="font-size:0.75rem;font-weight:600;color:#64748b;text-transform:uppercase;margin-bottom:4px;">Liens externes</div>
+                <a href="${UI.escHtml(m.google_drive_url)}" target="_blank" class="entity-link" style="display:inline-flex;align-items:center;gap:4px;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                  Google Drive
+                </a>
+              </div>
+              ` : ''}
             </div>
           </div>
         </div>
@@ -260,6 +271,13 @@
         { key: 'jd_environnement', label: 'Environnement de travail', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
         { key: 'jd_processus', label: 'Processus de sélection', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
       ]
+    });
+
+    // Documents & Google Drive section
+    UI.documentsSection('mission-documents', {
+      entity: 'missions',
+      recordId: id,
+      docTypesKey: 'document_types_mission',
     });
 
     // JD PDF export

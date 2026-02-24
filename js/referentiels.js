@@ -133,6 +133,10 @@ const Referentiels = (() => {
       'Carte de visite', 'Notes de réunion', 'Compte-rendu',
       'Proposition', 'Autre'
     ],
+    document_types_mission: [
+      'Contrat — brouillon', 'Contrat — envoyé', 'Contrat — annoté client',
+      'Contrat — signé', 'Proposition commerciale', 'Avenant', 'Autre'
+    ],
 
     // --- LOCALISATIONS ---
     localisations: [
@@ -308,6 +312,7 @@ const Referentiels = (() => {
           { key: 'document_types_candidat', label: 'Types de documents (candidats)' },
           { key: 'document_types_entreprise', label: 'Types de documents (entreprises)' },
           { key: 'document_types_decideur', label: 'Types de documents (décideurs)' },
+          { key: 'document_types_mission', label: 'Types de documents (missions)' },
         ]
       },
       {
