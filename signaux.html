@@ -51,7 +51,7 @@
   <script src="js/signal-engine.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', async () => {
-      await Store.init();
+      await Store.loadAll();
       SignalEngine.renderPage('signaux-content');
     });
   </script>
