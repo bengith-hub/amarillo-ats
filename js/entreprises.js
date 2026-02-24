@@ -286,8 +286,10 @@
           return;
         }
 
-        if (!CVParser.getOpenAIKey()) {
-          CVParser.showKeyConfigModal();
+        const hasPappers = !!CompanyAutofill.getPappersKey();
+        const hasOpenAI = !!CVParser.getOpenAIKey();
+        if (!hasPappers && !hasOpenAI) {
+          CompanyAutofill.showPappersConfigModal();
           return;
         }
 
@@ -316,7 +318,10 @@
             if (el && el.value && el.value.trim()) formContext[key] = el.value.trim();
           }
 
-          const extracted = await CompanyAutofill.fetchCompanyInfo(companyName, formContext);
+          const extracted = await CompanyAutofill.fetchCompanyInfo(companyName, formContext, {
+            autoSelectFirst: true, // Can't show selection modal over creation modal
+            onStatusUpdate: (msg) => { statusEl.innerHTML = '<span style="color:#3b82f6;">' + UI.escHtml(msg) + '</span>'; },
+          });
 
           let filledCount = 0;
           for (const [key, selector] of Object.entries(fieldMap)) {
@@ -334,8 +339,9 @@
             filledCount++;
           }
 
+          const sourceLabel = extracted._pappers_siren ? 'Pappers + IA' : 'IA';
           statusEl.innerHTML = filledCount > 0
-            ? '<span style="color:#059669;">' + filledCount + ' champ(s) rempli(s) par l\'IA</span>'
+            ? '<span style="color:#059669;">' + filledCount + ' champ(s) rempli(s) (' + sourceLabel + ')</span>'
             : '<span style="color:#64748b;">Aucune nouvelle information trouvée</span>';
           setTimeout(() => { statusEl.innerHTML = ''; }, 5000);
         } catch (err) {
