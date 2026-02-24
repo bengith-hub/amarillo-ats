@@ -33,7 +33,7 @@
       const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
       return allActions.filter(a => a.date_action >= weekAgo);
     }},
-    prospection: { label: 'Prospection', icon: '🎯', filter: () => allActions.filter(a => a.type_action === 'Prospection' || a.type_action === 'Prise de contact' || a.type_action === 'Relance décideur') },
+    prospection: { label: 'Prospection', icon: '🎯', filter: () => allActions.filter(a => a.decideur_id && (a.type_action === 'Prospection' || a.type_action === 'Prise de contact' || a.type_action === 'Relance décideur')) },
     teasers: { label: 'Teasers', icon: '✈️', filter: () => allActions.filter(a => a.type_action === 'Envoi teaser' || a.type_action === 'Retour teaser' || a.type_action === 'Relance teaser') },
     done: { label: 'Fait', icon: '✅', filter: () => allActions.filter(a => a.statut === 'Fait') },
   };
@@ -184,7 +184,8 @@
       ],
       data: sorted,
       onRowClick: (id) => editAction(id),
-      emptyMessage: 'Aucune action dans cette vue'
+      emptyMessage: 'Aucune action dans cette vue',
+      storageKey: 'actions'
     });
   }
 
