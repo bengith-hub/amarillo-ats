@@ -236,6 +236,7 @@
     _pendingCVData = null;
 
     const bodyHtml = `
+      <div id="dup-warning-candidat"></div>
       ${!isEdit ? `
       <div id="cv-import-section" style="margin-bottom:20px;padding:16px;background:#f0f9ff;border:2px dashed #3b82f6;border-radius:10px;text-align:center;">
         <input type="file" id="cv-file-input" accept=".pdf,.txt,.text,.md" style="display:none;" />
@@ -584,6 +585,14 @@
     UI.localisationAutocomplete('f-localisation');
     UI.addressAutocomplete('f-ville', 'f-code-postal');
     UI.candidatAutocomplete('f-recommande-par');
+
+    if (!isEdit) {
+      DuplicateDetector.attachLiveCheck(
+        { prenom: 'f-prenom', nom: 'f-nom', email: 'f-email', telephone: 'f-telephone', linkedin: 'f-linkedin' },
+        (vals) => DuplicateDetector.findCandidatDuplicates(vals),
+        'dup-warning-candidat'
+      );
+    }
 
     // Toggle date label based on "open to work"
     const otwSelect = document.getElementById('f-open-to-work');

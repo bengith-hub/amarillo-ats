@@ -186,7 +186,18 @@
     const e = existing || {};
 
     const bodyHtml = `
-      <div class="form-group"><label>Nom</label><input type="text" id="e-nom" value="${UI.escHtml(e.nom||'')}" /></div>
+      <div id="dup-warning-entreprise"></div>
+      <div class="form-group">
+        <label>Nom</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="text" id="e-nom" value="${UI.escHtml(e.nom||'')}" style="flex:1;" />
+          <button type="button" class="btn btn-sm btn-secondary" id="btn-autofill-entreprise" title="Rechercher les infos via IA" style="white-space:nowrap;display:inline-flex;align-items:center;gap:4px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Autofill IA
+          </button>
+        </div>
+        <div id="autofill-status" style="margin-top:4px;font-size:0.8125rem;"></div>
+      </div>
       <div class="form-row">
         <div class="form-group"><label>Secteur</label>
           <select id="e-secteur"><option value="">—</option>${Referentiels.get('entreprise_secteurs').map(s=>`<option value="${s}" ${e.secteur===s?'selected':''}>${s}</option>`).join('')}</select>
@@ -257,5 +268,76 @@
     });
     UI.localisationAutocomplete('e-loc');
     UI.addressAutocomplete('e-siege-ville', 'e-siege-cp');
+
+    if (!isEdit) {
+      DuplicateDetector.attachLiveCheck(
+        { nom: 'e-nom' },
+        (vals) => DuplicateDetector.findEntrepriseDuplicates(vals.nom),
+        'dup-warning-entreprise'
+      );
+    }
+
+    // Autofill IA handler
+    setTimeout(() => {
+      document.getElementById('btn-autofill-entreprise')?.addEventListener('click', async () => {
+        const nomInput = document.querySelector('#e-nom');
+        const companyName = nomInput ? nomInput.value.trim() : '';
+        if (!companyName) {
+          UI.toast('Saisissez d\'abord un nom d\'entreprise', 'error');
+          return;
+        }
+
+        if (!CVParser.getOpenAIKey()) {
+          CVParser.showKeyConfigModal();
+          return;
+        }
+
+        const btn = document.getElementById('btn-autofill-entreprise');
+        const statusEl = document.getElementById('autofill-status');
+        btn.disabled = true;
+        btn.innerHTML = '<span style="width:14px;height:14px;border:2px solid #bfdbfe;border-top-color:#3b82f6;border-radius:50%;animation:spin 0.8s linear infinite;display:inline-block;"></span> Recherche...';
+        statusEl.innerHTML = '';
+
+        try {
+          const extracted = await CompanyAutofill.fetchCompanyInfo(companyName);
+          const overlay = document.querySelector('.modal-overlay');
+          if (!overlay) return;
+
+          const fieldMap = {
+            nom: '#e-nom', secteur: '#e-secteur', taille: '#e-taille',
+            ca: '#e-ca', localisation: '#e-loc', site_web: '#e-site',
+            telephone: '#e-tel', siege_adresse: '#e-siege-adresse',
+            siege_code_postal: '#e-siege-cp', siege_ville: '#e-siege-ville',
+            angle_approche: '#e-angle', notes: '#e-notes',
+          };
+
+          let filledCount = 0;
+          for (const [key, selector] of Object.entries(fieldMap)) {
+            const val = (extracted[key] || '').toString().trim();
+            if (!val) continue;
+            const el = overlay.querySelector(selector);
+            if (!el) continue;
+            // Only fill if the field is currently empty
+            if (el.value && el.value.trim()) continue;
+            el.value = val;
+            // Briefly highlight filled fields
+            el.style.transition = 'background 0.3s';
+            el.style.background = '#ecfdf5';
+            setTimeout(() => { el.style.background = ''; }, 2000);
+            filledCount++;
+          }
+
+          statusEl.innerHTML = filledCount > 0
+            ? '<span style="color:#059669;">' + filledCount + ' champ(s) rempli(s) par l\'IA</span>'
+            : '<span style="color:#64748b;">Aucune nouvelle information trouvée</span>';
+          setTimeout(() => { statusEl.innerHTML = ''; }, 5000);
+        } catch (err) {
+          statusEl.innerHTML = '<span style="color:#dc2626;">Erreur : ' + UI.escHtml(err.message) + '</span>';
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Autofill IA';
+        }
+      });
+    }, 50);
   }
 })();
