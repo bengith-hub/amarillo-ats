@@ -40,6 +40,8 @@
   <script src="js/store.js"></script>
   <script src="js/components.js"></script>
   <script src="js/referentiels.js"></script>
+  <script src="js/cv-parser.js"></script>
+  <script src="js/company-autofill.js"></script>
   <script>
   let currentEntreprise = null;
   const entId = new URLSearchParams(window.location.search).get('id');
@@ -114,6 +116,23 @@
 
       <div class="detail-grid">
         <div class="detail-main">
+          <div class="card" data-accent="blue" id="ent-autofill-section">
+            <div class="card-header">
+              <h2>Compléter les infos via IA</h2>
+              <span style="font-size:0.7rem;color:#94a3b8;">gpt-4o-mini</span>
+            </div>
+            <div class="card-body" style="padding:16px;">
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <button class="btn btn-primary" id="btn-ent-autofill" style="display:inline-flex;align-items:center;gap:6px;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  Rechercher les infos entreprise
+                </button>
+                <button class="btn btn-sm btn-secondary" id="btn-ent-autofill-config" style="font-size:0.6875rem;">Clé OpenAI</button>
+              </div>
+              <div id="ent-autofill-status" style="margin-top:8px;font-size:0.8125rem;"></div>
+            </div>
+          </div>
+
           <div class="card" data-accent="green">
             <div class="card-header">
               <h2>Informations</h2>
@@ -380,6 +399,53 @@
         ev.stopPropagation();
         removeEntrepriseLiee(btn.dataset.linkedId);
       });
+    });
+
+    // Company Autofill IA — event handlers
+    document.getElementById('btn-ent-autofill')?.addEventListener('click', async () => {
+      if (!CVParser.getOpenAIKey()) {
+        CVParser.showKeyConfigModal();
+        return;
+      }
+
+      const btn = document.getElementById('btn-ent-autofill');
+      const statusEl = document.getElementById('ent-autofill-status');
+      btn.disabled = true;
+      btn.innerHTML = '<span style="width:16px;height:16px;border:2px solid #bfdbfe;border-top-color:#3b82f6;border-radius:50%;animation:spin 0.8s linear infinite;display:inline-block;"></span> Recherche en cours...';
+      statusEl.innerHTML = '';
+
+      try {
+        const extracted = await CompanyAutofill.fetchCompanyInfo(e.nom);
+
+        const currentValues = {
+          nom: e.nom || '', secteur: e.secteur || '', taille: e.taille || '',
+          ca: e.ca || '', localisation: e.localisation || '', site_web: e.site_web || '',
+          telephone: e.telephone || '', siege_adresse: e.siege_adresse || '',
+          siege_code_postal: e.siege_code_postal || '', siege_ville: e.siege_ville || '',
+          angle_approche: e.angle_approche || '', notes: e.notes || '',
+        };
+
+        CompanyAutofill.showReviewModal(extracted, currentValues, {
+          title: 'Résultats Autofill — ' + e.nom,
+          onApply: async (updates) => {
+            await Store.update('entreprises', entId, updates);
+            Object.assign(e, updates);
+            UI.toast(Object.keys(updates).length + ' champ(s) mis à jour');
+            renderEntreprisePage();
+          }
+        });
+
+        statusEl.innerHTML = '';
+      } catch (err) {
+        statusEl.innerHTML = '<span style="color:#dc2626;">Erreur : ' + UI.escHtml(err.message) + '</span>';
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Rechercher les infos entreprise';
+      }
+    });
+
+    document.getElementById('btn-ent-autofill-config')?.addEventListener('click', () => {
+      CVParser.showKeyConfigModal();
     });
   }
 
