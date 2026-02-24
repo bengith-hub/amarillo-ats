@@ -1,6 +1,8 @@
-// Amarillo ATS — Company Autofill (Pappers + OpenAI)
-// Recherche les informations d'une entreprise via l'API Pappers (données officielles)
-// puis enrichit avec OpenAI (angle d'approche, notes).
+// Amarillo ATS — Company Autofill (Pappers + Site web + OpenAI)
+// Recherche les informations factuelles d'une entreprise :
+// 1. Pappers (registre officiel) : secteur, taille, CA, adresse siège
+// 2. Scraping du site web : téléphone, adresse, coordonnées
+// 3. OpenAI : complète les champs manquants à partir du contexte
 // Propose un modal de revue pour valider/appliquer les champs.
 
 const CompanyAutofill = (function() {
@@ -156,8 +158,6 @@ const CompanyAutofill = (function() {
       siege_adresse: siege.adresse_ligne_1 || '',
       siege_code_postal: siege.code_postal || '',
       siege_ville: siege.ville || '',
-      angle_approche: '',  // Enrichi par OpenAI
-      notes: '',  // Enrichi par OpenAI
       _pappers_siren: company.siren || '',
       _pappers_naf: company.libelle_code_naf || '',
       _pappers_forme: company.forme_juridique || '',
@@ -210,6 +210,58 @@ const CompanyAutofill = (function() {
         callback(null);
       });
     }, 50);
+  }
+
+  // ============================================================
+  // Website scraping — extraction de données factuelles
+  // ============================================================
+
+  async function _scrapeWebsite(siteUrl) {
+    if (!siteUrl) return '';
+
+    let url = siteUrl.trim();
+    if (!url.startsWith('http')) url = 'https://' + url;
+    const baseUrl = url.replace(/\/+$/, '');
+
+    // Fetch homepage + /contact in parallel via CORS proxy
+    const pages = await Promise.all([
+      _fetchPageText(baseUrl),
+      _fetchPageText(baseUrl + '/contact'),
+    ]);
+
+    const parts = [];
+    if (pages[0]) parts.push('PAGE ACCUEIL:\n' + pages[0]);
+    if (pages[1]) parts.push('PAGE CONTACT:\n' + pages[1]);
+    return parts.join('\n\n');
+  }
+
+  async function _fetchPageText(url) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(url);
+      const response = await fetch(proxyUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) return '';
+      const data = await response.json();
+      const html = data.contents || '';
+      if (!html) return '';
+
+      // Parse HTML and extract text
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      doc.querySelectorAll('script, style, svg, noscript, iframe, link, meta').forEach(el => el.remove());
+
+      let text = doc.body?.textContent || '';
+      text = text.replace(/[\t\r]+/g, ' ').replace(/\n\s*\n+/g, '\n').replace(/ {2,}/g, ' ').trim();
+
+      // Limit to keep prompt size reasonable
+      return text.length > 2500 ? text.substring(0, 2500) + '...' : text;
+    } catch (err) {
+      return '';
+    }
   }
 
   // ============================================================
@@ -295,7 +347,7 @@ const CompanyAutofill = (function() {
       nom: 'Nom', secteur: 'Secteur', taille: 'Taille', ca: 'CA',
       localisation: 'Localisation', site_web: 'Site web', telephone: 'Téléphone',
       siege_adresse: 'Adresse siège', siege_code_postal: 'Code postal',
-      siege_ville: 'Ville', angle_approche: "Angle d'approche", notes: 'Notes',
+      siege_ville: 'Ville',
     };
 
     for (const [key, label] of Object.entries(fieldLabels)) {
@@ -318,10 +370,10 @@ const CompanyAutofill = (function() {
   }
 
   // ============================================================
-  // OpenAI enrichment (angle_approche, notes, champs manquants)
+  // OpenAI enrichment (données factuelles manquantes)
   // ============================================================
 
-  async function _enrichWithOpenAI(companyName, baseData, currentValues) {
+  async function _enrichWithOpenAI(companyName, baseData, currentValues, websiteContent) {
     const openAIKey = CVParser.getOpenAIKey();
     if (!openAIKey) return baseData; // No OpenAI → return Pappers data as-is
 
@@ -334,20 +386,21 @@ const CompanyAutofill = (function() {
     for (const [k, v] of Object.entries(baseData)) {
       if (v && !k.startsWith('_')) mergedContext[k] = v;
     }
-    // Carry over Pappers metadata
     if (baseData._pappers_naf) mergedContext._pappers_naf = baseData._pappers_naf;
     if (baseData._pappers_forme) mergedContext._pappers_forme = baseData._pappers_forme;
     if (baseData._pappers_siren) mergedContext._pappers_siren = baseData._pappers_siren;
 
     const existingContext = _buildExistingContext(mergedContext);
 
-    const systemPrompt = `Tu es un assistant spécialisé dans la recherche d'informations sur les entreprises pour un ATS de recrutement.
-Des données officielles sur cette entreprise sont déjà connues (via Pappers/registres). Ton rôle est de les COMPLÉTER :
-- CONSERVE toutes les données existantes telles quelles (ne modifie PAS les champs déjà renseignés).
-- COMPLÈTE uniquement les champs vides : site_web, telephone, angle_approche, notes, et éventuellement localisation.
-- Pour "angle_approche", rédige 1-2 phrases sur comment approcher cette entreprise pour du recrutement IT/Digital.
-- Pour "notes", rédige 2-3 phrases factuelles sur l'activité et le positionnement de l'entreprise.
-Si une information n'est pas connue, laisse vide "".
+    const systemPrompt = `Tu es un assistant spécialisé dans l'extraction de DONNÉES FACTUELLES sur les entreprises.
+Des données officielles sont déjà connues (via Pappers). Ton rôle est de COMPLÉTER les champs vides avec des données concrètes et vérifiables.
+
+RÈGLES STRICTES :
+- CONSERVE les données existantes telles quelles.
+- Cherche UNIQUEMENT les données factuelles manquantes : numéro de téléphone, adresse complète du siège, code postal, ville, site web, chiffre d'affaires, taille (effectif).
+- NE PAS rédiger d'analyse, de notes stratégiques, ni d'angle d'approche.
+- Si le contenu du site web est fourni, extrais-en les coordonnées (téléphone, adresse, code postal).
+- Si une information n'est pas trouvable avec certitude, laisse vide "".
 
 Pour les champs select, choisis parmi :
 Secteur: ${secteurs.join(', ')}
@@ -356,26 +409,33 @@ CA: ${caOptions.join(', ')}
 
 Réponds UNIQUEMENT avec le JSON, sans commentaires ni markdown.`;
 
-    const userPrompt = `Complète les informations sur l'entreprise "${companyName.trim()}"
+    let userPrompt = `Complète les données factuelles manquantes sur l'entreprise "${companyName.trim()}"
 
 Données déjà connues :
-${existingContext}
+${existingContext}`;
+
+    if (websiteContent) {
+      userPrompt += `\n\nContenu extrait du site web de l'entreprise :\n${websiteContent}`;
+    }
+
+    userPrompt += `
 
 Format JSON attendu (reprends les valeurs existantes, complète les champs vides) :
 {
   "nom": "", "secteur": "", "taille": "", "ca": "",
   "localisation": "", "site_web": "", "telephone": "",
-  "siege_adresse": "", "siege_code_postal": "", "siege_ville": "",
-  "angle_approche": "", "notes": ""
+  "siege_adresse": "", "siege_code_postal": "", "siege_ville": ""
 }
 
-Pour "site_web", donne l'URL complète avec https://. Si déjà renseigné, conserve-le.
-Pour "telephone", format français (+33 ou 0x xx xx xx xx).`;
+Pour "site_web", URL complète avec https://. Si déjà renseigné, conserve-le.
+Pour "telephone", format français (+33 ou 0x xx xx xx xx). Cherche sur le site web.
+Pour "siege_adresse", l'adresse complète du siège social. Cherche sur le site web.
+Pour "siege_code_postal", le code postal du siège.
+Pour "ca", la tranche de chiffre d'affaires.`;
 
     try {
       const aiResult = await _callOpenAI(systemPrompt, userPrompt);
 
-      // Post-process select fields
       if (aiResult.secteur) aiResult.secteur = _matchSelectOption(aiResult.secteur, secteurs);
       if (aiResult.taille) aiResult.taille = _matchSelectOption(aiResult.taille, tailles);
       if (aiResult.ca) aiResult.ca = _matchSelectOption(aiResult.ca, caOptions);
@@ -386,7 +446,6 @@ Pour "telephone", format français (+33 ou 0x xx xx xx xx).`;
         if (k.startsWith('_')) continue;
         const val = (v || '').toString().trim();
         if (!val) continue;
-        // Only fill if baseData is empty for this field
         if (!merged[k] || !merged[k].toString().trim()) {
           merged[k] = val;
         }
@@ -441,11 +500,19 @@ Pour "telephone", format français (+33 ou 0x xx xx xx xx).`;
       }
     }
 
-    // Step 2: Enrich with OpenAI (or use OpenAI-only if no Pappers)
+    // Step 2: Scrape company website for factual data
+    const siteUrl = (pappersData && pappersData.site_web) || (currentValues && currentValues.site_web) || '';
+    let websiteContent = '';
+    if (siteUrl && hasOpenAI) {
+      if (onStatusUpdate) onStatusUpdate('Analyse du site web...');
+      websiteContent = await _scrapeWebsite(siteUrl);
+    }
+
+    // Step 3: Enrich with OpenAI (or use OpenAI-only if no Pappers)
     if (pappersData) {
       if (hasOpenAI) {
-        if (onStatusUpdate) onStatusUpdate('Enrichissement via IA...');
-        return await _enrichWithOpenAI(companyName, pappersData, currentValues);
+        if (onStatusUpdate) onStatusUpdate('Extraction des données via IA...');
+        return await _enrichWithOpenAI(companyName, pappersData, currentValues, websiteContent);
       }
       return pappersData;
     }
@@ -456,25 +523,26 @@ Pour "telephone", format français (+33 ou 0x xx xx xx xx).`;
     }
 
     if (onStatusUpdate) onStatusUpdate('Recherche via IA...');
-    return await _fetchWithOpenAIOnly(companyName, currentValues);
+    return await _fetchWithOpenAIOnly(companyName, currentValues, websiteContent);
   }
 
-  // OpenAI-only fallback (original behavior)
-  async function _fetchWithOpenAIOnly(companyName, currentValues) {
+  // OpenAI-only fallback
+  async function _fetchWithOpenAIOnly(companyName, currentValues, websiteContent) {
     const secteurs = Referentiels.get('entreprise_secteurs');
     const tailles = Referentiels.get('entreprise_tailles');
     const caOptions = ['< 5 M€', '5-20 M€', '20-50 M€', '50-100 M€', '100-250 M€', '250 M€+'];
 
     const existingContext = _buildExistingContext(currentValues);
 
-    const systemPrompt = `Tu es un assistant spécialisé dans la recherche d'informations sur les entreprises françaises et internationales pour un outil de CRM/ATS de recrutement.
-À partir du nom d'une entreprise, recherche dans tes connaissances les informations publiques disponibles et retourne-les au format JSON strict.
-Si une information n'est pas connue ou incertaine, laisse la valeur comme chaîne vide "".
+    const systemPrompt = `Tu es un assistant spécialisé dans l'extraction de DONNÉES FACTUELLES sur les entreprises françaises et internationales.
+Ton objectif est de trouver les données concrètes et vérifiables : numéro de téléphone, adresse complète du siège social, code postal, ville, site web, chiffre d'affaires, taille (nombre d'employés), secteur d'activité.
 
-IMPORTANT : Des informations sur cette entreprise sont peut-être déjà connues et te seront fournies comme contexte.
+RÈGLES STRICTES :
 - Si un champ existant est déjà renseigné et correct, REPRENDS-LE tel quel.
-- Utilise ces informations existantes pour mieux identifier l'entreprise.
-- Complète uniquement les champs vides.
+- Complète UNIQUEMENT les champs vides avec des données factuelles.
+- NE PAS rédiger d'analyse, de notes stratégiques, ni d'angle d'approche.
+- Si le contenu du site web est fourni, extrais-en prioritairement : téléphone, adresse postale, code postal.
+- Si une information n'est pas trouvable avec certitude, laisse vide "".
 
 Pour les champs select, choisis parmi :
 Secteur: ${secteurs.join(', ')}
@@ -483,10 +551,14 @@ CA: ${caOptions.join(', ')}
 
 Réponds UNIQUEMENT avec le JSON, sans commentaires ni markdown.`;
 
-    let userPrompt = `Recherche les informations publiques sur l'entreprise suivante : "${companyName.trim()}"`;
+    let userPrompt = `Recherche les données factuelles sur l'entreprise : "${companyName.trim()}"`;
 
     if (existingContext) {
       userPrompt += `\n\nDonnées déjà connues :\n${existingContext}`;
+    }
+
+    if (websiteContent) {
+      userPrompt += `\n\nContenu extrait du site web de l'entreprise :\n${websiteContent}`;
     }
 
     userPrompt += `
@@ -495,16 +567,16 @@ Format JSON attendu :
 {
   "nom": "", "secteur": "", "taille": "", "ca": "",
   "localisation": "", "site_web": "", "telephone": "",
-  "siege_adresse": "", "siege_code_postal": "", "siege_ville": "",
-  "angle_approche": "", "notes": ""
+  "siege_adresse": "", "siege_code_postal": "", "siege_ville": ""
 }
 
-Pour "nom", retourne le nom officiel/complet.
+Pour "nom", le nom officiel/complet.
 Pour "localisation", la région ou grande ville du siège.
-Pour "angle_approche", 1-2 phrases sur l'approche recrutement IT/Digital.
-Pour "notes", résumé factuel 2-3 phrases.
 Pour "site_web", URL complète avec https://. Si déjà renseigné, conserve-le.
-Pour "telephone", format français.`;
+Pour "telephone", format français (+33 ou 0x xx xx xx xx). Cherche dans le contenu du site web.
+Pour "siege_adresse", l'adresse complète du siège. Cherche dans le contenu du site web (mentions légales, page contact).
+Pour "siege_code_postal", le code postal du siège.
+Pour "ca", la tranche de chiffre d'affaires.`;
 
     const result = await _callOpenAI(systemPrompt, userPrompt);
 
@@ -530,8 +602,6 @@ Pour "telephone", format français.`;
     { key: 'siege_adresse', label: 'Adresse siège' },
     { key: 'siege_code_postal', label: 'Code postal' },
     { key: 'siege_ville', label: 'Ville' },
-    { key: 'angle_approche', label: "Angle d'approche" },
-    { key: 'notes', label: 'Notes' },
   ];
 
   function showReviewModal(extracted, currentValues, { onApply, title }) {
