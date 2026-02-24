@@ -111,9 +111,9 @@ const SignalEngine = (() => {
   // ============================================================
 
   const CORS_PROXIES = [
+    { name: 'netlify', buildUrl: (u) => '/.netlify/functions/cors-proxy?url=' + encodeURIComponent(u), parseHtml: (d) => d },
     { name: 'corsproxy', buildUrl: (u) => 'https://corsproxy.io/?' + encodeURIComponent(u), parseHtml: (d) => d },
     { name: 'allorigins', buildUrl: (u) => 'https://api.allorigins.win/get?url=' + encodeURIComponent(u), parseHtml: (d) => { try { return JSON.parse(d).contents || ''; } catch { return d; } } },
-    { name: 'codetabs', buildUrl: (u) => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u), parseHtml: (d) => d },
   ];
 
   async function _fetchViaProxy(url, timeoutMs) {
@@ -124,14 +124,22 @@ const SignalEngine = (() => {
         const timeoutId = setTimeout(() => controller.abort(), timeout);
         const response = await fetch(proxy.buildUrl(url), { signal: controller.signal });
         clearTimeout(timeoutId);
-        if (!response.ok) continue;
+        if (!response.ok) {
+          console.warn('[SignalEngine] Proxy ' + proxy.name + ' returned ' + response.status + ' for ' + url);
+          continue;
+        }
         const raw = await response.text();
         if (!raw) continue;
-        return proxy.parseHtml(raw);
-      } catch {
-        // try next proxy
+        const result = proxy.parseHtml(raw);
+        if (result) {
+          console.log('[SignalEngine] Proxy ' + proxy.name + ' OK for ' + url + ' (' + result.length + ' chars)');
+          return result;
+        }
+      } catch (e) {
+        console.warn('[SignalEngine] Proxy ' + proxy.name + ' failed for ' + url + ':', e.message || 'timeout');
       }
     }
+    console.warn('[SignalEngine] All proxies failed for ' + url);
     return '';
   }
 
@@ -215,6 +223,29 @@ const SignalEngine = (() => {
       return articles;
     } catch {
       return [];
+    }
+  }
+
+  // ============================================================
+  // SCRAPING — Google Search (web results, not just news)
+  // ============================================================
+
+  async function _scrapeGoogleSearch(entrepriseNom, region) {
+    try {
+      const query = encodeURIComponent(`"${entrepriseNom}" ${region || ''} entreprise activite`);
+      const searchUrl = `https://www.google.com/search?q=${query}&hl=fr&num=5`;
+      const html = await _fetchViaProxy(searchUrl, 10000);
+      if (!html) return '';
+
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      doc.querySelectorAll('script, style, svg, noscript, iframe, link, meta').forEach(el => el.remove());
+
+      let text = doc.body?.textContent || '';
+      text = text.replace(/[\t\r]+/g, ' ').replace(/\n\s*\n+/g, '\n').replace(/ {2,}/g, ' ').trim();
+      return text.length > 2000 ? text.substring(0, 2000) : text;
+    } catch {
+      return '';
     }
   }
 
@@ -305,10 +336,52 @@ const SignalEngine = (() => {
         secteur_naf: data.code_naf || '',
         libelle_naf: data.libelle_code_naf || '',
         date_creation: data.date_creation || '',
+        site_web: data.site_web || '',
         dirigeants: (data.representants || []).slice(0, 5).map(d => ({
           nom: [d.prenom, d.nom].filter(Boolean).join(' '),
           fonction: d.qualite || ''
         })),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async function _searchPappersByName(nom, ville) {
+    const apiKey = _getPappersKey();
+    if (!apiKey || !nom) return null;
+
+    try {
+      const params = new URLSearchParams({
+        api_token: apiKey,
+        q: nom,
+        par_page: '5',
+      });
+      const response = await fetch('https://api.pappers.fr/v2/recherche?' + params.toString());
+      if (!response.ok) return null;
+      const data = await response.json();
+      const results = data.resultats || [];
+      if (!results.length) return null;
+
+      // Try to match by city if available, otherwise take first result
+      let best = results[0];
+      if (ville) {
+        const villeNorm = ville.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const match = results.find(r => {
+          const rv = (r.siege?.ville || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          return rv.includes(villeNorm) || villeNorm.includes(rv);
+        });
+        if (match) best = match;
+      }
+
+      return {
+        siren: best.siren || '',
+        nom_officiel: best.denomination || best.nom_entreprise || '',
+        site_web: best.site_web || '',
+        code_naf: best.code_naf || '',
+        libelle_naf: best.libelle_code_naf || '',
+        ville: best.siege?.ville || '',
+        code_postal: best.siege?.code_postal || '',
       };
     } catch {
       return null;
@@ -511,18 +584,49 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
   async function analyseEntreprise(watchlistEntry) {
     const nom = watchlistEntry.nom;
     const region = watchlistEntry.region;
+    let siren = watchlistEntry.siren || '';
+    let siteWeb = watchlistEntry.site_web || '';
 
-    // 1. Scrape site + Google News in parallel
-    const [siteData, articles] = await Promise.all([
-      _scrapeSite(watchlistEntry.site_web),
+    // 0. Auto-enrich missing SIREN/site_web via Pappers name search
+    if (!siren || !siteWeb) {
+      const lookup = await _searchPappersByName(nom, watchlistEntry.ville);
+      if (lookup) {
+        if (!siren && lookup.siren) {
+          siren = lookup.siren;
+          watchlistEntry.siren = siren;
+          console.log('[SignalEngine] Auto-found SIREN for ' + nom + ': ' + siren);
+        }
+        if (!siteWeb && lookup.site_web) {
+          siteWeb = lookup.site_web;
+          watchlistEntry.site_web = siteWeb;
+          console.log('[SignalEngine] Auto-found site_web for ' + nom + ': ' + siteWeb);
+        }
+      }
+    }
+
+    // 1. Scrape site + Google News + Google Search in parallel
+    const [siteData, articles, searchContext] = await Promise.all([
+      _scrapeSite(siteWeb),
       _scrapeGoogleNews(nom, region),
+      _scrapeGoogleSearch(nom, region),
     ]);
 
     // 2. Enrich with Pappers
-    const pappers = watchlistEntry.siren ? await _enrichPappers(watchlistEntry.siren) : null;
+    const pappers = siren ? await _enrichPappers(siren) : null;
+
+    // If Pappers found a site_web and we didn't have one, scrape it now
+    if (pappers?.site_web && !siteWeb) {
+      siteWeb = pappers.site_web;
+      watchlistEntry.site_web = siteWeb;
+      const extraSite = await _scrapeSite(siteWeb);
+      if (extraSite.site_texte) siteData.site_texte = extraSite.site_texte;
+    }
+
+    // Combine all text sources
+    const allText = [siteData.site_texte, searchContext].filter(Boolean).join('\n\n');
 
     // 3. Detect signals via OpenAI
-    const aiResult = await _detectSignaux(nom, siteData.site_texte, articles, pappers);
+    const aiResult = await _detectSignaux(nom, allText, articles, pappers);
 
     // 4. Compute final scores
     const scores = _computeFinalScore(aiResult, aiResult.signaux || [], pappers);
@@ -533,7 +637,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       id: 'sig_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
       entreprise_id: watchlistEntry.entreprise_id || null,
       entreprise_nom: nom,
-      entreprise_siren: watchlistEntry.siren || '',
+      entreprise_siren: siren,
       region: region || '',
       departement: watchlistEntry.departement || '',
       ville: watchlistEntry.ville || '',
@@ -541,8 +645,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       signaux: (aiResult.signaux || []).map(s => ({
         type: s.type,
         label: s.label,
-        source: 'site_corporate',
-        source_url: watchlistEntry.site_web || '',
+        source: s.source || 'site_corporate',
+        source_url: siteWeb || '',
         date_detection: now,
         extrait: s.extrait || '',
         confiance: s.confiance || 0.5,
@@ -550,9 +654,10 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       ...scores,
       donnees_pappers: pappers || {},
       donnees_scraping: {
-        site_texte: siteData.site_texte.substring(0, 500),
+        site_texte: (siteData.site_texte || '').substring(0, 500),
         actualites: articles,
         offres_emploi: siteData.offres_emploi || [],
+        search_context: (searchContext || '').substring(0, 500),
       },
       generation: { hypothese_it: null, angle_approche: null, script_appel: null, message_linkedin: null, date_generation: null },
       statut: 'nouveau',

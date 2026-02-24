@@ -299,9 +299,9 @@ const CompanyAutofill = (function() {
   }
 
   const _CORS_PROXIES = [
+    { name: 'netlify', buildUrl: (u) => '/.netlify/functions/cors-proxy?url=' + encodeURIComponent(u), parseHtml: (d) => d },
     { name: 'corsproxy', buildUrl: (u) => 'https://corsproxy.io/?' + encodeURIComponent(u), parseHtml: (d) => d },
     { name: 'allorigins', buildUrl: (u) => 'https://api.allorigins.win/get?url=' + encodeURIComponent(u), parseHtml: (d) => { try { return JSON.parse(d).contents || ''; } catch { return d; } } },
-    { name: 'codetabs', buildUrl: (u) => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u), parseHtml: (d) => d },
   ];
 
   async function _fetchPageText(url) {
