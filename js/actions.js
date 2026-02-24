@@ -65,6 +65,8 @@
   }
 
   let currentView = 'todo'; // Default to "À faire" view
+  const hashView = window.location.hash.replace('#', '');
+  if (hashView && VIEWS[hashView]) currentView = hashView;
   let searchValue = '';
   let filterValues = {};
 
