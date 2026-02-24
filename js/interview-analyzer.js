@@ -137,7 +137,73 @@ Règles de formatage :
 - Pas de markdown gras (**), pas de titres (#)
 - Écris en français`;
 
+  const SYSTEM_FEEDBACK = `Tu es un consultant senior en recrutement (cabinet de chasse de têtes) en France.
+A partir des notes de débriefing client (raisons du refus, éléments factuels), tu dois rédiger un retour constructif et bienveillant pour le candidat qui n'a pas été retenu.
+
+Ce feedback sera utilisé de deux façons :
+1. Le recruteur le lira au téléphone au candidat
+2. Il sera ensuite envoyé par email comme confirmation écrite
+
+Réponds UNIQUEMENT avec un JSON contenant ces clés :
+{
+  "objet_email": "...",
+  "feedback_text": "...",
+  "points_forts": "...",
+  "axes_amelioration": "...",
+  "encouragement": "..."
+}
+
+Instructions pour chaque section :
+
+1. objet_email : L'objet de l'email de retour. Court et professionnel. Exemple : "Retour suite à votre candidature — [Poste]"
+
+2. feedback_text : Le corps principal du retour. Structure :
+- Remercier le candidat pour sa disponibilité et l'échange
+- Rappeler brièvement le contexte (poste, entreprise si non confidentiel)
+- Expliquer de manière constructive pourquoi la candidature n'a pas été retenue
+- Reformuler les raisons du client de façon diplomate et professionnelle
+- JAMAIS de critique personnelle, JAMAIS de jugement de valeur
+- Tourner les points négatifs en axes de développement
+
+3. points_forts : 2-3 points forts du candidat identifiés pendant le process, à valoriser
+
+4. axes_amelioration : 1-2 axes de progression formulés positivement (pas de critique)
+
+5. encouragement : 1-2 phrases de clôture encourageantes, ouvrant la porte à de futures opportunités
+
+Règles impératives :
+- Ton : professionnel, bienveillant, direct mais jamais brutal
+- Aucune mention du nom du client si le process était confidentiel
+- Aucun détail qui pourrait mettre le recruteur ou le client en difficulté
+- Formulations diplomates : préférer "le profil recherché s'orientait davantage vers..." plutôt que "vous n'aviez pas les compétences"
+- Écris en français
+- Vouvoiement par défaut
+- Le texte doit être lisible à voix haute au téléphone (phrases courtes, naturelles)
+- Pas de markdown gras (**), pas de titres (#)
+- Utilise des tirets (-) pour les listes`;
+
   // --- Fonctions publiques ---
+
+  async function generateRejectionFeedback(debriefNotes, context) {
+    let userPrompt = `--- CONTEXTE ---\n`;
+    userPrompt += `Candidat : ${context.candidatNom || 'Non précisé'}\n`;
+    userPrompt += `Poste visé : ${context.poste || 'Non précisé'}\n`;
+    userPrompt += `Entreprise : ${context.entreprise || 'Entreprise confidentielle'}\n`;
+    if (context.datePresentation) {
+      userPrompt += `Date de présentation : ${context.datePresentation}\n`;
+    }
+    userPrompt += '\n';
+
+    if (context.synthese) {
+      userPrompt += `--- SYNTHÈSE DU CANDIDAT ---\n${context.synthese.substring(0, 2000)}\n\n`;
+    }
+
+    userPrompt += `--- NOTES DE DÉBRIEFING CLIENT (raisons du refus) ---\n`;
+    userPrompt += `${debriefNotes.substring(0, 5000)}\n---\n\n`;
+    userPrompt += `Rédige un retour constructif pour ce candidat en respectant les consignes.`;
+
+    return await _callOpenAI(SYSTEM_FEEDBACK, userPrompt);
+  }
 
   async function analyze(notesText, cvText) {
     let userPrompt = '';
@@ -177,6 +243,7 @@ Règles de formatage :
   return {
     analyze,
     enrich,
+    generateRejectionFeedback,
     _callOpenAI // Exposé pour réutilisation future (screening, etc.)
   };
 
