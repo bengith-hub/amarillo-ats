@@ -107,19 +107,41 @@ const SignalEngine = (() => {
   }
 
   // ============================================================
-  // SCRAPING — Site corporate (réutilise le pattern company-autofill)
+  // SCRAPING — CORS proxy with fallback
+  // ============================================================
+
+  const CORS_PROXIES = [
+    { name: 'corsproxy', buildUrl: (u) => 'https://corsproxy.io/?' + encodeURIComponent(u), parseHtml: (d) => d },
+    { name: 'allorigins', buildUrl: (u) => 'https://api.allorigins.win/get?url=' + encodeURIComponent(u), parseHtml: (d) => { try { return JSON.parse(d).contents || ''; } catch { return d; } } },
+    { name: 'codetabs', buildUrl: (u) => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u), parseHtml: (d) => d },
+  ];
+
+  async function _fetchViaProxy(url, timeoutMs) {
+    const timeout = timeoutMs || 10000;
+    for (const proxy of CORS_PROXIES) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        const response = await fetch(proxy.buildUrl(url), { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!response.ok) continue;
+        const raw = await response.text();
+        if (!raw) continue;
+        return proxy.parseHtml(raw);
+      } catch {
+        // try next proxy
+      }
+    }
+    return '';
+  }
+
+  // ============================================================
+  // SCRAPING — Site corporate
   // ============================================================
 
   async function _fetchPageText(url) {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(url);
-      const response = await fetch(proxyUrl, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (!response.ok) return '';
-      const data = await response.json();
-      const html = data.contents || '';
+      const html = await _fetchViaProxy(url, 10000);
       if (!html) return '';
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
@@ -162,16 +184,8 @@ const SignalEngine = (() => {
     try {
       const query = encodeURIComponent(`"${entrepriseNom}" investissement OR industrie OR usine ${region || ''}`);
       const rssUrl = `https://news.google.com/rss/search?q=${query}&hl=fr&gl=FR&ceid=FR:fr`;
-      const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(rssUrl);
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      const response = await fetch(proxyUrl, { signal: controller.signal });
-      clearTimeout(timeoutId);
-
-      if (!response.ok) return [];
-      const data = await response.json();
-      const xmlText = data.contents || '';
+      const xmlText = await _fetchViaProxy(rssUrl, 10000);
       if (!xmlText) return [];
 
       const parser = new DOMParser();
@@ -1342,13 +1356,14 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         count++;
       } catch (e) {
         console.error('Scan error for ' + wl.nom + ':', e);
+        UI.toast('Erreur scan ' + wl.nom + ': ' + (e.message || 'echec'), 'error');
       }
     }
 
     await _saveSignaux();
     await _saveWatchlist();
 
-    UI.toast(count + ' entreprise(s) analysee(s)');
+    UI.toast(count + '/' + toScan.length + ' entreprise(s) analysee(s) avec succes');
     _signaux = null;
     _watchlist = null;
     renderPage(containerId);

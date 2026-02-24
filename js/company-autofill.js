@@ -298,18 +298,30 @@ const CompanyAutofill = (function() {
     return parts.join('\n\n');
   }
 
+  const _CORS_PROXIES = [
+    { name: 'corsproxy', buildUrl: (u) => 'https://corsproxy.io/?' + encodeURIComponent(u), parseHtml: (d) => d },
+    { name: 'allorigins', buildUrl: (u) => 'https://api.allorigins.win/get?url=' + encodeURIComponent(u), parseHtml: (d) => { try { return JSON.parse(d).contents || ''; } catch { return d; } } },
+    { name: 'codetabs', buildUrl: (u) => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u), parseHtml: (d) => d },
+  ];
+
   async function _fetchPageText(url) {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-      const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(url);
-      const response = await fetch(proxyUrl, { signal: controller.signal });
-      clearTimeout(timeoutId);
-
-      if (!response.ok) return '';
-      const data = await response.json();
-      const html = data.contents || '';
+      let html = '';
+      for (const proxy of _CORS_PROXIES) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+          const response = await fetch(proxy.buildUrl(url), { signal: controller.signal });
+          clearTimeout(timeoutId);
+          if (!response.ok) continue;
+          const raw = await response.text();
+          if (!raw) continue;
+          html = proxy.parseHtml(raw);
+          if (html) break;
+        } catch {
+          // try next proxy
+        }
+      }
       if (!html) return '';
 
       // Parse HTML and extract text
