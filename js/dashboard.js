@@ -512,4 +512,9 @@
 
     UI.timeline('dashboard-recent', recent);
   }
+
+  // Signal Engine widget
+  if (typeof SignalEngine !== 'undefined') {
+    SignalEngine.renderDashboardWidget('dashboard-signaux');
+  }
 })();
