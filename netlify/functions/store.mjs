@@ -19,7 +19,10 @@ const JSONBIN_BINS = {
   dsi_sessions: '698880c7ae596e708f1a6944'
 };
 
-const VALID_ENTITIES = new Set(Object.keys(JSONBIN_BINS));
+// Signal Engine entities (no JSONBin migration, born in Netlify Blobs)
+const SIGNAL_ENTITIES = new Set(['signaux', 'watchlist', 'signal_config']);
+
+const VALID_ENTITIES = new Set([...Object.keys(JSONBIN_BINS), ...SIGNAL_ENTITIES]);
 
 async function migrateFromJsonBin(entity) {
   const binId = JSONBIN_BINS[entity];
@@ -67,8 +70,8 @@ export default async function handler(req, context) {
     try {
       let data = await store.get(entity, { type: 'json' });
 
-      // Auto-migrate from JSONBin on first access
-      if (data === null) {
+      // Auto-migrate from JSONBin on first access (skip Signal Engine entities)
+      if (data === null && !SIGNAL_ENTITIES.has(entity)) {
         console.log(`Blob empty for ${entity}, migrating from JSONBin...`);
         data = await migrateFromJsonBin(entity);
         if (data && Array.isArray(data) && data.length > 0) {
