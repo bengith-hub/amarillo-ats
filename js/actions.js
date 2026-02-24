@@ -79,6 +79,7 @@
     if (filterValues.canal) filtered = filtered.filter(a => a.canal === filterValues.canal);
     if (filterValues.type_action) filtered = filtered.filter(a => a.type_action === filterValues.type_action);
     if (filterValues.priorite) filtered = filtered.filter(a => a.priorite === filterValues.priorite);
+    if (filterValues.statut) filtered = filtered.filter(a => (a.statut || 'À faire') === filterValues.statut);
     renderTable(filtered);
     // Update view count badges
     document.querySelectorAll('.view-tab').forEach(tab => {
@@ -114,6 +115,12 @@
       <select class="filter-select" data-filter="priorite">
         <option value="">Toutes priorités</option>
         ${Referentiels.get('action_priorites').map(s => `<option value="${s}">${s}</option>`).join('')}
+      </select>
+      <select class="filter-select" data-filter="statut">
+        <option value="">Tous statuts</option>
+        <option value="À faire">À faire</option>
+        <option value="Fait">Fait</option>
+        <option value="Annulé">Annulé</option>
       </select>
     </div>
   `;
