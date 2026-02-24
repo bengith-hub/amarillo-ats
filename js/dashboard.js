@@ -50,9 +50,10 @@
   }
 
   function isProspectionAction(a) {
-    return a.type_action === 'Prospection'
-        || a.type_action === 'Prise de contact'
-        || a.type_action === 'Relance décideur';
+    return a.decideur_id
+        && (a.type_action === 'Prospection'
+         || a.type_action === 'Prise de contact'
+         || a.type_action === 'Relance décideur');
   }
 
   renderKPIs();
