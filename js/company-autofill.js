@@ -408,9 +408,9 @@ const CompanyAutofill = (function() {
     const lines = [];
     const fieldLabels = {
       nom: 'Nom', secteur: 'Secteur', taille: 'Taille', ca: 'CA',
-      localisation: 'Localisation', site_web: 'Site web', telephone: 'Téléphone',
-      siege_adresse: 'Adresse siège', siege_code_postal: 'Code postal',
-      siege_ville: 'Ville',
+      localisation: 'Localisation', site_web: 'Site web', linkedin: 'LinkedIn',
+      telephone: 'Téléphone', siege_adresse: 'Adresse siège',
+      siege_code_postal: 'Code postal', siege_ville: 'Ville',
     };
 
     for (const [key, label] of Object.entries(fieldLabels)) {
@@ -459,8 +459,15 @@ const CompanyAutofill = (function() {
 Des données du registre officiel (Pappers) sont fournies. ATTENTION : Pappers retourne les données de l'entité juridique (holding), qui peut être très différente de la réalité du groupe.
 Exemple : un holding "Groupe XYZ" peut avoir 2 salariés et 1M€ de CA sur Pappers, alors que le groupe emploie 5000 personnes avec 500M€ de CA.
 
+HIÉRARCHIE DES SOURCES (par ordre de fiabilité) :
+1. Pappers (registre officiel) — données légales fiables (sauf taille/CA des holdings)
+2. Site web officiel de l'entreprise — source primaire pour tél, adresse, taille réelle, CA
+3. Tes connaissances générales (issues du web) — pour compléter les champs manquants
+4. Page LinkedIn entreprise — source SECONDAIRE, peut contenir des infos marketing exagérées
+En cas de contradiction entre le site web et LinkedIn, PRIVILÉGIE TOUJOURS le site web officiel.
+
 TON RÔLE :
-1. COMPLÈTE les champs vides (téléphone, adresse, code postal, site web).
+1. COMPLÈTE les champs vides (téléphone, adresse, code postal, site web, LinkedIn).
 2. CORRIGE les champs "taille" et "ca" si le site web ou tes connaissances montrent que les données Pappers sont fausses (cas des holdings).
 3. Pour les champs factuels fiables de Pappers (adresse siège, nom, secteur), conserve-les.
 4. NE PAS rédiger d'analyse, de notes stratégiques, ni d'angle d'approche.
@@ -488,11 +495,12 @@ ${existingContext}`;
 Format JSON attendu. Pour "taille" et "ca", propose la valeur qui reflète la RÉALITÉ DU GROUPE (pas du holding juridique) :
 {
   "nom": "", "secteur": "", "taille": "", "ca": "",
-  "localisation": "", "site_web": "", "telephone": "",
+  "localisation": "", "site_web": "", "linkedin": "", "telephone": "",
   "siege_adresse": "", "siege_code_postal": "", "siege_ville": ""
 }
 
 Pour "site_web", URL complète avec https://. Si déjà renseigné, conserve-le.
+Pour "linkedin", URL de la page entreprise LinkedIn (format https://www.linkedin.com/company/xxx). Utilise tes connaissances pour la trouver. Si déjà renseigné, conserve-le.
 Pour "telephone", format français (+33 ou 0x xx xx xx xx). Cherche sur le site web.
 Pour "siege_adresse", l'adresse complète du siège social. Cherche sur le site web.
 Pour "siege_code_postal", le code postal du siège.
@@ -610,7 +618,13 @@ Pour "ca", la tranche de CA réelle du GROUPE. Cherche sur le site web ou dans t
     const existingContext = _buildExistingContext(currentValues);
 
     const systemPrompt = `Tu es un assistant spécialisé dans l'extraction de DONNÉES FACTUELLES sur les entreprises françaises et internationales.
-Ton objectif est de trouver les données concrètes et vérifiables : numéro de téléphone, adresse complète du siège social, code postal, ville, site web, chiffre d'affaires, taille (nombre d'employés), secteur d'activité.
+Ton objectif est de trouver les données concrètes et vérifiables : numéro de téléphone, adresse complète du siège social, code postal, ville, site web, page LinkedIn, chiffre d'affaires, taille (nombre d'employés), secteur d'activité.
+
+HIÉRARCHIE DES SOURCES (par ordre de fiabilité) :
+1. Site web officiel de l'entreprise — source primaire pour tél, adresse, taille, CA
+2. Tes connaissances générales (issues du web) — pour compléter les champs manquants
+3. Page LinkedIn entreprise — source SECONDAIRE, peut contenir des infos marketing exagérées
+En cas de contradiction entre le site web et LinkedIn, PRIVILÉGIE TOUJOURS le site web officiel.
 
 RÈGLES STRICTES :
 - Si un champ existant est déjà renseigné et correct, REPRENDS-LE tel quel.
@@ -641,13 +655,14 @@ Réponds UNIQUEMENT avec le JSON, sans commentaires ni markdown.`;
 Format JSON attendu :
 {
   "nom": "", "secteur": "", "taille": "", "ca": "",
-  "localisation": "", "site_web": "", "telephone": "",
+  "localisation": "", "site_web": "", "linkedin": "", "telephone": "",
   "siege_adresse": "", "siege_code_postal": "", "siege_ville": ""
 }
 
 Pour "nom", le nom officiel/complet.
 Pour "localisation", la région ou grande ville du siège.
 Pour "site_web", URL complète avec https://. Si déjà renseigné, conserve-le.
+Pour "linkedin", URL de la page entreprise LinkedIn (format https://www.linkedin.com/company/xxx). Utilise tes connaissances pour la trouver. Si déjà renseigné, conserve-le.
 Pour "telephone", format français (+33 ou 0x xx xx xx xx). Cherche dans le contenu du site web.
 Pour "siege_adresse", l'adresse complète du siège. Cherche dans le contenu du site web (mentions légales, page contact).
 Pour "siege_code_postal", le code postal du siège.
@@ -673,6 +688,7 @@ Pour "ca", la tranche de chiffre d'affaires.`;
     { key: 'ca', label: 'CA', type: 'select', options: () => ['< 5 M€','5-20 M€','20-50 M€','50-100 M€','100-250 M€','250 M€+'] },
     { key: 'localisation', label: 'Localisation' },
     { key: 'site_web', label: 'Site web' },
+    { key: 'linkedin', label: 'LinkedIn' },
     { key: 'telephone', label: 'Téléphone' },
     { key: 'siege_adresse', label: 'Adresse siège' },
     { key: 'siege_code_postal', label: 'Code postal' },
