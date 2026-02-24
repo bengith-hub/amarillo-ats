@@ -7,6 +7,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/tailwind.css" />
   <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/leaflet.css" />
+  <script src="js/vendor/leaflet.js"></script>
   <link rel="icon" type="image/png" href="AS_logo_only.png" />
 </head>
 <body>
@@ -42,6 +44,8 @@
   <script src="js/referentiels.js"></script>
   <script src="js/cv-parser.js"></script>
   <script src="js/company-autofill.js"></script>
+  <script src="js/geocoder.js"></script>
+  <script src="js/company-map-widget.js"></script>
   <script>
   let currentEntreprise = null;
   const entId = new URLSearchParams(window.location.search).get('id');
@@ -277,6 +281,7 @@
         </div>
 
         <div class="detail-sidebar">
+          <div id="ent-map-widget"></div>
           <div class="card">
             <div class="card-header"><h2>Résumé</h2></div>
             <div class="card-body">
@@ -379,6 +384,16 @@
         { key: 'dernier_contact', label: 'Dernier contact', type: 'date', render: (v) => UI.formatDate(v) },
         { key: 'prochaine_relance', label: 'Prochaine relance', type: 'date', render: (v) => UI.formatDate(v) },
       ]
+    });
+
+    // Map widget
+    CompanyMapWidget.init('ent-map-widget', {
+      localisation: e.localisation,
+      siege_ville: e.siege_ville,
+      siege_code_postal: e.siege_code_postal,
+      siege_adresse: e.siege_adresse,
+      autres_sites: e.autres_sites || [],
+      nom: e.nom
     });
 
     // Action row click handlers
