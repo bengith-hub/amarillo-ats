@@ -393,14 +393,16 @@ const CompanyAutofill = (function() {
     const existingContext = _buildExistingContext(mergedContext);
 
     const systemPrompt = `Tu es un assistant spécialisé dans l'extraction de DONNÉES FACTUELLES sur les entreprises.
-Des données officielles sont déjà connues (via Pappers). Ton rôle est de COMPLÉTER les champs vides avec des données concrètes et vérifiables.
+Des données du registre officiel (Pappers) sont fournies. ATTENTION : Pappers retourne les données de l'entité juridique (holding), qui peut être très différente de la réalité du groupe.
+Exemple : un holding "Groupe XYZ" peut avoir 2 salariés et 1M€ de CA sur Pappers, alors que le groupe emploie 5000 personnes avec 500M€ de CA.
 
-RÈGLES STRICTES :
-- CONSERVE les données existantes telles quelles.
-- Cherche UNIQUEMENT les données factuelles manquantes : numéro de téléphone, adresse complète du siège, code postal, ville, site web, chiffre d'affaires, taille (effectif).
-- NE PAS rédiger d'analyse, de notes stratégiques, ni d'angle d'approche.
-- Si le contenu du site web est fourni, extrais-en les coordonnées (téléphone, adresse, code postal).
-- Si une information n'est pas trouvable avec certitude, laisse vide "".
+TON RÔLE :
+1. COMPLÈTE les champs vides (téléphone, adresse, code postal, site web).
+2. CORRIGE les champs "taille" et "ca" si le site web ou tes connaissances montrent que les données Pappers sont fausses (cas des holdings).
+3. Pour les champs factuels fiables de Pappers (adresse siège, nom, secteur), conserve-les.
+4. NE PAS rédiger d'analyse, de notes stratégiques, ni d'angle d'approche.
+5. Si le contenu du site web est fourni, extrais-en : téléphone, adresse, nombre de collaborateurs, CA.
+6. Si une information n'est pas trouvable avec certitude, laisse vide "".
 
 Pour les champs select, choisis parmi :
 Secteur: ${secteurs.join(', ')}
@@ -409,9 +411,9 @@ CA: ${caOptions.join(', ')}
 
 Réponds UNIQUEMENT avec le JSON, sans commentaires ni markdown.`;
 
-    let userPrompt = `Complète les données factuelles manquantes sur l'entreprise "${companyName.trim()}"
+    let userPrompt = `Complète et vérifie les données sur l'entreprise "${companyName.trim()}"
 
-Données déjà connues :
+Données registre (Pappers — attention, peut être le holding seul) :
 ${existingContext}`;
 
     if (websiteContent) {
@@ -420,7 +422,7 @@ ${existingContext}`;
 
     userPrompt += `
 
-Format JSON attendu (reprends les valeurs existantes, complète les champs vides) :
+Format JSON attendu. Pour "taille" et "ca", propose la valeur qui reflète la RÉALITÉ DU GROUPE (pas du holding juridique) :
 {
   "nom": "", "secteur": "", "taille": "", "ca": "",
   "localisation": "", "site_web": "", "telephone": "",
@@ -431,7 +433,8 @@ Pour "site_web", URL complète avec https://. Si déjà renseigné, conserve-le.
 Pour "telephone", format français (+33 ou 0x xx xx xx xx). Cherche sur le site web.
 Pour "siege_adresse", l'adresse complète du siège social. Cherche sur le site web.
 Pour "siege_code_postal", le code postal du siège.
-Pour "ca", la tranche de chiffre d'affaires.`;
+Pour "taille", le nombre réel de collaborateurs du GROUPE (pas du holding). Cherche sur le site web ("X collaborateurs", "X salariés").
+Pour "ca", la tranche de CA réelle du GROUPE. Cherche sur le site web ou dans tes connaissances.`;
 
     try {
       const aiResult = await _callOpenAI(systemPrompt, userPrompt);
@@ -440,13 +443,21 @@ Pour "ca", la tranche de chiffre d'affaires.`;
       if (aiResult.taille) aiResult.taille = _matchSelectOption(aiResult.taille, tailles);
       if (aiResult.ca) aiResult.ca = _matchSelectOption(aiResult.ca, caOptions);
 
-      // Merge: Pappers data takes priority, OpenAI fills gaps
+      // Fields where OpenAI can override Pappers (holding vs group reality)
+      const overridableFields = new Set(['taille', 'ca', 'secteur']);
+
       const merged = { ...baseData };
       for (const [k, v] of Object.entries(aiResult)) {
         if (k.startsWith('_')) continue;
         const val = (v || '').toString().trim();
         if (!val) continue;
-        if (!merged[k] || !merged[k].toString().trim()) {
+
+        const baseVal = (merged[k] || '').toString().trim();
+        if (!baseVal) {
+          // Empty in Pappers → fill from OpenAI
+          merged[k] = val;
+        } else if (overridableFields.has(k) && val !== baseVal) {
+          // OpenAI proposes different value for taille/ca/secteur → trust OpenAI
           merged[k] = val;
         }
       }
