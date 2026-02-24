@@ -346,8 +346,8 @@
         { key: 'site_web', label: 'Site web', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(v)}" target="_blank" class="entity-link">${UI.escHtml(v)}</a>` : '' },
         { key: 'source', label: 'Source', type: 'text' },
         { key: 'siege_adresse', label: 'Adresse (siège)', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
-        { key: 'siege_code_postal', label: 'Code postal', type: 'text' },
-        { key: 'siege_ville', label: 'Ville', type: 'text' },
+        { key: 'siege_code_postal', label: 'Code postal', type: 'address_autocomplete', role: 'postcode', siblingKey: 'siege_ville' },
+        { key: 'siege_ville', label: 'Ville', type: 'address_autocomplete', role: 'city', siblingKey: 'siege_code_postal' },
       ]
     });
 

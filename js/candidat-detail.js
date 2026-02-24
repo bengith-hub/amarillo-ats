@@ -343,8 +343,8 @@
         { key: 'linkedin', label: 'LinkedIn', type: 'text', render: (v) => v ? UI.linkedinBadge(v, { compact: true }) : '' },
         { key: 'google_drive_url', label: 'Google Drive', type: 'text', render: (v) => v ? `<a href="${UI.escHtml(UI.normalizeUrl(v))}" target="_blank" class="entity-link">Dossier Drive</a>` : '' },
         { key: 'adresse_ligne1', label: 'Adresse', type: 'text' },
-        { key: 'code_postal', label: 'Code postal', type: 'text' },
-        { key: 'ville', label: 'Ville', type: 'text' },
+        { key: 'code_postal', label: 'Code postal', type: 'address_autocomplete', role: 'postcode', siblingKey: 'ville' },
+        { key: 'ville', label: 'Ville', type: 'address_autocomplete', role: 'city', siblingKey: 'code_postal' },
       ],
       onAfterSave: () => {
         refreshDependentViews();

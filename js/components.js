@@ -887,6 +887,65 @@ const UI = (() => {
     }, 50);
   }
 
+  // Autocomplete address (city + postal code) from BAN API — for modal forms
+  function addressAutocomplete(cityInputId, cpInputId) {
+    setTimeout(() => {
+      const cityInput = document.getElementById(cityInputId);
+      const cpInput = document.getElementById(cpInputId);
+      if (!cityInput || !cpInput) return;
+
+      let dropdown = null;
+      let debounceTimer = null;
+
+      function removeDropdown() {
+        if (dropdown) { dropdown.remove(); dropdown = null; }
+      }
+
+      function showDropdown(sourceInput, results) {
+        removeDropdown();
+        if (results.length === 0) return;
+
+        dropdown = document.createElement('div');
+        dropdown.style.cssText = 'position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:200;max-height:200px;overflow-y:auto;';
+
+        results.forEach(r => {
+          const item = document.createElement('div');
+          item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.8125rem;border-bottom:1px solid #f1f5f9;';
+          item.innerHTML = `<strong>${escHtml(r.city)}</strong> <span style="color:#64748b;font-size:0.75rem;">${escHtml(r.postcode)} — ${escHtml(r.context)}</span>`;
+          item.addEventListener('mousedown', (ev) => {
+            ev.preventDefault();
+            cityInput.value = r.city;
+            cpInput.value = r.postcode;
+            removeDropdown();
+          });
+          item.addEventListener('mouseenter', () => item.style.background = '#f8fafc');
+          item.addEventListener('mouseleave', () => item.style.background = '#fff');
+          dropdown.appendChild(item);
+        });
+
+        sourceInput.parentElement.style.position = 'relative';
+        sourceInput.parentElement.appendChild(dropdown);
+      }
+
+      function onInput(sourceInput) {
+        clearTimeout(debounceTimer);
+        const q = sourceInput.value.trim();
+        removeDropdown();
+        if (q.length < 2) return;
+
+        debounceTimer = setTimeout(async () => {
+          const results = await Geocoder.searchMunicipalities(q);
+          showDropdown(sourceInput, results);
+        }, 300);
+      }
+
+      cityInput.addEventListener('input', () => onInput(cityInput));
+      cpInput.addEventListener('input', () => onInput(cpInput));
+      cityInput.addEventListener('blur', () => setTimeout(removeDropdown, 200));
+      cpInput.addEventListener('blur', () => setTimeout(removeDropdown, 200));
+    }, 50);
+  }
+
   // Candidat/Décideur link management
   function candidatDecideurLink(containerId, candidatId) {
     const container = document.getElementById(containerId);
@@ -1325,6 +1384,88 @@ const UI = (() => {
         };
         input.addEventListener('blur', () => setTimeout(finish, 150));
         input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') { el.classList.remove('editing'); renderFields(); } });
+      } else if (fieldDef.type === 'address_autocomplete') {
+        // City / postal code autocomplete via BAN API
+        const wrapper = document.createElement('div');
+        wrapper.style.position = 'relative';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'inline-edit-input';
+        input.value = currentValue;
+        input.placeholder = fieldDef.role === 'postcode' ? 'Code postal…' : 'Ville…';
+        wrapper.appendChild(input);
+        el.innerHTML = '';
+        el.appendChild(wrapper);
+        input.focus();
+        input.select();
+
+        let acDropdown = null;
+        let debounceTimer = null;
+        let selectedResult = null;
+
+        const buildDropdown = () => {
+          clearTimeout(debounceTimer);
+          const q = input.value.trim();
+          if (acDropdown) acDropdown.remove();
+          if (q.length < 2) return;
+
+          debounceTimer = setTimeout(async () => {
+            const results = await Geocoder.searchMunicipalities(q);
+            if (results.length === 0) return;
+            if (acDropdown) acDropdown.remove();
+
+            acDropdown = document.createElement('div');
+            acDropdown.style.cssText = 'position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:200;max-height:200px;overflow-y:auto;';
+
+            results.forEach(r => {
+              const item = document.createElement('div');
+              item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:0.8125rem;border-bottom:1px solid #f1f5f9;';
+              item.innerHTML = `<strong>${escHtml(r.city)}</strong> <span style="color:#64748b;font-size:0.75rem;">${escHtml(r.postcode)} — ${escHtml(r.context)}</span>`;
+              item.addEventListener('mousedown', (ev) => {
+                ev.preventDefault();
+                selectedResult = r;
+                input.value = fieldDef.role === 'postcode' ? r.postcode : r.city;
+                if (acDropdown) acDropdown.remove();
+                acDropdown = null;
+                input.blur();
+              });
+              item.addEventListener('mouseenter', () => item.style.background = '#f8fafc');
+              item.addEventListener('mouseleave', () => item.style.background = '#fff');
+              acDropdown.appendChild(item);
+            });
+            wrapper.appendChild(acDropdown);
+          }, 300);
+        };
+
+        input.addEventListener('input', () => { selectedResult = null; buildDropdown(); });
+
+        const finish = async () => {
+          clearTimeout(debounceTimer);
+          if (acDropdown) acDropdown.remove();
+
+          if (selectedResult && fieldDef.siblingKey) {
+            // Save both fields at once
+            const cityKey = fieldDef.role === 'postcode' ? fieldDef.siblingKey : fieldDef.key;
+            const cpKey = fieldDef.role === 'postcode' ? fieldDef.key : fieldDef.siblingKey;
+            const updates = { [cityKey]: selectedResult.city, [cpKey]: selectedResult.postcode };
+            record[cityKey] = selectedResult.city;
+            record[cpKey] = selectedResult.postcode;
+            await Store.update(entity, recordId, updates);
+            toast('Sauvegardé');
+            if (onAfterSave) onAfterSave(fieldDef.key, selectedResult);
+          } else {
+            const val = input.value.trim();
+            if (val !== currentValue) {
+              await saveField(fieldDef.key, val);
+            }
+          }
+
+          el.classList.remove('editing');
+          renderFields();
+        };
+
+        input.addEventListener('blur', () => setTimeout(finish, 150));
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') { clearTimeout(debounceTimer); el.classList.remove('editing'); renderFields(); } });
       } else if (fieldDef.type === 'boolean') {
         // Toggle immediately
         const newVal = !record[fieldDef.key];
@@ -1739,7 +1880,7 @@ const UI = (() => {
     badge, autoBadgeStyle, entityLink, resolveLink,
     dataTable, filterBar, modal, toast,
     initTabs, timeline, showConfigModal,
-    initGlobalSearch, entrepriseAutocomplete, candidatAutocomplete, localisationAutocomplete,
+    initGlobalSearch, entrepriseAutocomplete, candidatAutocomplete, localisationAutocomplete, addressAutocomplete,
     candidatDecideurLink,
     inlineEdit, statusBadge, showStatusPicker,
     documentsSection, drawer,

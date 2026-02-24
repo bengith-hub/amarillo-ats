@@ -583,6 +583,7 @@
     // Init autocomplete after modal renders
     UI.entrepriseAutocomplete('f-entreprise-search', 'f-entreprise');
     UI.localisationAutocomplete('f-localisation');
+    UI.addressAutocomplete('f-ville', 'f-code-postal');
     UI.candidatAutocomplete('f-recommande-par');
 
     if (!isEdit) {
