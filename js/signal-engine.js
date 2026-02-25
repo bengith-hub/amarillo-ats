@@ -51,6 +51,34 @@ const SignalEngine = (() => {
     return words.some(w => w.length > 2 && GEO_GENERIC_TERMS.test(w));
   }
 
+  // Deduplicate articles by headline similarity (inspired by worldmonitor/dedup.mjs)
+  // Uses word-level intersection / min-set-size with 0.6 threshold
+  function _deduplicateArticles(articles) {
+    if (!articles || articles.length <= 1) return articles;
+    const seen = [];
+    const result = [];
+    for (const article of articles) {
+      const words = new Set(
+        (article.titre || '').toLowerCase().replace(/[^\w\sàâäéèêëïîôùûüÿçœæ]/g, ' ')
+          .split(/\s+/).filter(w => w.length >= 4)
+      );
+      if (words.size === 0) { result.push(article); continue; }
+      let isDup = false;
+      for (const seenWords of seen) {
+        const intersection = [...words].filter(w => seenWords.has(w));
+        const similarity = intersection.length / Math.min(words.size, seenWords.size);
+        if (similarity >= 0.6) { isDup = true; break; }
+      }
+      if (!isDup) {
+        seen.push(words);
+        result.push(article);
+      }
+    }
+    return result;
+  }
+
+
+
   // ============================================================
   // STATE
   // ============================================================
@@ -455,20 +483,6 @@ const SignalEngine = (() => {
       });
     });
     return articles;
-  }
-
-  // Deduplicate articles by normalized title (keeps the one with richer content)
-  function _deduplicateArticles(articles) {
-    const seen = new Map();
-    for (const article of articles) {
-      const key = (article.titre || '').toLowerCase().replace(/[^a-z0-9àâéèêëïîôùûüç]+/g, ' ').trim();
-      if (!key) continue;
-      const existing = seen.get(key);
-      if (!existing || (article.enriched && !existing.enriched) || (article.extrait || '').length > (existing.extrait || '').length) {
-        seen.set(key, article);
-      }
-    }
-    return [...seen.values()];
   }
 
   // Fetch full article content for richer AI analysis (best effort, parallel)
