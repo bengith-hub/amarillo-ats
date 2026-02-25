@@ -174,6 +174,7 @@ const SignalEngine = (() => {
 
   async function _fetchViaProxy(url, timeoutMs) {
     const timeout = timeoutMs || 10000;
+    let lastStatus = 0;
     for (const proxy of CORS_PROXIES) {
       try {
         const controller = new AbortController();
@@ -181,21 +182,28 @@ const SignalEngine = (() => {
         const response = await fetch(proxy.buildUrl(url), { signal: controller.signal });
         clearTimeout(timeoutId);
         if (!response.ok) {
-          console.warn('[SignalEngine] Proxy ' + proxy.name + ' returned ' + response.status + ' for ' + url);
+          lastStatus = response.status;
+          // Only log non-404 errors (404s are expected for probing paths like /news)
+          if (response.status !== 404) {
+            console.warn('[SignalEngine] Proxy ' + proxy.name + ' returned ' + response.status + ' for ' + url);
+          }
           continue;
         }
         const raw = await response.text();
         if (!raw) continue;
         const result = proxy.parseHtml(raw);
-        if (result) {
-          console.log('[SignalEngine] Proxy ' + proxy.name + ' OK for ' + url + ' (' + result.length + ' chars)');
-          return result;
-        }
+        if (result) return result;
       } catch (e) {
-        console.warn('[SignalEngine] Proxy ' + proxy.name + ' failed for ' + url + ':', e.message || 'timeout');
+        // Suppress CORS/abort noise — only log unexpected errors
+        if (e.name !== 'AbortError' && !e.message?.includes('CORS')) {
+          console.warn('[SignalEngine] Proxy ' + proxy.name + ' failed for ' + url + ':', e.message || 'error');
+        }
       }
     }
-    console.warn('[SignalEngine] All proxies failed for ' + url);
+    // Only log "all proxies failed" for non-404 cases (404 = page simply doesn't exist)
+    if (lastStatus !== 404) {
+      console.warn('[SignalEngine] All proxies failed for ' + url);
+    }
     return '';
   }
 
@@ -224,30 +232,47 @@ const SignalEngine = (() => {
     if (!url.startsWith('http')) url = 'https://' + url;
     const baseUrl = url.replace(/\/+$/, '');
 
-    // Phase 1: Scrape main pages + try common subdomains for /actualites
-    const pagePaths = ['', '/actualites', '/news'];
-    const results = await Promise.allSettled(
-      pagePaths.map(p => _fetchPageTextWithLinks(baseUrl + p, baseUrl))
-    );
+    // Phase 1: Scrape homepage first (always needed)
+    const homeResult = await _fetchPageTextWithLinks(baseUrl, baseUrl);
 
     const parts = [];
-    const labels = ['ACCUEIL', 'ACTUALITES', 'NEWS'];
     const articleLinks = [];
-    results.forEach((r, i) => {
-      if (r.status === 'fulfilled' && r.value) {
-        parts.push(labels[i] + ':\n' + r.value.text);
-        if (r.value.links) articleLinks.push(...r.value.links);
-      }
-    });
+    if (homeResult?.text) {
+      parts.push('ACCUEIL:\n' + homeResult.text);
+      if (homeResult.links) articleLinks.push(...homeResult.links);
+    }
 
-    // Phase 1b: If /actualites returned nothing, try common subdomains
-    const hasActu = results[1]?.status === 'fulfilled' && results[1].value?.text?.length > 50;
-    if (!hasActu) {
+    // Phase 1b: Only try /actualites and /news if the homepage suggests they exist
+    // (i.e. the homepage HTML contains links or mentions of these sections)
+    const homeHtml = (homeResult?.text || '').toLowerCase();
+    const hasActuLink = homeHtml.includes('actualit') || homeHtml.includes('/actualites') || homeHtml.includes('/news');
+
+    if (hasActuLink) {
+      const extraPaths = ['/actualites', '/news'];
+      const extraResults = await Promise.allSettled(
+        extraPaths.map(p => _fetchPageTextWithLinks(baseUrl + p, baseUrl))
+      );
+      const extraLabels = ['ACTUALITES', 'NEWS'];
+      extraResults.forEach((r, i) => {
+        if (r.status === 'fulfilled' && r.value?.text) {
+          parts.push(extraLabels[i] + ':\n' + r.value.text);
+          if (r.value.links) articleLinks.push(...r.value.links);
+        }
+      });
+    }
+
+    // Phase 1c: Only try subdomains if /actualites was not found AND
+    // the homepage references subdomains (e.g., links to corporate.xxx.fr)
+    const hasActuContent = parts.some(p => p.startsWith('ACTUALITES:'));
+    if (!hasActuContent && homeResult?.text) {
       try {
         const parsedUrl = new URL(baseUrl);
         const domain = parsedUrl.hostname.replace(/^www\./, '');
-        const subdomains = ['particuliers', 'www', 'corporate', 'pro'].filter(s => !parsedUrl.hostname.startsWith(s + '.'));
-        for (const sub of subdomains.slice(0, 2)) {
+        // Only try subdomains if the homepage actually references them
+        const subdomains = ['corporate', 'pro'].filter(sub => {
+          return homeHtml.includes(sub + '.' + domain) && !parsedUrl.hostname.startsWith(sub + '.');
+        });
+        for (const sub of subdomains.slice(0, 1)) {
           const subUrl = `${parsedUrl.protocol}//${sub}.${domain}`;
           const subResult = await _fetchPageTextWithLinks(subUrl + '/actualites', subUrl);
           if (subResult?.text?.length > 50) {
@@ -417,35 +442,46 @@ const SignalEngine = (() => {
       libelleNaf.toLowerCase().split(/[\s,/]+/).filter(w => w.length > 4).forEach(w => relevanceTerms.push(w));
     }
 
-    // Business terms that indicate the article is about a company (removed "site" — too generic)
+    // Corporate/business terms
     const businessTerms = /entreprise|societe|société|groupe|sas\b|sarl\b|investissement|recrutement|nomination|acquisition|chiffre d'affaires|effectif|site industriel|site de production|filiale|direction|PDG|directeur|g[eé]rant/i;
+
+    // Brand/commercial terms: broader context that indicates the article is about a company or brand
+    const brandTerms = /\b(marque|enseigne|boutique|magasin|collection|ouverture|fermeture|vente|client|consommateur|franchise|r[eé]seau|commerce|retail|chiffre|ca\b|employ[eé]|salari[eé]|siège|usine|atelier|fabrication|production|fournisseur|partenaire|concurrent|secteur|industrie|activit[eé])\b/i;
+
+    // Check if NAF sector terms appear in the article (e.g. "chaussure" for Bocage)
+    const hasNafTerms = (text) => {
+      if (!libelleNaf) return false;
+      const nafWords = libelleNaf.toLowerCase().split(/[\s,/]+/).filter(w => w.length > 4);
+      return nafWords.some(w => text.includes(w));
+    };
 
     return articles.filter(article => {
       const text = ((article.titre || '') + ' ' + (article.extrait || '')).toLowerCase();
 
       const mentionsName = text.includes(nomLower) || (nomOfficiel && text.includes(nomOfficiel.toLowerCase()));
       const hasBusinessContext = businessTerms.test(text);
+      const hasBrandContext = brandTerms.test(text);
       const hasGeoContext = GEO_CONTEXT_TERMS.test(text);
+      const hasCompanyContext = hasBusinessContext || hasBrandContext || hasNafTerms(text);
 
-      // If the article contains the company name in a business context, keep it
-      if (mentionsName && hasBusinessContext) return true;
+      // If the article contains the company name in a business/brand context, keep it
+      if (mentionsName && hasCompanyContext) return true;
 
       // If article mentions city + any company-related term, keep it
       if (ville && text.includes(ville.toLowerCase())) {
-        const hasRelevantTerm = relevanceTerms.some(t => text.includes(t));
-        if (hasRelevantTerm && hasBusinessContext) return true;
+        if (hasCompanyContext) return true;
       }
 
       // For ambiguous names: apply strict filtering
       if (ambiguous) {
-        // Discard if geo/nature context detected, even if name is mentioned
-        if (hasGeoContext && !hasBusinessContext) return false;
-        // For ambiguous names, require explicit business context — no benefit of the doubt
-        if (!hasBusinessContext) return false;
+        // Discard if geo/nature context detected without any company context
+        if (hasGeoContext && !hasCompanyContext) return false;
+        // For ambiguous names, require at least some company context
+        if (!hasCompanyContext) return false;
       }
 
-      // Discard if geo context detected and no business context
-      if (hasGeoContext && !hasBusinessContext) return false;
+      // Discard if geo context detected and no company context
+      if (hasGeoContext && !hasCompanyContext) return false;
 
       // If article is enriched (full content) and doesn't mention the name at all, discard
       if (article.enriched && !mentionsName) return false;
