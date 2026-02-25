@@ -33,12 +33,36 @@ const SignalEngine = (() => {
   };
 
   const CODES_NAF_INDUSTRIELS = ['10','11','12','13','14','15','16','17','18','19','20','21','22','23','24','25','26','27','28','29','30','31','32','33'];
+  // Extended NAF codes: industry + key service sectors (IT, consulting, engineering, wholesale)
+  const CODES_NAF_EXTENDED = [...CODES_NAF_INDUSTRIELS, '46','47','62','63','70','71','72','74','82'];
 
   // Geographic/generic terms that commonly cause search disambiguation issues
   const GEO_GENERIC_TERMS = /^(bocage|plaine|vallee|vallon|foret|coteau|marais|campagne|prairie|colline|source|riviere|cascade|domaine|terroir|verger|moulin|hameau|clos|jardin|fontaine|chapelle|bastide|manoir|chateau|abbaye|prieure|grange|ferme|maison|atelier|comptoir|fabrique|forge|halle|halles|place|pont|port|cap|ile|mont|pic|roche|pierre|vent|soleil|lune|etoile|horizon|aurore|nature|terre|mer|lac|nord|sud|est|ouest|sommet|crete|corniche|arbre|chene|pin|sapin|cedre|erable|peuplier|tilleul|olivier|vigne)s?$/i;
 
-  // Extended geo context terms found in articles about landscape/nature (not business)
-  const GEO_CONTEXT_TERMS = /\b(paysage|paysages|biodiversit[eé]|haies?\b|bocag[eè]re?s?|faune|flore|[eé]cologique|[eé]cosyst[eè]me|habitat naturel|zone naturelle|randonnée|sentier|ornitholog|agricole|parcelle|prairie|p[aâ]turage|zone humide|protection|conservation|environnement)\b/i;
+  // Extended geo context terms found in articles about landscape/nature/municipal topics (not business)
+  const GEO_CONTEXT_TERMS = /\b(paysage|paysages|biodiversit[eé]|haies?\b|bocag[eè]re?s?|faune|flore|[eé]cologique|[eé]cosyst[eè]me|habitat naturel|zone naturelle|randonnée|sentier|ornitholog|agricole|parcelle|prairie|p[aâ]turage|zone humide|protection|conservation|environnement|communes?|communaut[eé]|budget\s+(20\d{2}|municipal|communal)|d[eé]partement|canton|mairie|conseil|habitants|collectivit[eé]|territoire|[eé]lus?|intercommunal|agglom[eé]ration|m[eé]tropole|pr[eé]fecture)\b/i;
+
+  // Detect if the company name is used in a geographic context within text
+  // Returns true if the name appears to refer to a place, not a company
+  function _isGeoUsageOfName(text, nom) {
+    if (!text || !nom) return false;
+    const nomLower = nom.toLowerCase();
+    const textLower = text.toLowerCase();
+    // 1. Compound place name: "Villers-Bocage", "Saint-Bocage", etc.
+    const compoundPlace = new RegExp('[a-zéèêëàâùûîïôœæç]+-' + _escRegex(nomLower) + '\\b|\\b' + _escRegex(nomLower) + '-[a-zéèêëàâùûîïôœæç]+', 'i');
+    if (compoundPlace.test(textLower)) return true;
+    // 2. Geographic qualifier: "le bocage bressuirais", "du bocage vendéen", "au cœur du bocage"
+    const geoQualifier = new RegExp('\\b(le|la|du|des|au|aux|en|dans le|dans la|au c[oœ]ur du|au sein du)\\s+' + _escRegex(nomLower) + '\\b', 'i');
+    if (geoQualifier.test(textLower)) return true;
+    // 3. Geographic adjective after name: "bocage bressuirais", "bocage vendéen", "bocage normand"
+    const geoAdj = new RegExp('\\b' + _escRegex(nomLower) + '\\s+(bressuirais|vend[eé]en|normand|breton|nantais|angevin|manceau|sarthois|mayennais|ligérien|poitevin|charentais|landais|gascon|basque|b[eé]arnais|proven[cç]al|alsacien|lorrain|picard|flamand|artésien|bourguignon|franc-comtois|auvergnat|limousin|p[eé]rigordin|c[eé]venol|ard[eé]chois|dr[oô]mois|dauphinois|savoyard)', 'i');
+    if (geoAdj.test(textLower)) return true;
+    return false;
+  }
+
+  function _escRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
 
   // Detect if a company name is likely ambiguous (common word that generates false positives)
   function _isAmbiguousName(nom) {
@@ -114,9 +138,9 @@ const SignalEngine = (() => {
     return {
       regions_actives: ['Pays de la Loire'],
       scan_cursor: 0,
-      effectif_min_decouverte: 100,
-      ca_min_decouverte: 5000000,
-      codes_naf_cibles: CODES_NAF_INDUSTRIELS,
+      effectif_min_decouverte: 50,
+      ca_min_decouverte: 2000000,
+      codes_naf_cibles: CODES_NAF_EXTENDED,
       score_seuil_alerte: 70,
       derniere_execution: null
     };
@@ -507,24 +531,17 @@ const SignalEngine = (() => {
     if (!articles || articles.length === 0) return [];
 
     const nomLower = nom.toLowerCase();
-    const nomWords = nomLower.split(/\s+/).filter(w => w.length > 2);
     const ambiguous = _isAmbiguousName(nom);
 
-    // Build relevance keywords: company name variations, city, NAF terms
-    const relevanceTerms = [...nomWords];
-    if (nomOfficiel) {
-      nomOfficiel.toLowerCase().split(/\s+/).filter(w => w.length > 3).forEach(w => relevanceTerms.push(w));
-    }
-    if (ville) relevanceTerms.push(ville.toLowerCase());
-    if (libelleNaf) {
-      libelleNaf.toLowerCase().split(/[\s,/]+/).filter(w => w.length > 4).forEach(w => relevanceTerms.push(w));
-    }
-
-    // Corporate/business terms
+    // Corporate/business terms (generic — sufficient for non-ambiguous names)
     const businessTerms = /entreprise|societe|société|groupe|sas\b|sarl\b|investissement|recrutement|nomination|acquisition|chiffre d'affaires|effectif|site industriel|site de production|filiale|direction|PDG|directeur|g[eé]rant/i;
 
-    // Brand/commercial terms: broader context that indicates the article is about a company or brand
+    // Brand/commercial terms
     const brandTerms = /\b(marque|enseigne|boutique|magasin|collection|ouverture|fermeture|vente|client|consommateur|franchise|r[eé]seau|commerce|retail|chiffre|ca\b|employ[eé]|salari[eé]|siège|usine|atelier|fabrication|production|fournisseur|partenaire|concurrent|secteur|industrie|activit[eé])\b/i;
+
+    // STRONG company signals: terms that really prove the article is about a company, not geography
+    // These are much less likely to appear in geographic/municipal articles
+    const strongCompanyTerms = /\b(marque|enseigne|boutique|magasin|collection|franchise|PDG|pr[eé]sident|directeur g[eé]n[eé]ral|DG\b|g[eé]rant|fondateur|salari[eé]s?|employ[eé]s?|chiffre d.affaires|siège social|filiale|groupe|holding|SAS\b|SARL\b|SA\b|EURL\b|usine|atelier de|fabrication|production de)\b/i;
 
     // Check if NAF sector terms appear in the article (e.g. "chaussure" for Bocage)
     const hasNafTerms = (text) => {
@@ -542,29 +559,45 @@ const SignalEngine = (() => {
       const hasGeoContext = GEO_CONTEXT_TERMS.test(text);
       const hasCompanyContext = hasBusinessContext || hasBrandContext || hasNafTerms(text);
 
-      // If the article contains the company name in a business/brand context, keep it
+      // === AMBIGUOUS NAMES: strict filtering ===
+      if (ambiguous) {
+        // 1. If the name is used geographically ("le Bocage bressuirais", "Villers-Bocage"), reject
+        if (_isGeoUsageOfName(text, nom)) return false;
+
+        // 2. If article has municipal/geo context, require STRONG company proof
+        if (hasGeoContext) {
+          const hasStrong = strongCompanyTerms.test(text) || hasNafTerms(text);
+          if (!hasStrong) return false;
+        }
+
+        // 3. If official name is mentioned (e.g. "BOCAGE SAS"), always keep
+        if (nomOfficiel && text.includes(nomOfficiel.toLowerCase())) return true;
+
+        // 4. If NAF sector terms present, keep (e.g. "chaussure" for Bocage)
+        if (hasNafTerms(text)) return true;
+
+        // 5. Require STRONG company terms, not just generic "investissement"/"recrutement"
+        const hasStrong = strongCompanyTerms.test(text);
+        if (mentionsName && hasStrong) return true;
+
+        // 6. If brand context + name mentioned, keep
+        if (mentionsName && hasBrandContext) return true;
+
+        // 7. Generic business terms alone are NOT enough for ambiguous names
+        return false;
+      }
+
+      // === NON-AMBIGUOUS NAMES: original permissive logic ===
       if (mentionsName && hasCompanyContext) return true;
 
-      // If article mentions city + any company-related term, keep it
       if (ville && text.includes(ville.toLowerCase())) {
         if (hasCompanyContext) return true;
       }
 
-      // For ambiguous names: apply strict filtering
-      if (ambiguous) {
-        // Discard if geo/nature context detected without any company context
-        if (hasGeoContext && !hasCompanyContext) return false;
-        // For ambiguous names, require at least some company context
-        if (!hasCompanyContext) return false;
-      }
-
-      // Discard if geo context detected and no company context
       if (hasGeoContext && !hasCompanyContext) return false;
 
-      // If article is enriched (full content) and doesn't mention the name at all, discard
       if (article.enriched && !mentionsName) return false;
 
-      // For non-ambiguous names: keep by default for non-enriched articles
       return true;
     });
   }
@@ -629,9 +662,10 @@ const SignalEngine = (() => {
         const params = new URLSearchParams({
           api_token: apiKey,
           departement: dep,
-          par_page: '20',
+          par_page: options.par_page || '20',
         });
         if (options.code_naf) params.set('code_naf', options.code_naf);
+        if (options.effectif_min) params.set('effectif_min', String(options.effectif_min));
 
         const response = await fetch('https://api.pappers.fr/v2/recherche?' + params.toString());
         if (!response.ok) {
@@ -2346,13 +2380,12 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     if (!apiKey) return [];
 
     const config = await _loadConfig();
-    const nafCodes = config.codes_naf_cibles || CODES_NAF_INDUSTRIELS;
+    const nafCodes = config.codes_naf_cibles || CODES_NAF_EXTENDED;
 
-    // Take a rotating subset of NAF codes each cycle to limit API calls
+    // Rotate through NAF codes in batches of 6
     const cursor = config.discovery_cursor || 0;
-    const BATCH_SIZE = 3;
+    const BATCH_SIZE = 6;
     const nafBatch = nafCodes.slice(cursor, cursor + BATCH_SIZE);
-    // Update cursor for next cycle (wraps around)
     config.discovery_cursor = (cursor + BATCH_SIZE) >= nafCodes.length ? 0 : cursor + BATCH_SIZE;
     await _saveConfig();
 
@@ -2361,19 +2394,22 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     console.log('[SignalEngine] Auto-discovery: NAF codes ' + nafBatch.join(', ') + ' in ' + activeRegion);
     _updateAutoScanBanner(0, 0, 'Recherche de nouvelles entreprises...');
 
-    // Collect candidates from Pappers
+    // Collect candidates from Pappers with lower thresholds
     await _loadWatchlist();
     const wlSirens = new Set(_watchlist.map(w => w.siren).filter(Boolean));
     const wlNoms = new Set(_watchlist.map(w => w.nom?.toLowerCase()));
     const candidates = [];
+    const effectifMin = config.effectif_min_decouverte || 50;
 
     for (const naf of nafBatch) {
       try {
-        const results = await _searchPappersByRegion(activeRegion, { code_naf: naf });
+        const results = await _searchPappersByRegion(activeRegion, {
+          code_naf: naf,
+          par_page: '50',
+        });
         for (const r of results) {
           if (wlSirens.has(r.siren)) continue;
           if (wlNoms.has(r.nom.toLowerCase())) continue;
-          // Avoid duplicates within candidates
           if (candidates.some(c => c.siren === r.siren)) continue;
           candidates.push(r);
         }
@@ -2383,64 +2419,82 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     }
 
     if (!candidates.length) {
-      console.log('[SignalEngine] Auto-discovery: no new candidates found');
+      console.log('[SignalEngine] Auto-discovery: no new candidates from Pappers');
       return [];
     }
 
-    console.log('[SignalEngine] Auto-discovery: ' + candidates.length + ' candidates, checking news...');
+    console.log('[SignalEngine] Auto-discovery: ' + candidates.length + ' candidates from Pappers');
 
-    // Quick news check for each candidate (parallel, limited)
-    const MAX_CHECKS = 10;
+    // Sort candidates by relevance: high CA and high effectif first
+    candidates.sort((a, b) => {
+      const scoreA = (a.ca || 0) / 1000000 + (a.effectif || 0) / 10;
+      const scoreB = (b.ca || 0) / 1000000 + (b.effectif || 0) / 10;
+      return scoreB - scoreA;
+    });
+
+    const MAX_CHECKS = 15;
     const toCheck = candidates.slice(0, MAX_CHECKS);
     const discovered = [];
+    const caMin = config.ca_min_decouverte || 2000000;
 
     for (let i = 0; i < toCheck.length; i++) {
       const c = toCheck[i];
       _updateAutoScanBanner(i, toCheck.length, 'Decouverte: ' + c.nom);
 
+      // Critere 1 (Pappers) : CA suffisant ET effectif suffisant → ajout direct
+      // Ces entreprises sont des cibles pertinentes par leur taille seule
+      const hasPappersSignal = (c.ca >= caMin) && (c.effectif >= effectifMin);
+
+      if (hasPappersSignal) {
+        const added = await addToWatchlist({
+          siren: c.siren, nom: c.nom, ville: c.ville,
+          code_postal: c.code_postal, departement: c.departement,
+          region: c.region, secteur_naf: c.secteur_naf,
+          libelle_naf: c.libelle_naf || '',
+          site_web: '', source: 'auto_discovery',
+        }, { silent: true });
+        if (added) {
+          discovered.push(c);
+          console.log('[SignalEngine] Discovered (Pappers): ' + c.nom + ' (CA=' + ((c.ca || 0) / 1000000).toFixed(0) + 'M, ' + c.effectif + ' sal.)');
+        }
+        continue;
+      }
+
+      // Critere 2 (Google News) : vérifier si l'entreprise a des signaux business dans l'actualité
       try {
-        // Quick Google News check: company name + business signal keywords
-        const query = `"${c.nom}" investissement OR recrutement OR croissance OR acquisition OR nomination`;
+        const query = `"${c.nom}" ${c.ville ? '"' + c.ville + '"' : ''} entreprise OR société OR groupe`;
         const articles = await _fetchGoogleNewsRSS(query, 3);
 
         if (articles.length > 0) {
-          // Filter for relevance
           const relevant = articles.filter(a => {
             const text = ((a.titre || '') + ' ' + (a.extrait || '')).toLowerCase();
             const mentionsCompany = text.includes(c.nom.toLowerCase());
-            const hasBusiness = /investissement|recrutement|croissance|acquisition|nomination|chiffre|expansion|ouverture|projet/i.test(text);
+            const hasBusiness = /investissement|recrutement|croissance|acquisition|nomination|projet|extension|ouverture|embauche/i.test(text);
             return mentionsCompany && hasBusiness;
           });
 
           if (relevant.length > 0) {
-            // Auto-add to watchlist
             const added = await addToWatchlist({
-              siren: c.siren,
-              nom: c.nom,
-              ville: c.ville,
-              code_postal: c.code_postal,
-              departement: c.departement,
-              region: c.region,
-              secteur_naf: c.secteur_naf,
-              site_web: '',
-              source: 'auto_discovery',
+              siren: c.siren, nom: c.nom, ville: c.ville,
+              code_postal: c.code_postal, departement: c.departement,
+              region: c.region, secteur_naf: c.secteur_naf,
+              libelle_naf: c.libelle_naf || '',
+              site_web: '', source: 'auto_discovery',
             }, { silent: true });
-
             if (added) {
-              discovered.push({ ...c, articles: relevant });
-              console.log('[SignalEngine] Discovered: ' + c.nom + ' (' + relevant.length + ' articles)');
+              discovered.push(c);
+              console.log('[SignalEngine] Discovered (News): ' + c.nom + ' (' + relevant.length + ' articles)');
             }
           }
         }
 
-        // Rate limit: avoid hammering Google News
         await new Promise(r => setTimeout(r, 500));
       } catch (e) {
         console.warn('[SignalEngine] Discovery news check error for ' + c.nom + ':', e);
       }
     }
 
-    console.log('[SignalEngine] Auto-discovery done: ' + discovered.length + ' new companies added');
+    console.log('[SignalEngine] Auto-discovery done: ' + discovered.length + '/' + toCheck.length + ' new companies added');
     return discovered;
   }
 
