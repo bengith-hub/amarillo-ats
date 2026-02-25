@@ -1259,6 +1259,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         <div style="display:flex;gap:8px;align-items:center;">
           <div id="se-notif-bell-container">${_renderNotificationBell(signaux)}</div>
           <button class="btn btn-secondary" id="se-btn-add-watch" style="font-size:0.8125rem;">+ Watchlist</button>
+          <button class="btn btn-secondary" id="se-btn-discover-auto" style="font-size:0.8125rem;" title="Rechercher automatiquement de nouvelles entreprises avec des signaux business">Decouverte auto</button>
           <button class="btn btn-primary" id="se-btn-scan" style="font-size:0.8125rem;">Lancer un scan</button>
         </div>
       </div>
@@ -1279,6 +1280,10 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         <div class="kpi-card">
           <div class="kpi-label">Signaux forts (&gt;70)</div>
           <div class="kpi-value" style="color:#059669;">${regionSignaux.filter(s => s.score_global >= 70).length}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Auto-decouvertes</div>
+          <div class="kpi-value" style="color:#7c3aed;">${regionWatchlist.filter(w => w.source === 'auto_discovery').length}</div>
         </div>
       </div>
 
@@ -1329,6 +1334,64 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
 
     document.getElementById('se-btn-scan')?.addEventListener('click', () => {
       _runManualScan(containerId);
+    });
+
+    document.getElementById('se-btn-discover-auto')?.addEventListener('click', async () => {
+      const btn = document.getElementById('se-btn-discover-auto');
+      if (!_getPappersKey()) {
+        UI.toast('Configurez votre cle Pappers d\'abord', 'error');
+        return;
+      }
+      if (!CVParser.getOpenAIKey()) {
+        UI.toast('Configurez votre cle OpenAI d\'abord', 'error');
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Recherche...';
+      try {
+        const config = await _loadConfig();
+        const region = config.regions_actives?.[0] || 'Pays de la Loire';
+        _showAutoScanBanner(containerId, 0);
+        const discovered = await _runAutoDiscovery(region, containerId);
+
+        if (discovered.length > 0) {
+          // Scan discovered companies
+          _watchlist = null;
+          await _loadWatchlist();
+          _signaux = null;
+          await _loadSignaux();
+
+          for (let i = 0; i < discovered.length; i++) {
+            const d = discovered[i];
+            const wl = _watchlist.find(w => w.siren === d.siren);
+            if (!wl) continue;
+            _updateAutoScanBanner(i, discovered.length, 'Scan: ' + d.nom);
+            try {
+              const result = await analyseEntreprise(wl);
+              _upsertSignal(result, wl);
+              wl.derniere_analyse = new Date().toISOString().split('T')[0];
+            } catch (e) {
+              console.error('[SignalEngine] Scan error for discovered ' + d.nom + ':', e);
+            }
+          }
+          await _saveSignaux();
+          await _saveWatchlist();
+
+          UI.toast(discovered.length + ' entreprise' + (discovered.length > 1 ? 's' : '') + ' decouverte' + (discovered.length > 1 ? 's' : '') + ' et scannee' + (discovered.length > 1 ? 's' : ''));
+        } else {
+          UI.toast('Aucune nouvelle entreprise avec des signaux business trouvee');
+        }
+        _removeAutoScanBanner();
+        _signaux = null;
+        _watchlist = null;
+        await renderPage(containerId);
+      } catch (e) {
+        console.error('[SignalEngine] Manual discovery error:', e);
+        UI.toast('Erreur: ' + e.message, 'error');
+        _removeAutoScanBanner();
+        btn.disabled = false;
+        btn.textContent = 'Decouverte auto';
+      }
     });
 
     // Notification bell listener
@@ -1495,9 +1558,13 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     // --- Watchlist table ---
     let tableHtml = '';
     if (watchlist.length) {
-      const rows = watchlist.map(w => `
+      const rows = watchlist.map(w => {
+        const sourceBadge = w.source === 'auto_discovery'
+          ? ' <span style="font-size:0.6rem;background:#ede9fe;color:#7c3aed;padding:1px 5px;border-radius:3px;vertical-align:middle;">auto</span>'
+          : '';
+        return `
         <tr>
-          <td style="font-weight:500;">${UI.escHtml(w.nom)}</td>
+          <td style="font-weight:500;">${UI.escHtml(w.nom)}${sourceBadge}</td>
           <td>${UI.escHtml(w.ville || '')} (${w.departement || ''})</td>
           <td style="font-size:0.8125rem;">${UI.escHtml(w.siren || '—')}</td>
           <td style="font-size:0.8125rem;">${w.site_web ? '<a href="' + UI.escHtml(w.site_web) + '" target="_blank" style="color:#3b82f6;">Site</a>' : '—'}</td>
@@ -1507,7 +1574,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
             <button class="btn btn-secondary se-btn-remove-wl" data-id="${w.id}" style="font-size:0.6875rem;padding:2px 8px;color:#dc2626;">Retirer</button>
           </td>
         </tr>
-      `).join('');
+      `}).join('');
 
       tableHtml = `
         <div class="data-table-wrapper">
@@ -2271,6 +2338,113 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
   }
 
   // ============================================================
+  // AUTO-DISCOVERY — Find new companies with business signals
+  // ============================================================
+
+  async function _runAutoDiscovery(activeRegion, containerId) {
+    const apiKey = _getPappersKey();
+    if (!apiKey) return [];
+
+    const config = await _loadConfig();
+    const nafCodes = config.codes_naf_cibles || CODES_NAF_INDUSTRIELS;
+
+    // Take a rotating subset of NAF codes each cycle to limit API calls
+    const cursor = config.discovery_cursor || 0;
+    const BATCH_SIZE = 3;
+    const nafBatch = nafCodes.slice(cursor, cursor + BATCH_SIZE);
+    // Update cursor for next cycle (wraps around)
+    config.discovery_cursor = (cursor + BATCH_SIZE) >= nafCodes.length ? 0 : cursor + BATCH_SIZE;
+    await _saveConfig();
+
+    if (!nafBatch.length) return [];
+
+    console.log('[SignalEngine] Auto-discovery: NAF codes ' + nafBatch.join(', ') + ' in ' + activeRegion);
+    _updateAutoScanBanner(0, 0, 'Recherche de nouvelles entreprises...');
+
+    // Collect candidates from Pappers
+    await _loadWatchlist();
+    const wlSirens = new Set(_watchlist.map(w => w.siren).filter(Boolean));
+    const wlNoms = new Set(_watchlist.map(w => w.nom?.toLowerCase()));
+    const candidates = [];
+
+    for (const naf of nafBatch) {
+      try {
+        const results = await _searchPappersByRegion(activeRegion, { code_naf: naf });
+        for (const r of results) {
+          if (wlSirens.has(r.siren)) continue;
+          if (wlNoms.has(r.nom.toLowerCase())) continue;
+          // Avoid duplicates within candidates
+          if (candidates.some(c => c.siren === r.siren)) continue;
+          candidates.push(r);
+        }
+      } catch (e) {
+        console.warn('[SignalEngine] Discovery Pappers error for NAF ' + naf + ':', e);
+      }
+    }
+
+    if (!candidates.length) {
+      console.log('[SignalEngine] Auto-discovery: no new candidates found');
+      return [];
+    }
+
+    console.log('[SignalEngine] Auto-discovery: ' + candidates.length + ' candidates, checking news...');
+
+    // Quick news check for each candidate (parallel, limited)
+    const MAX_CHECKS = 10;
+    const toCheck = candidates.slice(0, MAX_CHECKS);
+    const discovered = [];
+
+    for (let i = 0; i < toCheck.length; i++) {
+      const c = toCheck[i];
+      _updateAutoScanBanner(i, toCheck.length, 'Decouverte: ' + c.nom);
+
+      try {
+        // Quick Google News check: company name + business signal keywords
+        const query = `"${c.nom}" investissement OR recrutement OR croissance OR acquisition OR nomination`;
+        const articles = await _fetchGoogleNewsRSS(query, 3);
+
+        if (articles.length > 0) {
+          // Filter for relevance
+          const relevant = articles.filter(a => {
+            const text = ((a.titre || '') + ' ' + (a.extrait || '')).toLowerCase();
+            const mentionsCompany = text.includes(c.nom.toLowerCase());
+            const hasBusiness = /investissement|recrutement|croissance|acquisition|nomination|chiffre|expansion|ouverture|projet/i.test(text);
+            return mentionsCompany && hasBusiness;
+          });
+
+          if (relevant.length > 0) {
+            // Auto-add to watchlist
+            const added = await addToWatchlist({
+              siren: c.siren,
+              nom: c.nom,
+              ville: c.ville,
+              code_postal: c.code_postal,
+              departement: c.departement,
+              region: c.region,
+              secteur_naf: c.secteur_naf,
+              site_web: '',
+              source: 'auto_discovery',
+            }, { silent: true });
+
+            if (added) {
+              discovered.push({ ...c, articles: relevant });
+              console.log('[SignalEngine] Discovered: ' + c.nom + ' (' + relevant.length + ' articles)');
+            }
+          }
+        }
+
+        // Rate limit: avoid hammering Google News
+        await new Promise(r => setTimeout(r, 500));
+      } catch (e) {
+        console.warn('[SignalEngine] Discovery news check error for ' + c.nom + ':', e);
+      }
+    }
+
+    console.log('[SignalEngine] Auto-discovery done: ' + discovered.length + ' new companies added');
+    return discovered;
+  }
+
+  // ============================================================
   // AUTO-SCAN — Weekly background scan
   // ============================================================
 
@@ -2324,16 +2498,57 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     await _saveSignaux();
     await _saveWatchlist();
 
+    // Phase 2: Auto-discovery — find new companies with business signals
+    let discoveredCount = 0;
+    if (_getPappersKey() && activeRegion) {
+      try {
+        const discovered = await _runAutoDiscovery(activeRegion, containerId);
+        discoveredCount = discovered.length;
+
+        // Scan newly discovered companies immediately
+        if (discovered.length > 0) {
+          _watchlist = null;
+          await _loadWatchlist();
+          await _loadSignaux();
+
+          for (let i = 0; i < discovered.length; i++) {
+            const d = discovered[i];
+            const wl = _watchlist.find(w => w.siren === d.siren);
+            if (!wl) continue;
+
+            _updateAutoScanBanner(i, discovered.length, 'Scan: ' + d.nom);
+            try {
+              const result = await analyseEntreprise(wl);
+              _upsertSignal(result, wl);
+              wl.derniere_analyse = new Date().toISOString().split('T')[0];
+            } catch (e) {
+              console.error('[SignalEngine] Auto-scan error for discovered ' + d.nom + ':', e);
+            }
+          }
+
+          await _saveSignaux();
+          await _saveWatchlist();
+        }
+      } catch (e) {
+        console.error('[SignalEngine] Auto-discovery error:', e);
+      }
+    }
+
     // Update last execution
     _config.derniere_execution = new Date().toISOString();
     await _saveConfig();
 
     // Compute new signals found in this scan
     const newInScan = (_signaux || []).filter(s => !prevIds.has(s.id));
-    console.log('[SignalEngine] Auto-scan done: ' + count + ' scanned, ' + newInScan.length + ' new signals');
+    console.log('[SignalEngine] Auto-scan done: ' + count + ' scanned, ' + discoveredCount + ' discovered, ' + newInScan.length + ' new signals');
 
     _removeAutoScanBanner();
     _autoScanRunning = false;
+
+    // Show discovery toast if new companies were found
+    if (discoveredCount > 0) {
+      UI.toast(discoveredCount + ' nouvelle' + (discoveredCount > 1 ? 's' : '') + ' entreprise' + (discoveredCount > 1 ? 's' : '') + ' decouverte' + (discoveredCount > 1 ? 's' : '') + ' automatiquement');
+    }
 
     // Refresh the page to show new results + notification
     _signaux = null;
