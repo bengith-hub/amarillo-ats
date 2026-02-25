@@ -229,6 +229,9 @@
       </div>
       <div class="form-group"><label>Angle d'approche</label><textarea id="e-angle">${UI.escHtml(e.angle_approche||'')}</textarea></div>
       <div class="form-group"><label>Notes</label><textarea id="e-notes">${UI.escHtml(e.notes||'')}</textarea></div>
+      <input type="hidden" id="e-pappers-siren" value="${UI.escHtml(e._pappers_siren||'')}" />
+      <input type="hidden" id="e-pappers-naf" value="${UI.escHtml(e._pappers_naf||'')}" />
+      <input type="hidden" id="e-pappers-forme" value="${UI.escHtml(e._pappers_forme||'')}" />
     `;
 
     UI.modal(isEdit ? 'Modifier l\'entreprise' : 'Nouvelle entreprise', bodyHtml, {
@@ -250,6 +253,13 @@
           angle_approche: overlay.querySelector('#e-angle').value.trim(),
           notes: overlay.querySelector('#e-notes').value.trim(),
         };
+        // Persist Pappers metadata (SIREN, NAF, forme juridique) from autofill
+        const pSiren = overlay.querySelector('#e-pappers-siren')?.value?.trim();
+        const pNaf = overlay.querySelector('#e-pappers-naf')?.value?.trim();
+        const pForme = overlay.querySelector('#e-pappers-forme')?.value?.trim();
+        if (pSiren) data._pappers_siren = pSiren;
+        if (pNaf) data._pappers_naf = pNaf;
+        if (pForme) data._pappers_forme = pForme;
         if (isEdit) {
           await Store.update('entreprises', e.id, data);
           UI.toast('Entreprise mise à jour');
@@ -338,6 +348,20 @@
             el.style.background = '#ecfdf5';
             setTimeout(() => { el.style.background = ''; }, 2000);
             filledCount++;
+          }
+
+          // Persist Pappers metadata in hidden fields for save
+          if (extracted._pappers_siren) {
+            const h = overlay.querySelector('#e-pappers-siren');
+            if (h) h.value = extracted._pappers_siren;
+          }
+          if (extracted._pappers_naf) {
+            const h = overlay.querySelector('#e-pappers-naf');
+            if (h) h.value = extracted._pappers_naf;
+          }
+          if (extracted._pappers_forme) {
+            const h = overlay.querySelector('#e-pappers-forme');
+            if (h) h.value = extracted._pappers_forme;
           }
 
           const sourceLabel = extracted._pappers_siren ? 'Pappers + IA' : 'IA';
