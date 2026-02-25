@@ -340,71 +340,135 @@ const SignalEngine = (() => {
 
   async function _scrapeGoogleNews(entrepriseNom, region, ville, extra) {
     try {
-      const { nomOfficiel, libelleNaf } = extra || {};
+      const { nomOfficiel, libelleNaf, pappers, siteWeb } = extra || {};
       const ambiguous = _isAmbiguousName(entrepriseNom);
 
-      // Use official name if more distinctive — lower threshold for ambiguous names
-      let searchName = entrepriseNom;
-      if (nomOfficiel && (ambiguous ? nomOfficiel !== entrepriseNom : nomOfficiel.length > entrepriseNom.length + 2)) {
-        searchName = nomOfficiel;
-        console.log('[SignalEngine] Using official name for news: "' + nomOfficiel + '"');
+      // ── For ambiguous names: use MULTIPLE targeted queries in parallel ──
+      if (ambiguous) {
+        console.log('[SignalEngine] Ambiguous name "' + entrepriseNom + '" — launching multi-query strategy');
+        const queries = [];
+
+        // Query 1: Official name + sector (e.g. "BOCAGE SAS" chaussures)
+        if (nomOfficiel && nomOfficiel.toLowerCase() !== entrepriseNom.toLowerCase()) {
+          const sectorWords = libelleNaf ? libelleNaf.split(/[\s,/]+/).filter(w => w.length > 4).slice(0, 2).join(' OR ') : '';
+          const q1 = `"${nomOfficiel}" ${sectorWords}`;
+          queries.push({ label: 'officiel+secteur', query: q1 });
+        }
+
+        // Query 2: Name + lead executive name (powerful disambiguator)
+        const dirigeants = pappers?.dirigeants || [];
+        const topDirigeant = dirigeants.find(d => /PDG|Directeur|Gérant|Président|DG\b/i.test(d.fonction)) || dirigeants[0];
+        if (topDirigeant?.nom) {
+          const q2 = `"${entrepriseNom}" "${topDirigeant.nom}"`;
+          queries.push({ label: 'nom+dirigeant', query: q2 });
+        }
+
+        // Query 3: Website domain (uniquely identifies the company)
+        if (siteWeb) {
+          const domain = siteWeb.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+          if (domain && domain.length > 3) {
+            const q3 = `${domain} investissement OR recrutement OR nomination OR croissance OR acquisition`;
+            queries.push({ label: 'domaine', query: q3 });
+          }
+        }
+
+        // Query 4: Fallback — name + city + sector (improved version of original)
+        if (ville) {
+          const sectorKeywords = libelleNaf ? libelleNaf.split(/[\s,/]+/).filter(w => w.length > 4).slice(0, 2).join(' OR ') : '';
+          const sectorClause = sectorKeywords ? `(${sectorKeywords})` : 'entreprise';
+          const q4 = `"${entrepriseNom}" "${ville}" ${sectorClause}`;
+          queries.push({ label: 'nom+ville+secteur', query: q4 });
+        }
+
+        if (queries.length === 0) {
+          // No disambiguation data available — fall through to standard query below
+          console.warn('[SignalEngine] No disambiguation data for "' + entrepriseNom + '" — using standard query');
+        } else {
+          // Launch all queries in parallel, collect results
+          const allArticles = [];
+          const rssResults = await Promise.allSettled(
+            queries.map(q => _fetchGoogleNewsRSS(q.query, 3))
+          );
+
+          rssResults.forEach((r, i) => {
+            if (r.status === 'fulfilled' && r.value.length > 0) {
+              console.log('[SignalEngine] Multi-query "' + queries[i].label + '": ' + r.value.length + ' articles');
+              allArticles.push(...r.value);
+            }
+          });
+
+          // Deduplicate by normalized title
+          const deduped = _deduplicateArticles(allArticles);
+          console.log('[SignalEngine] Ambiguous multi-query for "' + entrepriseNom + '": ' + queries.length + ' queries, ' + allArticles.length + ' raw → ' + deduped.length + ' unique articles');
+
+          // Enrich articles content (best effort)
+          await _enrichArticlesContent(deduped);
+          return deduped;
+        }
       }
 
-      // Build sector clause from NAF label for disambiguation
+      // ── Standard single query for non-ambiguous names ──
+      let searchName = entrepriseNom;
+      if (nomOfficiel && nomOfficiel.length > entrepriseNom.length + 2) {
+        searchName = nomOfficiel;
+      }
+
       const sectorKeywords = libelleNaf ? libelleNaf.split(/[\s,/]+/).filter(w => w.length > 4).slice(0, 3).join(' OR ') : '';
       const sectorClause = sectorKeywords ? `(${sectorKeywords}) OR` : '';
+      const villeClause = ville ? `"${ville}" OR` : '';
+      const query = `"${searchName}" ${villeClause} ${sectorClause} investissement OR industrie OR nomination OR direction OR cession OR acquisition OR croissance OR recrutement OR transformation ${region || ''}`;
 
-      // For ambiguous names: city is mandatory (AND), add business context, and exclude geo terms
-      // For normal names: city is optional (OR)
-      let villeClause, businessForce, exclusions;
-      if (ambiguous) {
-        villeClause = ville ? `"${ville}"` : '';
-        businessForce = 'entreprise OR societe OR';
-        exclusions = ' -paysage -biodiversite -haie -ecologique -environnement -faune -flore -randonnee -sentier';
-        console.log('[SignalEngine] Ambiguous name detected: "' + entrepriseNom + '" — using strict query');
-      } else {
-        villeClause = ville ? `"${ville}" OR` : '';
-        businessForce = '';
-        exclusions = '';
-      }
-
-      const query = encodeURIComponent(`"${searchName}" ${villeClause} ${businessForce} ${sectorClause} investissement OR industrie OR nomination OR direction OR cession OR acquisition OR croissance OR recrutement OR transformation ${region || ''}${exclusions}`);
-      const rssUrl = `https://news.google.com/rss/search?q=${query}&hl=fr&gl=FR&ceid=FR:fr`;
-
-      const xmlText = await _fetchViaProxy(rssUrl, 10000);
-      if (!xmlText) return [];
-
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(xmlText, 'text/xml');
-      const items = doc.querySelectorAll('item');
-
-      const articles = [];
-      items.forEach((item, i) => {
-        if (i >= 5) return;
-        const titre = item.querySelector('title')?.textContent || '';
-        const link = item.querySelector('link')?.textContent || '';
-        const pubDate = item.querySelector('pubDate')?.textContent || '';
-        const description = item.querySelector('description')?.textContent || '';
-        // Strip HTML from description
-        const tmp = document.createElement('div');
-        tmp.innerHTML = description;
-        const extrait = tmp.textContent.substring(0, 300);
-
-        articles.push({
-          titre,
-          url: link,
-          date: pubDate ? new Date(pubDate).toISOString().split('T')[0] : '',
-          extrait
-        });
-      });
-
-      // Enrich articles: try to fetch full content from article URLs (best effort)
+      const articles = await _fetchGoogleNewsRSS(query, 5);
       await _enrichArticlesContent(articles);
-
       return articles;
     } catch {
       return [];
     }
+  }
+
+  // Fetch Google News RSS for a given query string, return up to maxResults articles
+  async function _fetchGoogleNewsRSS(queryStr, maxResults) {
+    const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(queryStr)}&hl=fr&gl=FR&ceid=FR:fr`;
+    const xmlText = await _fetchViaProxy(rssUrl, 10000);
+    if (!xmlText) return [];
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xmlText, 'text/xml');
+    const items = doc.querySelectorAll('item');
+
+    const articles = [];
+    items.forEach((item, i) => {
+      if (i >= maxResults) return;
+      const titre = item.querySelector('title')?.textContent || '';
+      const link = item.querySelector('link')?.textContent || '';
+      const pubDate = item.querySelector('pubDate')?.textContent || '';
+      const description = item.querySelector('description')?.textContent || '';
+      const tmp = document.createElement('div');
+      tmp.innerHTML = description;
+      const extrait = tmp.textContent.substring(0, 300);
+
+      articles.push({
+        titre,
+        url: link,
+        date: pubDate ? new Date(pubDate).toISOString().split('T')[0] : '',
+        extrait
+      });
+    });
+    return articles;
+  }
+
+  // Deduplicate articles by normalized title (keeps the one with richer content)
+  function _deduplicateArticles(articles) {
+    const seen = new Map();
+    for (const article of articles) {
+      const key = (article.titre || '').toLowerCase().replace(/[^a-z0-9àâéèêëïîôùûüç]+/g, ' ').trim();
+      if (!key) continue;
+      const existing = seen.get(key);
+      if (!existing || (article.enriched && !existing.enriched) || (article.extrait || '').length > (existing.extrait || '').length) {
+        seen.set(key, article);
+      }
+    }
+    return [...seen.values()];
   }
 
   // Fetch full article content for richer AI analysis (best effort, parallel)
@@ -942,7 +1006,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     const ville = watchlistEntry.ville || '';
     const [siteData, articles, searchContext] = await Promise.all([
       _scrapeSite(siteWeb),
-      _scrapeGoogleNews(nom, region, ville, { nomOfficiel, libelleNaf }),
+      _scrapeGoogleNews(nom, region, ville, { nomOfficiel, libelleNaf, pappers, siteWeb }),
       _scrapeGoogleSearch(nom, region, { ville, nomOfficiel, libelleNaf }),
     ]);
 
