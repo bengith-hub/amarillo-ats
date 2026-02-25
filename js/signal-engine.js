@@ -16,6 +16,7 @@ const SignalEngine = (() => {
     rachat_lbo:          { label: 'Rachat / LBO',              icon: '🤝', color: '#dc2626' },
     internationalisation:{ label: 'Internationalisation',      icon: '✈️', color: '#0891b2' },
     recrutement_it:      { label: 'Recrutement IT/DSI',        icon: '👤', color: '#4f46e5' },
+    nomination:          { label: 'Nomination / Gouvernance',  icon: '👔', color: '#b45309' },
   };
 
   const SCORE_RULES = {
@@ -190,20 +191,69 @@ const SignalEngine = (() => {
     if (!url.startsWith('http')) url = 'https://' + url;
     const baseUrl = url.replace(/\/+$/, '');
 
-    const pagePaths = ['', '/actualites', '/news', '/carrieres', '/careers', '/recrutement'];
+    // Phase 1: Scrape main pages
+    const pagePaths = ['', '/actualites', '/news'];
     const results = await Promise.allSettled(
-      pagePaths.slice(0, 3).map(p => _fetchPageText(baseUrl + p))
+      pagePaths.map(p => _fetchPageTextWithLinks(baseUrl + p, baseUrl))
     );
 
     const parts = [];
-    const labels = ['ACCUEIL', 'ACTUALITES', 'CARRIERES'];
+    const labels = ['ACCUEIL', 'ACTUALITES', 'NEWS'];
+    const articleLinks = [];
     results.forEach((r, i) => {
       if (r.status === 'fulfilled' && r.value) {
-        parts.push(labels[i] + ':\n' + r.value);
+        parts.push(labels[i] + ':\n' + r.value.text);
+        if (r.value.links) articleLinks.push(...r.value.links);
       }
     });
 
+    // Phase 2: Follow up to 3 article links found on /actualites or /news pages
+    if (articleLinks.length > 0) {
+      const uniqueLinks = [...new Set(articleLinks)].slice(0, 3);
+      const articleResults = await Promise.allSettled(
+        uniqueLinks.map(link => _fetchPageText(link))
+      );
+      articleResults.forEach((r, i) => {
+        if (r.status === 'fulfilled' && r.value && r.value.length > 100) {
+          parts.push('ARTICLE_' + (i + 1) + ':\n' + r.value);
+        }
+      });
+    }
+
     return { site_texte: parts.join('\n\n'), offres_emploi: [] };
+  }
+
+  // Fetch page text AND extract article-like links (for following /actualites pages)
+  async function _fetchPageTextWithLinks(url, baseUrl) {
+    try {
+      const html = await _fetchViaProxy(url, 10000);
+      if (!html) return null;
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+
+      // Extract article links before stripping elements
+      const links = [];
+      const articleKeywords = /actual|news|article|blog|communique|presse|gouvernance|nomination|direction/i;
+      doc.querySelectorAll('a[href]').forEach(a => {
+        const href = a.getAttribute('href');
+        if (!href || href === '/' || href === '#') return;
+        // Only keep links that look like article pages (deeper paths)
+        const fullUrl = href.startsWith('http') ? href : (baseUrl + (href.startsWith('/') ? '' : '/') + href);
+        const pathParts = new URL(fullUrl, baseUrl).pathname.split('/').filter(Boolean);
+        if (pathParts.length >= 2 && articleKeywords.test(fullUrl)) {
+          links.push(fullUrl);
+        }
+      });
+
+      doc.querySelectorAll('script, style, svg, noscript, iframe, link, meta').forEach(el => el.remove());
+      let text = doc.body?.textContent || '';
+      text = text.replace(/[\t\r]+/g, ' ').replace(/\n\s*\n+/g, '\n').replace(/ {2,}/g, ' ').trim();
+      if (text.length > 3000) text = text.substring(0, 3000) + '...';
+
+      return { text, links };
+    } catch {
+      return null;
+    }
   }
 
   // ============================================================
@@ -212,7 +262,7 @@ const SignalEngine = (() => {
 
   async function _scrapeGoogleNews(entrepriseNom, region) {
     try {
-      const query = encodeURIComponent(`"${entrepriseNom}" investissement OR industrie OR usine ${region || ''}`);
+      const query = encodeURIComponent(`"${entrepriseNom}" investissement OR industrie OR nomination OR direction OR cession OR acquisition OR croissance OR recrutement OR transformation ${region || ''}`);
       const rssUrl = `https://news.google.com/rss/search?q=${query}&hl=fr&gl=FR&ceid=FR:fr`;
 
       const xmlText = await _fetchViaProxy(rssUrl, 10000);
@@ -474,6 +524,7 @@ Analyse TOUTES les donnees fournies (site web, articles de presse, donnees Pappe
 - rachat_lbo : Rachat, acquisition, LBO, fusion, cession, changement d'actionnariat
 - internationalisation : Expansion internationale, export, nouveaux marches etrangers
 - recrutement_it : Recrutement IT, DSI, CTO, developpeurs, postes tech ouverts
+- nomination : Nomination d'un nouveau PDG, DG, DAF, DSI, directeur, changement de gouvernance, nouvelle equipe de direction
 
 IMPORTANT :
 - Sois EXHAUSTIF : detecte tout signal meme faible ou indirect. Un recrutement, un demenagement, un nouveau client important sont des signaux.
@@ -541,6 +592,7 @@ ${articlesSummary || 'Aucun article trouve'}`;
         case 'rachat_lbo': score += 20; break;
         case 'internationalisation': score += 15; break;
         case 'recrutement_it': score += 25; break;
+        case 'nomination': score += 20; break;
       }
     }
     if (pappers?.croissance_ca > 30) score += 10;
@@ -983,6 +1035,11 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       ? `<a href="entreprise.html?id=${s.entreprise_id}" class="btn btn-secondary" style="font-size:0.75rem;padding:3px 8px;">Fiche ATS</a>`
       : '';
 
+    const hasArticles = (s.donnees_scraping?.actualites || []).length > 0;
+    const hasSiteText = !!(s.donnees_scraping?.site_texte);
+    const hasData = hasArticles || hasSiteText || s.donnees_pappers?.ca;
+    const hasDataButNoSignals = hasData && (s.signaux || []).length === 0;
+
     return `
       <div class="card" style="margin-bottom:12px;border-left:4px solid ${scoreColor};">
         <div class="card-body" style="padding:14px 18px;">
@@ -997,6 +1054,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
             </div>
           </div>
           <div style="margin:8px 0;">${signauxList || '<span style="color:#94a3b8;font-size:0.8125rem;">Aucun signal</span>'}</div>
+          ${hasDataButNoSignals ? '<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;padding:6px 10px;font-size:0.8125rem;color:#92400e;margin-bottom:8px;">Des donnees sont disponibles mais aucun signal detecte — un re-scan avec le moteur ameliore est recommande.</div>' : ''}
           <div style="display:flex;align-items:center;gap:12px;font-size:0.75rem;color:#94a3b8;margin-bottom:8px;">
             <span>CA: ${ca} EUR</span>
             <span>Effectif: ${effectif}</span>
@@ -1387,17 +1445,37 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       <p style="font-size:0.8125rem;color:#64748b;margin-top:8px;"><em>${UI.escHtml(s.notes || '')}</em></p>
 
       ${genHtml}
+
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;gap:8px;">
+        <button class="btn btn-primary se-btn-rescan-detail" data-siren="${UI.escHtml(s.entreprise_siren || '')}" data-nom="${UI.escHtml(s.entreprise_nom)}" style="font-size:0.8125rem;">Re-scanner cette entreprise</button>
+      </div>
     `;
 
     UI.modal(s.entreprise_nom + ' — Detail signal', bodyHtml, { width: 700 });
 
-    // Copy LinkedIn button
+    // Copy LinkedIn button + rescan button
     setTimeout(() => {
       document.querySelector('.se-copy-linkedin')?.addEventListener('click', () => {
         if (s.generation?.message_linkedin) {
           navigator.clipboard.writeText(s.generation.message_linkedin);
           UI.toast('Message LinkedIn copie');
         }
+      });
+      document.querySelector('.se-btn-rescan-detail')?.addEventListener('click', async (e) => {
+        const btn = e.target;
+        btn.disabled = true;
+        btn.textContent = 'Scan en cours...';
+        // Find watchlist entry for this signal
+        await _loadWatchlist();
+        const wl = _watchlist.find(w =>
+          (s.entreprise_id && w.entreprise_id === s.entreprise_id) ||
+          (s.entreprise_siren && w.siren === s.entreprise_siren) ||
+          (w.nom.toLowerCase() === s.entreprise_nom.toLowerCase())
+        );
+        if (!wl) { UI.toast('Entreprise non trouvee dans la watchlist', 'error'); return; }
+        await _scanOneEntreprise(wl.id);
+        // Close modal
+        document.getElementById('modal-overlay')?.classList.remove('visible');
       });
     }, 100);
   }
