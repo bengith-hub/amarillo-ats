@@ -280,11 +280,24 @@ const SignalEngine = (() => {
   // SCRAPING — Google News RSS
   // ============================================================
 
-  async function _scrapeGoogleNews(entrepriseNom, region, ville) {
+  async function _scrapeGoogleNews(entrepriseNom, region, ville, extra) {
     try {
+      const { nomOfficiel, libelleNaf } = extra || {};
+
+      // Use official name if more distinctive (e.g. "Bocage SAS" vs "Bocage")
+      let searchName = entrepriseNom;
+      if (nomOfficiel && nomOfficiel.length > entrepriseNom.length + 2) {
+        searchName = nomOfficiel;
+        console.log('[SignalEngine] Using official name for news: "' + nomOfficiel + '"');
+      }
+
+      // Build sector clause from NAF label for disambiguation
+      const sectorKeywords = libelleNaf ? libelleNaf.split(/[\s,/]+/).filter(w => w.length > 4).slice(0, 3).join(' OR ') : '';
+      const sectorClause = sectorKeywords ? `(${sectorKeywords}) OR` : '';
+
       // Include city for disambiguation (e.g. "Bocage" is also a geographic term)
       const villeClause = ville ? `"${ville}" OR` : '';
-      const query = encodeURIComponent(`"${entrepriseNom}" ${villeClause} investissement OR industrie OR nomination OR direction OR cession OR acquisition OR croissance OR recrutement OR transformation ${region || ''}`);
+      const query = encodeURIComponent(`"${searchName}" ${villeClause} ${sectorClause} investissement OR industrie OR nomination OR direction OR cession OR acquisition OR croissance OR recrutement OR transformation ${region || ''}`);
       const rssUrl = `https://news.google.com/rss/search?q=${query}&hl=fr&gl=FR&ceid=FR:fr`;
 
       const xmlText = await _fetchViaProxy(rssUrl, 10000);
@@ -337,6 +350,54 @@ const SignalEngine = (() => {
       } catch { /* best effort — keep RSS description */ }
     });
     await Promise.allSettled(enrichPromises);
+  }
+
+  // Post-filter: discard articles that are clearly NOT about the target company
+  // This is critical for generic company names like "Bocage" (also a geographic term)
+  function _filterRelevantArticles(articles, nom, nomOfficiel, ville, libelleNaf) {
+    if (!articles || articles.length === 0) return [];
+
+    const nomLower = nom.toLowerCase();
+    const nomWords = nomLower.split(/\s+/).filter(w => w.length > 2);
+
+    // Build relevance keywords: company name variations, city, NAF terms
+    const relevanceTerms = [...nomWords];
+    if (nomOfficiel) {
+      nomOfficiel.toLowerCase().split(/\s+/).filter(w => w.length > 3).forEach(w => relevanceTerms.push(w));
+    }
+    if (ville) relevanceTerms.push(ville.toLowerCase());
+    if (libelleNaf) {
+      libelleNaf.toLowerCase().split(/[\s,/]+/).filter(w => w.length > 4).forEach(w => relevanceTerms.push(w));
+    }
+
+    // Common French geographic/generic terms that cause false matches
+    const geoTerms = /\bbocage[s]?\b|\bplaine[s]?\b|\bvallee[s]?\b|\bforet[s]?\b|\bcoteau[x]?\b|\bmarais\b|\bcampagne\b/i;
+
+    return articles.filter(article => {
+      const text = ((article.titre || '') + ' ' + (article.extrait || '')).toLowerCase();
+
+      // If the article contains the company name in a business context, keep it
+      // Check: does the text mention the company name alongside at least one business term?
+      const mentionsName = text.includes(nomLower) || (nomOfficiel && text.includes(nomOfficiel.toLowerCase()));
+      const businessTerms = /entreprise|societe|société|groupe|sas\b|sarl\b|investissement|recrutement|nomination|acquisition|chiffre|effectif|usine|site|filiale|direction/i;
+      if (mentionsName && businessTerms.test(text)) return true;
+
+      // If article mentions city + any company-related term, keep it
+      if (ville && text.includes(ville.toLowerCase())) {
+        const hasRelevantTerm = relevanceTerms.some(t => text.includes(t));
+        if (hasRelevantTerm) return true;
+      }
+
+      // Discard if the name appears only as a geographic/generic term
+      if (geoTerms.test(text) && !mentionsName) return false;
+      if (geoTerms.test(text) && mentionsName && !businessTerms.test(text)) return false;
+
+      // If article is enriched (full content) and doesn't mention the name at all, discard
+      if (article.enriched && !mentionsName) return false;
+
+      // Keep by default for non-enriched articles (benefit of the doubt)
+      return true;
+    });
   }
 
   // ============================================================
@@ -554,7 +615,14 @@ const SignalEngine = (() => {
     return result.choices?.[0]?.message?.content || '';
   }
 
-  async function _detectSignaux(entrepriseNom, siteTexte, articles, pappers) {
+  async function _detectSignaux(entrepriseNom, siteTexte, articles, pappers, extra) {
+    const { nomOfficiel, ville, libelleNaf } = extra || {};
+    const identityClause = [
+      nomOfficiel ? `Nom officiel: "${nomOfficiel}"` : '',
+      ville ? `Ville: ${ville}` : '',
+      libelleNaf ? `Secteur: ${libelleNaf}` : '',
+    ].filter(Boolean).join(', ');
+
     const system = `Tu es un analyste business specialise dans la detection de signaux declencheurs de besoins en DSI (Directeur des Systemes d'Information) pour tout type d'entreprise.
 
 Analyse TOUTES les donnees fournies (site web, articles de presse, donnees Pappers) et detecte le maximum de signaux pertinents parmi :
@@ -572,6 +640,7 @@ IMPORTANT :
 - Analyse CHAQUE article de presse individuellement — chacun peut contenir un signal different.
 - Si le site web mentionne des projets, actualites ou recrutements, ce sont des signaux.
 - Meme des indices faibles (nouvelle certification, nouveau partenariat, prix recu) meritent d'etre mentionnes avec une confiance basse.
+- ATTENTION HOMONYMES : Le nom "${entrepriseNom}" peut etre un terme courant (geographique, generique). IGNORE tout article qui parle d'un lieu, d'une region, ou d'une autre entite portant ce nom. Ne retiens QUE les articles qui parlent clairement de L'ENTREPRISE ciblee (${identityClause || entrepriseNom}).
 
 Reponds UNIQUEMENT en JSON valide avec cette structure :
 {
@@ -593,7 +662,8 @@ Si vraiment AUCUNE information exploitable n'est disponible, retourne {"signaux"
 
     const articlesSummary = (articles || []).map(a => `[${a.date}] ${a.titre}\n${a.extrait}`).join('\n\n');
 
-    const user = `ENTREPRISE: ${entrepriseNom}
+    const user = `ENTREPRISE: ${entrepriseNom}${nomOfficiel && nomOfficiel !== entrepriseNom ? ' (nom officiel: ' + nomOfficiel + ')' : ''}
+${ville ? 'VILLE: ' + ville : ''}
 
 DONNEES PAPPERS:
 - CA: ${pappers?.ca ? (pappers.ca / 1000000).toFixed(1) + 'M EUR' : 'inconnu'}
@@ -707,8 +777,10 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     const region = watchlistEntry.region;
     let siren = watchlistEntry.siren || '';
     let siteWeb = watchlistEntry.site_web || '';
+    let nomOfficiel = '';
+    let libelleNaf = '';
 
-    // 0. Auto-enrich missing SIREN/site_web via Pappers name search
+    // 0. Auto-enrich via Pappers name search (BEFORE news scraping for disambiguation)
     if (!siren || !siteWeb) {
       const lookup = await _searchPappersByName(nom, watchlistEntry.ville);
       if (lookup) {
@@ -722,33 +794,40 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
           watchlistEntry.site_web = siteWeb;
           console.log('[SignalEngine] Auto-found site_web for ' + nom + ': ' + siteWeb);
         }
+        nomOfficiel = lookup.nom_officiel || '';
+        libelleNaf = lookup.libelle_naf || '';
       }
+    }
+
+    // 0b. Enrich Pappers early so we can use libelle_naf for Google News query
+    const pappers = siren ? await _enrichPappers(siren) : null;
+    if (pappers?.libelle_naf && !libelleNaf) libelleNaf = pappers.libelle_naf;
+
+    // If Pappers found a site_web and we didn't have one, use it
+    if (pappers?.site_web && !siteWeb) {
+      siteWeb = pappers.site_web;
+      watchlistEntry.site_web = siteWeb;
     }
 
     // 1. Scrape site + Google News + Google Search in parallel
     const ville = watchlistEntry.ville || '';
     const [siteData, articles, searchContext] = await Promise.all([
       _scrapeSite(siteWeb),
-      _scrapeGoogleNews(nom, region, ville),
+      _scrapeGoogleNews(nom, region, ville, { nomOfficiel, libelleNaf }),
       _scrapeGoogleSearch(nom, region),
     ]);
 
-    // 2. Enrich with Pappers
-    const pappers = siren ? await _enrichPappers(siren) : null;
-
-    // If Pappers found a site_web and we didn't have one, scrape it now
-    if (pappers?.site_web && !siteWeb) {
-      siteWeb = pappers.site_web;
-      watchlistEntry.site_web = siteWeb;
-      const extraSite = await _scrapeSite(siteWeb);
-      if (extraSite.site_texte) siteData.site_texte = extraSite.site_texte;
+    // Post-filter articles: discard those clearly not about this company
+    const filteredArticles = _filterRelevantArticles(articles, nom, nomOfficiel, ville, libelleNaf);
+    if (filteredArticles.length < articles.length) {
+      console.log('[SignalEngine] Filtered ' + (articles.length - filteredArticles.length) + '/' + articles.length + ' irrelevant articles for "' + nom + '"');
     }
 
     // Combine all text sources
     const allText = [siteData.site_texte, searchContext].filter(Boolean).join('\n\n');
 
     // 3. Detect signals via OpenAI
-    const aiResult = await _detectSignaux(nom, allText, articles, pappers);
+    const aiResult = await _detectSignaux(nom, allText, filteredArticles, pappers, { nomOfficiel, ville, libelleNaf });
 
     // 4. Compute final scores
     const scores = _computeFinalScore(aiResult, aiResult.signaux || [], pappers);
@@ -777,7 +856,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       donnees_pappers: pappers || {},
       donnees_scraping: {
         site_texte: (siteData.site_texte || '').substring(0, 500),
-        actualites: articles,
+        actualites: filteredArticles,
         offres_emploi: siteData.offres_emploi || [],
         search_context: (searchContext || '').substring(0, 500),
       },
