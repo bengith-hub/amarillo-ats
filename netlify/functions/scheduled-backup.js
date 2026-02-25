@@ -1,6 +1,6 @@
 // Amarillo ATS — Scheduled Backup to Google Drive
 // Runs daily at 3:00 AM.
-// 1. Downloads all entity data from JSONBin
+// 1. Downloads all entity data from Netlify Blobs
 // 2. Uploads a full backup snapshot to Google Drive
 // 3. Cleans up old snapshots (keeps last 7)
 // 4. Records status metadata in the backup bin for frontend monitoring
@@ -14,31 +14,37 @@
 //   BACKUP_ALERT_WEBHOOK — Slack/webhook URL for failure alerts
 //   BACKUP_ALERT_EMAIL — email address for failure alerts
 
+import { getStore } from "@netlify/blobs";
+
 const JSONBIN_BASE = 'https://api.jsonbin.io/v3/b';
 const MAX_SNAPSHOTS = 7;
 
-// All entity bins (same values as config.js, overridable via env vars)
-const ENTITY_BINS = {
-  candidats:    { env: 'JSONBIN_CANDIDATS_BIN',    default: '698a4deeae596e708f1e4f33' },
-  entreprises:  { env: 'JSONBIN_ENTREPRISES_BIN',  default: '698a4deed0ea881f40ade47b' },
-  decideurs:    { env: 'JSONBIN_DECIDEURS_BIN',    default: '698a4deeae596e708f1e4f36' },
-  missions:     { env: 'JSONBIN_MISSIONS_BIN',     default: '698a4defd0ea881f40ade47f' },
-  actions:      { env: 'JSONBIN_ACTIONS_BIN',       default: '698a4defd0ea881f40ade482' },
-  facturation:  { env: 'JSONBIN_FACTURATION_BIN',  default: '698a4e0043b1c97be9727eb2' },
-  references:   { env: 'JSONBIN_REFERENCES_BIN',   default: '698a4e0143b1c97be9727eb5' },
-  notes:        { env: 'JSONBIN_NOTES_BIN',         default: '698a4df143b1c97be9727ea2' }
-};
+// Entities to back up (now read from Netlify Blobs)
+const ENTITIES = ['candidats', 'entreprises', 'decideurs', 'missions', 'actions', 'facturation', 'references', 'notes'];
 
 // ─── Helpers ────────────────────────────────────────────
 
-async function fetchWithDelay(url, options, delayMs = 300) {
-  await new Promise(r => setTimeout(r, delayMs));
-  const res = await fetch(url, options);
-  if (res.status === 429) {
-    await new Promise(r => setTimeout(r, 2000));
-    return fetch(url, options);
+async function fetchWithRetry(url, options, retries = 3) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      if (res.status === 429 && attempt < retries) {
+        const delay = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s
+        console.warn(`Rate limited (429), retry ${attempt + 1}/${retries} in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      return res;
+    } catch (e) {
+      if (attempt < retries) {
+        const delay = Math.pow(2, attempt + 1) * 1000;
+        console.warn(`Fetch error (${e.message}), retry ${attempt + 1}/${retries} in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw e;
+    }
   }
-  return res;
 }
 
 // ─── Google OAuth2 ──────────────────────────────────────
@@ -323,7 +329,7 @@ export default async function handler(req) {
   // 2. Read existing metadata
   let meta = { snapshots: [], status: {} };
   try {
-    const backupRes = await fetchWithDelay(`${JSONBIN_BASE}/${backupBin}/latest`, { headers });
+    const backupRes = await fetchWithRetry(`${JSONBIN_BASE}/${backupBin}/latest`, { headers });
     if (backupRes.ok) {
       const backupData = await backupRes.json();
       meta = backupData.record || { snapshots: [], status: {} };
@@ -335,31 +341,15 @@ export default async function handler(req) {
   }
 
   try {
-    // 3. Download all entity data from JSONBin
+    // 3. Download all entity data from Netlify Blobs
+    const store = getStore("ats-data");
     const data = {};
     const counts = {};
-    const errors = [];
 
-    for (const [entity, cfg] of Object.entries(ENTITY_BINS)) {
-      const binId = process.env[cfg.env] || cfg.default;
-      const res = await fetchWithDelay(`${JSONBIN_BASE}/${binId}/latest`, { headers });
-
-      if (!res.ok) {
-        console.warn(`Failed to fetch ${entity}: ${res.status}`);
-        errors.push(`${entity}: ${res.status}`);
-        data[entity] = [];
-        counts[entity] = 0;
-        continue;
-      }
-
-      const result = await res.json();
-      const records = result.record || [];
+    for (const entity of ENTITIES) {
+      const records = await store.get(entity, { type: 'json' });
       data[entity] = Array.isArray(records) ? records : [];
       counts[entity] = data[entity].length;
-    }
-
-    if (errors.length > 0) {
-      throw new Error(`Bins inaccessibles : ${errors.join(', ')}`);
     }
 
     const totalRecords = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -445,8 +435,7 @@ export default async function handler(req) {
     };
 
     // 8. Save metadata to JSONBin
-    await new Promise(r => setTimeout(r, 500));
-    const saveRes = await fetch(`${JSONBIN_BASE}/${backupBin}`, {
+    const saveRes = await fetchWithRetry(`${JSONBIN_BASE}/${backupBin}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
