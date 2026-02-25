@@ -792,6 +792,11 @@ Pour "ca", la tranche de chiffre d'affaires.`;
           return;
         }
 
+        // Always include Pappers metadata if available (hidden from UI but persisted)
+        if (extracted._pappers_siren) updates._pappers_siren = extracted._pappers_siren;
+        if (extracted._pappers_naf) updates._pappers_naf = extracted._pappers_naf;
+        if (extracted._pappers_forme) updates._pappers_forme = extracted._pappers_forme;
+
         if (onApply) await onApply(updates);
       }
     });

@@ -1207,7 +1207,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       UI.toast('Toutes ces entreprises sont deja dans la watchlist', 'error');
     }
     _watchlist = null;
-    renderPage(containerId);
+    _signaux = null;
+    await renderPage(containerId);
   }
 
   // ============================================================
@@ -1666,6 +1667,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
             });
             btn.textContent = 'Ajoutee';
             btn.disabled = true;
+            // Invalidate cache so watchlist tab shows update on next switch
+            _watchlist = null;
           });
         });
       } catch (e) {
@@ -1914,7 +1917,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
           ville: document.getElementById('se-wl-ville')?.value?.trim() || '',
         });
         _watchlist = null;
-        renderPage(containerId);
+        _signaux = null;
+        await renderPage(containerId);
       },
     });
 
@@ -1924,9 +1928,10 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         if (!entId) { UI.toast('Selectionnez une entreprise', 'error'); return; }
         await addFromATS(entId);
         _watchlist = null;
+        _signaux = null;
         // Close modal
         document.getElementById('modal-overlay')?.classList.remove('visible');
-        renderPage(containerId);
+        await renderPage(containerId);
       });
     }, 50);
   }
@@ -2040,7 +2045,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
 
     _signaux = null;
     _watchlist = null;
-    renderPage(containerId);
+    await renderPage(containerId);
   }
 
   async function _scanOneEntreprise(watchlistId) {
@@ -2075,7 +2080,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
 
       _signaux = null;
       _watchlist = null;
-      renderPage('signaux-content');
+      await renderPage('signaux-content');
     } catch (e) {
       UI.toast('Erreur: ' + e.message, 'error');
       if (btn) { btn.disabled = false; btn.textContent = 'Scanner'; btn.style.opacity = '1'; }
@@ -2333,7 +2338,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     // Refresh the page to show new results + notification
     _signaux = null;
     _watchlist = null;
-    renderPage(containerId);
+    await renderPage(containerId);
   }
 
   function _showAutoScanBanner(containerId, total) {
