@@ -108,6 +108,18 @@ const SignalEngine = (() => {
     }
     // Auto-dedup watchlist on load (cleanup legacy duplicates)
     _watchlist = _dedup(_watchlist, w => w.nom?.toLowerCase().trim());
+    // Auto-repair: ensure every entry has an id (fixes legacy data without ids)
+    let repaired = false;
+    for (const w of _watchlist) {
+      if (!w.id) {
+        w.id = 'wl_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+        repaired = true;
+      }
+    }
+    if (repaired) {
+      console.log('[SignalEngine] Repaired missing ids in watchlist');
+      await _saveWatchlist();
+    }
     return _watchlist;
   }
 
@@ -1011,8 +1023,27 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
 
   async function removeFromWatchlist(id) {
     await _loadWatchlist();
+    // Find the entry before removing (to also remove its signal)
+    const entry = _watchlist.find(w => w.id === id);
     _watchlist = _watchlist.filter(w => w.id !== id);
     await _saveWatchlist();
+
+    // Also remove the associated signal record
+    if (entry) {
+      await _loadSignaux();
+      const prevLen = _signaux.length;
+      _signaux = _signaux.filter(s =>
+        !(
+          (entry.entreprise_id && s.entreprise_id === entry.entreprise_id) ||
+          (entry.siren && s.entreprise_siren === entry.siren) ||
+          (s.entreprise_nom?.toLowerCase() === entry.nom?.toLowerCase())
+        )
+      );
+      if (_signaux.length < prevLen) {
+        await _saveSignaux();
+        console.log('[SignalEngine] Removed signal for "' + entry.nom + '"');
+      }
+    }
   }
 
   async function addFromATS(entrepriseId, options) {
@@ -1425,9 +1456,19 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     });
     container.querySelectorAll('.se-btn-remove-wl').forEach(btn => {
       btn.addEventListener('click', async () => {
-        await removeFromWatchlist(btn.dataset.id);
-        _watchlist = null;
-        renderPage('signaux-content');
+        try {
+          btn.disabled = true;
+          btn.textContent = '...';
+          await removeFromWatchlist(btn.dataset.id);
+          _watchlist = null;
+          _signaux = null;
+          await renderPage('signaux-content');
+        } catch (e) {
+          console.error('[SignalEngine] Remove failed:', e);
+          UI.toast('Erreur lors de la suppression: ' + e.message, 'error');
+          btn.disabled = false;
+          btn.textContent = 'Retirer';
+        }
       });
     });
   }
