@@ -44,6 +44,10 @@ const SignalEngine = (() => {
   let _activeTab = 'signaux';
   let _filters = { score: null, type: null, departement: null };
 
+  // Auto-scan & notifications
+  const AUTO_SCAN_INTERVAL_DAYS = 7;
+  let _autoScanRunning = false;
+
   // ============================================================
   // DATA ACCESS (via Store / API)
   // ============================================================
@@ -280,11 +284,24 @@ const SignalEngine = (() => {
   // SCRAPING — Google News RSS
   // ============================================================
 
-  async function _scrapeGoogleNews(entrepriseNom, region, ville) {
+  async function _scrapeGoogleNews(entrepriseNom, region, ville, extra) {
     try {
+      const { nomOfficiel, libelleNaf } = extra || {};
+
+      // Use official name if more distinctive (e.g. "Bocage SAS" vs "Bocage")
+      let searchName = entrepriseNom;
+      if (nomOfficiel && nomOfficiel.length > entrepriseNom.length + 2) {
+        searchName = nomOfficiel;
+        console.log('[SignalEngine] Using official name for news: "' + nomOfficiel + '"');
+      }
+
+      // Build sector clause from NAF label for disambiguation
+      const sectorKeywords = libelleNaf ? libelleNaf.split(/[\s,/]+/).filter(w => w.length > 4).slice(0, 3).join(' OR ') : '';
+      const sectorClause = sectorKeywords ? `(${sectorKeywords}) OR` : '';
+
       // Include city for disambiguation (e.g. "Bocage" is also a geographic term)
       const villeClause = ville ? `"${ville}" OR` : '';
-      const query = encodeURIComponent(`"${entrepriseNom}" ${villeClause} investissement OR industrie OR nomination OR direction OR cession OR acquisition OR croissance OR recrutement OR transformation ${region || ''}`);
+      const query = encodeURIComponent(`"${searchName}" ${villeClause} ${sectorClause} investissement OR industrie OR nomination OR direction OR cession OR acquisition OR croissance OR recrutement OR transformation ${region || ''}`);
       const rssUrl = `https://news.google.com/rss/search?q=${query}&hl=fr&gl=FR&ceid=FR:fr`;
 
       const xmlText = await _fetchViaProxy(rssUrl, 10000);
@@ -337,6 +354,54 @@ const SignalEngine = (() => {
       } catch { /* best effort — keep RSS description */ }
     });
     await Promise.allSettled(enrichPromises);
+  }
+
+  // Post-filter: discard articles that are clearly NOT about the target company
+  // This is critical for generic company names like "Bocage" (also a geographic term)
+  function _filterRelevantArticles(articles, nom, nomOfficiel, ville, libelleNaf) {
+    if (!articles || articles.length === 0) return [];
+
+    const nomLower = nom.toLowerCase();
+    const nomWords = nomLower.split(/\s+/).filter(w => w.length > 2);
+
+    // Build relevance keywords: company name variations, city, NAF terms
+    const relevanceTerms = [...nomWords];
+    if (nomOfficiel) {
+      nomOfficiel.toLowerCase().split(/\s+/).filter(w => w.length > 3).forEach(w => relevanceTerms.push(w));
+    }
+    if (ville) relevanceTerms.push(ville.toLowerCase());
+    if (libelleNaf) {
+      libelleNaf.toLowerCase().split(/[\s,/]+/).filter(w => w.length > 4).forEach(w => relevanceTerms.push(w));
+    }
+
+    // Common French geographic/generic terms that cause false matches
+    const geoTerms = /\bbocage[s]?\b|\bplaine[s]?\b|\bvallee[s]?\b|\bforet[s]?\b|\bcoteau[x]?\b|\bmarais\b|\bcampagne\b/i;
+
+    return articles.filter(article => {
+      const text = ((article.titre || '') + ' ' + (article.extrait || '')).toLowerCase();
+
+      // If the article contains the company name in a business context, keep it
+      // Check: does the text mention the company name alongside at least one business term?
+      const mentionsName = text.includes(nomLower) || (nomOfficiel && text.includes(nomOfficiel.toLowerCase()));
+      const businessTerms = /entreprise|societe|société|groupe|sas\b|sarl\b|investissement|recrutement|nomination|acquisition|chiffre|effectif|usine|site|filiale|direction/i;
+      if (mentionsName && businessTerms.test(text)) return true;
+
+      // If article mentions city + any company-related term, keep it
+      if (ville && text.includes(ville.toLowerCase())) {
+        const hasRelevantTerm = relevanceTerms.some(t => text.includes(t));
+        if (hasRelevantTerm) return true;
+      }
+
+      // Discard if the name appears only as a geographic/generic term
+      if (geoTerms.test(text) && !mentionsName) return false;
+      if (geoTerms.test(text) && mentionsName && !businessTerms.test(text)) return false;
+
+      // If article is enriched (full content) and doesn't mention the name at all, discard
+      if (article.enriched && !mentionsName) return false;
+
+      // Keep by default for non-enriched articles (benefit of the doubt)
+      return true;
+    });
   }
 
   // ============================================================
@@ -554,7 +619,14 @@ const SignalEngine = (() => {
     return result.choices?.[0]?.message?.content || '';
   }
 
-  async function _detectSignaux(entrepriseNom, siteTexte, articles, pappers) {
+  async function _detectSignaux(entrepriseNom, siteTexte, articles, pappers, extra) {
+    const { nomOfficiel, ville, libelleNaf } = extra || {};
+    const identityClause = [
+      nomOfficiel ? `Nom officiel: "${nomOfficiel}"` : '',
+      ville ? `Ville: ${ville}` : '',
+      libelleNaf ? `Secteur: ${libelleNaf}` : '',
+    ].filter(Boolean).join(', ');
+
     const system = `Tu es un analyste business specialise dans la detection de signaux declencheurs de besoins en DSI (Directeur des Systemes d'Information) pour tout type d'entreprise.
 
 Analyse TOUTES les donnees fournies (site web, articles de presse, donnees Pappers) et detecte le maximum de signaux pertinents parmi :
@@ -572,6 +644,7 @@ IMPORTANT :
 - Analyse CHAQUE article de presse individuellement — chacun peut contenir un signal different.
 - Si le site web mentionne des projets, actualites ou recrutements, ce sont des signaux.
 - Meme des indices faibles (nouvelle certification, nouveau partenariat, prix recu) meritent d'etre mentionnes avec une confiance basse.
+- ATTENTION HOMONYMES : Le nom "${entrepriseNom}" peut etre un terme courant (geographique, generique). IGNORE tout article qui parle d'un lieu, d'une region, ou d'une autre entite portant ce nom. Ne retiens QUE les articles qui parlent clairement de L'ENTREPRISE ciblee (${identityClause || entrepriseNom}).
 
 Reponds UNIQUEMENT en JSON valide avec cette structure :
 {
@@ -593,7 +666,8 @@ Si vraiment AUCUNE information exploitable n'est disponible, retourne {"signaux"
 
     const articlesSummary = (articles || []).map(a => `[${a.date}] ${a.titre}\n${a.extrait}`).join('\n\n');
 
-    const user = `ENTREPRISE: ${entrepriseNom}
+    const user = `ENTREPRISE: ${entrepriseNom}${nomOfficiel && nomOfficiel !== entrepriseNom ? ' (nom officiel: ' + nomOfficiel + ')' : ''}
+${ville ? 'VILLE: ' + ville : ''}
 
 DONNEES PAPPERS:
 - CA: ${pappers?.ca ? (pappers.ca / 1000000).toFixed(1) + 'M EUR' : 'inconnu'}
@@ -707,8 +781,10 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     const region = watchlistEntry.region;
     let siren = watchlistEntry.siren || '';
     let siteWeb = watchlistEntry.site_web || '';
+    let nomOfficiel = '';
+    let libelleNaf = '';
 
-    // 0. Auto-enrich missing SIREN/site_web via Pappers name search
+    // 0. Auto-enrich via Pappers name search (BEFORE news scraping for disambiguation)
     if (!siren || !siteWeb) {
       const lookup = await _searchPappersByName(nom, watchlistEntry.ville);
       if (lookup) {
@@ -722,33 +798,40 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
           watchlistEntry.site_web = siteWeb;
           console.log('[SignalEngine] Auto-found site_web for ' + nom + ': ' + siteWeb);
         }
+        nomOfficiel = lookup.nom_officiel || '';
+        libelleNaf = lookup.libelle_naf || '';
       }
+    }
+
+    // 0b. Enrich Pappers early so we can use libelle_naf for Google News query
+    const pappers = siren ? await _enrichPappers(siren) : null;
+    if (pappers?.libelle_naf && !libelleNaf) libelleNaf = pappers.libelle_naf;
+
+    // If Pappers found a site_web and we didn't have one, use it
+    if (pappers?.site_web && !siteWeb) {
+      siteWeb = pappers.site_web;
+      watchlistEntry.site_web = siteWeb;
     }
 
     // 1. Scrape site + Google News + Google Search in parallel
     const ville = watchlistEntry.ville || '';
     const [siteData, articles, searchContext] = await Promise.all([
       _scrapeSite(siteWeb),
-      _scrapeGoogleNews(nom, region, ville),
+      _scrapeGoogleNews(nom, region, ville, { nomOfficiel, libelleNaf }),
       _scrapeGoogleSearch(nom, region),
     ]);
 
-    // 2. Enrich with Pappers
-    const pappers = siren ? await _enrichPappers(siren) : null;
-
-    // If Pappers found a site_web and we didn't have one, scrape it now
-    if (pappers?.site_web && !siteWeb) {
-      siteWeb = pappers.site_web;
-      watchlistEntry.site_web = siteWeb;
-      const extraSite = await _scrapeSite(siteWeb);
-      if (extraSite.site_texte) siteData.site_texte = extraSite.site_texte;
+    // Post-filter articles: discard those clearly not about this company
+    const filteredArticles = _filterRelevantArticles(articles, nom, nomOfficiel, ville, libelleNaf);
+    if (filteredArticles.length < articles.length) {
+      console.log('[SignalEngine] Filtered ' + (articles.length - filteredArticles.length) + '/' + articles.length + ' irrelevant articles for "' + nom + '"');
     }
 
     // Combine all text sources
     const allText = [siteData.site_texte, searchContext].filter(Boolean).join('\n\n');
 
     // 3. Detect signals via OpenAI
-    const aiResult = await _detectSignaux(nom, allText, articles, pappers);
+    const aiResult = await _detectSignaux(nom, allText, filteredArticles, pappers, { nomOfficiel, ville, libelleNaf });
 
     // 4. Compute final scores
     const scores = _computeFinalScore(aiResult, aiResult.signaux || [], pappers);
@@ -777,7 +860,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       donnees_pappers: pappers || {},
       donnees_scraping: {
         site_texte: (siteData.site_texte || '').substring(0, 500),
-        actualites: articles,
+        actualites: filteredArticles,
         offres_emploi: siteData.offres_emploi || [],
         search_context: (searchContext || '').substring(0, 500),
       },
@@ -933,7 +1016,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
             ${SignalRegions.getRegionNames().map(r => `<option value="${UI.escHtml(r)}" ${r === activeRegion ? 'selected' : ''}>${UI.escHtml(r)}</option>`).join('')}
           </select>
         </div>
-        <div style="display:flex;gap:8px;">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <div id="se-notif-bell-container">${_renderNotificationBell(signaux)}</div>
           <button class="btn btn-secondary" id="se-btn-add-watch" style="font-size:0.8125rem;">+ Watchlist</button>
           <button class="btn btn-primary" id="se-btn-scan" style="font-size:0.8125rem;">Lancer un scan</button>
         </div>
@@ -957,6 +1041,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
           <div class="kpi-value" style="color:#059669;">${regionSignaux.filter(s => s.score_global >= 70).length}</div>
         </div>
       </div>
+
+      ${_renderAutoScanStatus(config)}
 
       <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e2e8f0;">
         ${['signaux', 'watchlist', 'decouverte', 'carte'].map(tab => `
@@ -1004,6 +1090,15 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     document.getElementById('se-btn-scan')?.addEventListener('click', () => {
       _runManualScan(containerId);
     });
+
+    // Notification bell listener
+    _attachBellListener(signaux);
+
+    // Nav badge
+    _updateNavBadge(_getNewSignauxCount(signaux));
+
+    // Auto-scan check (delayed to not block page render)
+    setTimeout(() => _checkAutoScan(containerId), 2000);
   }
 
   // ============================================================
@@ -1660,6 +1755,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     _showScanProgress(containerId, 0, toScan.length, toScan[0]?.nom, 'running');
 
     await _loadSignaux();
+    // Mark current signals as "seen" so only truly NEW ones trigger notifications
+    _markSignalsSeen((_signaux || []).map(s => s.id));
     let count = 0;
 
     for (let i = 0; i < toScan.length; i++) {
@@ -1685,6 +1782,10 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     // Final save
     await _saveSignaux();
     await _saveWatchlist();
+
+    // Update last execution time (resets auto-scan timer)
+    _config.derniere_execution = new Date().toISOString();
+    await _saveConfig();
 
     _showScanProgress(containerId, toScan.length, toScan.length, null, 'done');
 
@@ -1850,6 +1951,293 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         </div>`;
     } catch {
       // Silent fail
+    }
+  }
+
+  // ============================================================
+  // AUTO-SCAN STATUS — Info bar showing next scan date
+  // ============================================================
+
+  function _renderAutoScanStatus(config) {
+    const lastExec = config.derniere_execution;
+    if (!lastExec) {
+      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 12px;background:#fef3c7;border-radius:8px;font-size:0.75rem;color:#92400e;">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        Scan automatique actif — lancez un premier scan pour demarrer le cycle hebdomadaire
+      </div>`;
+    }
+
+    const lastDate = new Date(lastExec);
+    const nextDate = new Date(lastDate.getTime() + AUTO_SCAN_INTERVAL_DAYS * 24 * 60 * 60 * 1000);
+    const daysUntil = Math.max(0, Math.ceil((nextDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+    const lastStr = lastDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+
+    if (daysUntil <= 0) {
+      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 12px;background:#dbeafe;border-radius:8px;font-size:0.75rem;color:#1e40af;">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        Scan automatique en attente — dernier scan : ${lastStr}
+      </div>`;
+    }
+
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 12px;background:#f0fdf4;border-radius:8px;font-size:0.75rem;color:#166534;">
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      Prochain scan auto dans ${daysUntil} jour${daysUntil > 1 ? 's' : ''} — dernier : ${lastStr}
+    </div>`;
+  }
+
+  // ============================================================
+  // NOTIFICATIONS — Track new signals since last visit
+  // ============================================================
+
+  function _getSeenSignalIds() {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('se_signaux_vus') || '[]'));
+    } catch { return new Set(); }
+  }
+
+  function _markSignalsSeen(signalIds) {
+    const seen = _getSeenSignalIds();
+    signalIds.forEach(id => seen.add(id));
+    localStorage.setItem('se_signaux_vus', JSON.stringify([...seen]));
+    // Clean up: remove IDs that no longer exist in signaux (prevents unbounded growth)
+    if (_signaux && seen.size > _signaux.length * 2) {
+      const currentIds = new Set(_signaux.map(s => s.id));
+      const cleaned = [...seen].filter(id => currentIds.has(id));
+      localStorage.setItem('se_signaux_vus', JSON.stringify(cleaned));
+    }
+  }
+
+  function _getNewSignaux(signaux) {
+    const seen = _getSeenSignalIds();
+    return (signaux || []).filter(s => !seen.has(s.id));
+  }
+
+  function _getNewSignauxCount(signaux) {
+    return _getNewSignaux(signaux).length;
+  }
+
+  // ============================================================
+  // AUTO-SCAN — Weekly background scan
+  // ============================================================
+
+  async function _checkAutoScan(containerId) {
+    if (_autoScanRunning) return;
+
+    const config = await _loadConfig();
+    const lastExec = config.derniere_execution;
+
+    if (lastExec) {
+      const daysSince = (Date.now() - new Date(lastExec).getTime()) / (1000 * 60 * 60 * 24);
+      if (daysSince < AUTO_SCAN_INTERVAL_DAYS) return;
+    }
+
+    // Check prerequisites
+    if (!CVParser.getOpenAIKey()) return;
+    await _loadWatchlist();
+    const activeRegion = config.regions_actives?.[0];
+    const toScan = _watchlist.filter(w => w.actif && (!activeRegion || w.region === activeRegion));
+    if (!toScan.length) return;
+
+    console.log('[SignalEngine] Auto-scan triggered (' + (lastExec ? Math.floor((Date.now() - new Date(lastExec).getTime()) / 86400000) + ' days since last' : 'never run') + ')');
+    _autoScanRunning = true;
+
+    // Show a subtle notification that auto-scan is starting
+    _showAutoScanBanner(containerId, toScan.length);
+
+    await _loadSignaux();
+    const prevIds = new Set((_signaux || []).map(s => s.id));
+    let count = 0;
+
+    for (let i = 0; i < toScan.length; i++) {
+      const wl = toScan[i];
+      _updateAutoScanBanner(i, toScan.length, wl.nom);
+
+      try {
+        const result = await analyseEntreprise(wl);
+        _upsertSignal(result, wl);
+        wl.derniere_analyse = new Date().toISOString().split('T')[0];
+        count++;
+
+        if (count % 3 === 0) {
+          await _saveSignaux();
+          await _saveWatchlist();
+        }
+      } catch (e) {
+        console.error('[SignalEngine] Auto-scan error for ' + wl.nom + ':', e);
+      }
+    }
+
+    await _saveSignaux();
+    await _saveWatchlist();
+
+    // Update last execution
+    _config.derniere_execution = new Date().toISOString();
+    await _saveConfig();
+
+    // Compute new signals found in this scan
+    const newInScan = (_signaux || []).filter(s => !prevIds.has(s.id));
+    console.log('[SignalEngine] Auto-scan done: ' + count + ' scanned, ' + newInScan.length + ' new signals');
+
+    _removeAutoScanBanner();
+    _autoScanRunning = false;
+
+    // Refresh the page to show new results + notification
+    _signaux = null;
+    _watchlist = null;
+    renderPage(containerId);
+  }
+
+  function _showAutoScanBanner(containerId, total) {
+    let banner = document.getElementById('se-auto-scan-banner');
+    if (banner) return;
+    banner = document.createElement('div');
+    banner.id = 'se-auto-scan-banner';
+    banner.style.cssText = 'position:fixed;top:12px;right:24px;z-index:9999;background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;border-radius:12px;padding:12px 16px;min-width:300px;box-shadow:0 4px 16px rgba(124,58,237,0.3);font-family:Inter,sans-serif;font-size:0.8125rem;';
+    banner.innerHTML = `
+      <div style="font-weight:600;margin-bottom:4px;">Scan automatique hebdomadaire</div>
+      <div id="se-auto-scan-status">Demarrage... (${total} entreprises)</div>
+    `;
+    document.body.appendChild(banner);
+  }
+
+  function _updateAutoScanBanner(current, total, name) {
+    const status = document.getElementById('se-auto-scan-status');
+    if (status) {
+      status.textContent = `${current + 1}/${total} — ${name}...`;
+    }
+  }
+
+  function _removeAutoScanBanner() {
+    const banner = document.getElementById('se-auto-scan-banner');
+    if (banner) {
+      banner.style.background = 'linear-gradient(135deg,#059669,#10b981)';
+      const status = document.getElementById('se-auto-scan-status');
+      if (status) status.textContent = 'Scan termine !';
+      setTimeout(() => banner.remove(), 4000);
+    }
+  }
+
+  // ============================================================
+  // NOTIFICATION BELL — UI component
+  // ============================================================
+
+  function _renderNotificationBell(signaux) {
+    const newSignaux = _getNewSignaux(signaux);
+    const count = newSignaux.length;
+
+    const badge = count > 0
+      ? `<span style="position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;font-size:0.625rem;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px;">${count > 99 ? '99+' : count}</span>`
+      : '';
+
+    return `
+      <div id="se-notif-bell" style="position:relative;cursor:pointer;padding:6px;border-radius:8px;transition:background 0.2s;" title="${count} nouveau${count !== 1 ? 'x' : ''} signal${count !== 1 ? 'x' : ''}">
+        <svg width="20" height="20" fill="none" stroke="${count > 0 ? '#ef4444' : '#64748b'}" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+        ${badge}
+      </div>
+    `;
+  }
+
+  function _showNotificationDropdown(signaux) {
+    // Remove existing dropdown
+    document.getElementById('se-notif-dropdown')?.remove();
+
+    const newSignaux = _getNewSignaux(signaux);
+    const dropdown = document.createElement('div');
+    dropdown.id = 'se-notif-dropdown';
+    dropdown.style.cssText = 'position:fixed;top:60px;right:24px;z-index:10000;background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.15);border:1px solid #e2e8f0;width:380px;max-height:440px;overflow-y:auto;font-family:Inter,sans-serif;';
+
+    if (!newSignaux.length) {
+      dropdown.innerHTML = `
+        <div style="padding:20px;text-align:center;">
+          <div style="font-size:1.5rem;margin-bottom:8px;">&#128276;</div>
+          <div style="color:#64748b;font-size:0.8125rem;">Aucun nouveau signal</div>
+          <div style="color:#94a3b8;font-size:0.75rem;margin-top:4px;">Les nouveaux signaux apparaitront ici apres un scan</div>
+        </div>
+      `;
+    } else {
+      const items = newSignaux.slice(0, 10).map(s => {
+        const mainSignal = s.signaux?.[0];
+        const typeInfo = mainSignal ? SIGNAL_TYPES[mainSignal.type] : null;
+        const scoreColor = s.score_global >= 70 ? '#059669' : s.score_global >= 40 ? '#d97706' : '#94a3b8';
+        return `
+          <div style="padding:10px 16px;border-bottom:1px solid #f1f5f9;display:flex;gap:10px;align-items:flex-start;">
+            <span style="font-size:1.1rem;margin-top:2px;">${typeInfo?.icon || '📊'}</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:0.8125rem;color:#1e293b;">${UI.escHtml(s.entreprise_nom)}</div>
+              <div style="font-size:0.75rem;color:#64748b;margin-top:2px;">${mainSignal ? UI.escHtml(mainSignal.label).substring(0, 80) : 'Signal detecte'}</div>
+              <div style="font-size:0.6875rem;color:#94a3b8;margin-top:2px;">${s.ville || ''} — ${s.date_creation || ''}</div>
+            </div>
+            <span style="font-weight:700;color:${scoreColor};font-size:0.875rem;white-space:nowrap;">${s.score_global}/100</span>
+          </div>
+        `;
+      }).join('');
+
+      dropdown.innerHTML = `
+        <div style="padding:12px 16px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:600;font-size:0.875rem;">${newSignaux.length} nouveau${newSignaux.length > 1 ? 'x' : ''} signal${newSignaux.length > 1 ? 'x' : ''}</span>
+          <button id="se-notif-mark-read" style="font-size:0.75rem;color:#3b82f6;background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:4px;">Tout marquer comme lu</button>
+        </div>
+        ${items}
+        ${newSignaux.length > 10 ? '<div style="padding:8px 16px;text-align:center;font-size:0.75rem;color:#94a3b8;">et ' + (newSignaux.length - 10) + ' autre' + (newSignaux.length - 10 > 1 ? 's' : '') + '...</div>' : ''}
+      `;
+    }
+
+    document.body.appendChild(dropdown);
+
+    // Mark as read button
+    dropdown.querySelector('#se-notif-mark-read')?.addEventListener('click', () => {
+      _markSignalsSeen(signaux.map(s => s.id));
+      dropdown.remove();
+      // Refresh bell badge
+      const bellContainer = document.getElementById('se-notif-bell')?.parentElement;
+      if (bellContainer) {
+        bellContainer.innerHTML = _renderNotificationBell(signaux);
+        _attachBellListener(signaux);
+      }
+      _updateNavBadge(0);
+    });
+
+    // Close dropdown when clicking outside
+    const closeHandler = (e) => {
+      if (!dropdown.contains(e.target) && !document.getElementById('se-notif-bell')?.contains(e.target)) {
+        dropdown.remove();
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 50);
+  }
+
+  function _attachBellListener(signaux) {
+    document.getElementById('se-notif-bell')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const existing = document.getElementById('se-notif-dropdown');
+      if (existing) {
+        existing.remove();
+      } else {
+        _showNotificationDropdown(signaux);
+      }
+    });
+  }
+
+  // Nav badge: inject/update a badge on the "Signaux" sidebar link
+  function _updateNavBadge(count) {
+    const signauxLink = document.querySelector('a[href="signaux.html"]');
+    if (!signauxLink) return;
+
+    // Remove existing badge
+    signauxLink.querySelector('.se-nav-badge')?.remove();
+
+    if (count > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'se-nav-badge';
+      badge.style.cssText = 'background:#ef4444;color:#fff;font-size:0.625rem;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;padding:0 4px;margin-left:auto;';
+      badge.textContent = count > 99 ? '99+' : count;
+      signauxLink.style.display = 'flex';
+      signauxLink.style.alignItems = 'center';
+      signauxLink.appendChild(badge);
     }
   }
 
