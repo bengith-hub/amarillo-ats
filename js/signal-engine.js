@@ -34,6 +34,23 @@ const SignalEngine = (() => {
 
   const CODES_NAF_INDUSTRIELS = ['10','11','12','13','14','15','16','17','18','19','20','21','22','23','24','25','26','27','28','29','30','31','32','33'];
 
+  // Geographic/generic terms that commonly cause search disambiguation issues
+  const GEO_GENERIC_TERMS = /^(bocage|plaine|vallee|vallon|foret|coteau|marais|campagne|prairie|colline|source|riviere|cascade|domaine|terroir|verger|moulin|hameau|clos|jardin|fontaine|chapelle|bastide|manoir|chateau|abbaye|prieure|grange|ferme|maison|atelier|comptoir|fabrique|forge|halle|halles|place|pont|port|cap|ile|mont|pic|roche|pierre|vent|soleil|lune|etoile|horizon|aurore|nature|terre|mer|lac|nord|sud|est|ouest|sommet|crete|corniche|arbre|chene|pin|sapin|cedre|erable|peuplier|tilleul|olivier|vigne)s?$/i;
+
+  // Extended geo context terms found in articles about landscape/nature (not business)
+  const GEO_CONTEXT_TERMS = /\b(paysage|paysages|biodiversit[eé]|haies?\b|bocag[eè]re?s?|faune|flore|[eé]cologique|[eé]cosyst[eè]me|habitat naturel|zone naturelle|randonnée|sentier|ornitholog|agricole|parcelle|prairie|p[aâ]turage|zone humide|protection|conservation|environnement)\b/i;
+
+  // Detect if a company name is likely ambiguous (common word that generates false positives)
+  function _isAmbiguousName(nom) {
+    if (!nom) return false;
+    const lower = nom.toLowerCase().trim();
+    const words = lower.split(/\s+/);
+    // Multi-word names (3+) are rarely ambiguous
+    if (words.length > 2) return false;
+    // Check each word against known geo/generic terms
+    return words.some(w => w.length > 2 && GEO_GENERIC_TERMS.test(w));
+  }
+
   // ============================================================
   // STATE
   // ============================================================
@@ -287,10 +304,11 @@ const SignalEngine = (() => {
   async function _scrapeGoogleNews(entrepriseNom, region, ville, extra) {
     try {
       const { nomOfficiel, libelleNaf } = extra || {};
+      const ambiguous = _isAmbiguousName(entrepriseNom);
 
-      // Use official name if more distinctive (e.g. "Bocage SAS" vs "Bocage")
+      // Use official name if more distinctive — lower threshold for ambiguous names
       let searchName = entrepriseNom;
-      if (nomOfficiel && nomOfficiel.length > entrepriseNom.length + 2) {
+      if (nomOfficiel && (ambiguous ? nomOfficiel !== entrepriseNom : nomOfficiel.length > entrepriseNom.length + 2)) {
         searchName = nomOfficiel;
         console.log('[SignalEngine] Using official name for news: "' + nomOfficiel + '"');
       }
@@ -299,9 +317,21 @@ const SignalEngine = (() => {
       const sectorKeywords = libelleNaf ? libelleNaf.split(/[\s,/]+/).filter(w => w.length > 4).slice(0, 3).join(' OR ') : '';
       const sectorClause = sectorKeywords ? `(${sectorKeywords}) OR` : '';
 
-      // Include city for disambiguation (e.g. "Bocage" is also a geographic term)
-      const villeClause = ville ? `"${ville}" OR` : '';
-      const query = encodeURIComponent(`"${searchName}" ${villeClause} ${sectorClause} investissement OR industrie OR nomination OR direction OR cession OR acquisition OR croissance OR recrutement OR transformation ${region || ''}`);
+      // For ambiguous names: city is mandatory (AND), add business context, and exclude geo terms
+      // For normal names: city is optional (OR)
+      let villeClause, businessForce, exclusions;
+      if (ambiguous) {
+        villeClause = ville ? `"${ville}"` : '';
+        businessForce = 'entreprise OR societe OR';
+        exclusions = ' -paysage -biodiversite -haie -ecologique -environnement -faune -flore -randonnee -sentier';
+        console.log('[SignalEngine] Ambiguous name detected: "' + entrepriseNom + '" — using strict query');
+      } else {
+        villeClause = ville ? `"${ville}" OR` : '';
+        businessForce = '';
+        exclusions = '';
+      }
+
+      const query = encodeURIComponent(`"${searchName}" ${villeClause} ${businessForce} ${sectorClause} investissement OR industrie OR nomination OR direction OR cession OR acquisition OR croissance OR recrutement OR transformation ${region || ''}${exclusions}`);
       const rssUrl = `https://news.google.com/rss/search?q=${query}&hl=fr&gl=FR&ceid=FR:fr`;
 
       const xmlText = await _fetchViaProxy(rssUrl, 10000);
@@ -363,6 +393,7 @@ const SignalEngine = (() => {
 
     const nomLower = nom.toLowerCase();
     const nomWords = nomLower.split(/\s+/).filter(w => w.length > 2);
+    const ambiguous = _isAmbiguousName(nom);
 
     // Build relevance keywords: company name variations, city, NAF terms
     const relevanceTerms = [...nomWords];
@@ -374,32 +405,40 @@ const SignalEngine = (() => {
       libelleNaf.toLowerCase().split(/[\s,/]+/).filter(w => w.length > 4).forEach(w => relevanceTerms.push(w));
     }
 
-    // Common French geographic/generic terms that cause false matches
-    const geoTerms = /\bbocage[s]?\b|\bplaine[s]?\b|\bvallee[s]?\b|\bforet[s]?\b|\bcoteau[x]?\b|\bmarais\b|\bcampagne\b/i;
+    // Business terms that indicate the article is about a company (removed "site" — too generic)
+    const businessTerms = /entreprise|societe|société|groupe|sas\b|sarl\b|investissement|recrutement|nomination|acquisition|chiffre d'affaires|effectif|site industriel|site de production|filiale|direction|PDG|directeur|g[eé]rant/i;
 
     return articles.filter(article => {
       const text = ((article.titre || '') + ' ' + (article.extrait || '')).toLowerCase();
 
-      // If the article contains the company name in a business context, keep it
-      // Check: does the text mention the company name alongside at least one business term?
       const mentionsName = text.includes(nomLower) || (nomOfficiel && text.includes(nomOfficiel.toLowerCase()));
-      const businessTerms = /entreprise|societe|société|groupe|sas\b|sarl\b|investissement|recrutement|nomination|acquisition|chiffre|effectif|usine|site|filiale|direction/i;
-      if (mentionsName && businessTerms.test(text)) return true;
+      const hasBusinessContext = businessTerms.test(text);
+      const hasGeoContext = GEO_CONTEXT_TERMS.test(text);
+
+      // If the article contains the company name in a business context, keep it
+      if (mentionsName && hasBusinessContext) return true;
 
       // If article mentions city + any company-related term, keep it
       if (ville && text.includes(ville.toLowerCase())) {
         const hasRelevantTerm = relevanceTerms.some(t => text.includes(t));
-        if (hasRelevantTerm) return true;
+        if (hasRelevantTerm && hasBusinessContext) return true;
       }
 
-      // Discard if the name appears only as a geographic/generic term
-      if (geoTerms.test(text) && !mentionsName) return false;
-      if (geoTerms.test(text) && mentionsName && !businessTerms.test(text)) return false;
+      // For ambiguous names: apply strict filtering
+      if (ambiguous) {
+        // Discard if geo/nature context detected, even if name is mentioned
+        if (hasGeoContext && !hasBusinessContext) return false;
+        // For ambiguous names, require explicit business context — no benefit of the doubt
+        if (!hasBusinessContext) return false;
+      }
+
+      // Discard if geo context detected and no business context
+      if (hasGeoContext && !hasBusinessContext) return false;
 
       // If article is enriched (full content) and doesn't mention the name at all, discard
       if (article.enriched && !mentionsName) return false;
 
-      // Keep by default for non-enriched articles (benefit of the doubt)
+      // For non-ambiguous names: keep by default for non-enriched articles
       return true;
     });
   }
@@ -408,9 +447,23 @@ const SignalEngine = (() => {
   // SCRAPING — Google Search (web results, not just news)
   // ============================================================
 
-  async function _scrapeGoogleSearch(entrepriseNom, region) {
+  async function _scrapeGoogleSearch(entrepriseNom, region, extra) {
     try {
-      const query = encodeURIComponent(`"${entrepriseNom}" ${region || ''} entreprise activite`);
+      const { ville, nomOfficiel, libelleNaf } = extra || {};
+      const ambiguous = _isAmbiguousName(entrepriseNom);
+
+      // Use official name for ambiguous company names
+      let searchName = entrepriseNom;
+      if (ambiguous && nomOfficiel && nomOfficiel !== entrepriseNom) {
+        searchName = nomOfficiel;
+      }
+
+      // Build disambiguation terms
+      const villeStr = ville ? `"${ville}"` : '';
+      const sectorStr = libelleNaf ? libelleNaf.split(/[\s,/]+/).filter(w => w.length > 4).slice(0, 2).join(' ') : '';
+      const exclusions = ambiguous ? ' -paysage -biodiversite -haie -ecologique -randonnee' : '';
+
+      const query = encodeURIComponent(`"${searchName}" ${villeStr} ${sectorStr} entreprise activite ${region || ''}${exclusions}`);
       const searchUrl = `https://www.google.com/search?q=${query}&hl=fr&num=5`;
       const html = await _fetchViaProxy(searchUrl, 10000);
       if (!html) return '';
@@ -781,8 +834,10 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     const region = watchlistEntry.region;
     let siren = watchlistEntry.siren || '';
     let siteWeb = watchlistEntry.site_web || '';
-    let nomOfficiel = '';
-    let libelleNaf = '';
+    // Reuse previously persisted Pappers data to avoid redundant lookups
+    let nomOfficiel = watchlistEntry.nom_officiel || '';
+    let libelleNaf = watchlistEntry.libelle_naf || '';
+    let watchlistDirty = false;
 
     // 0. Auto-enrich via Pappers name search (BEFORE news scraping for disambiguation)
     if (!siren || !siteWeb) {
@@ -791,15 +846,21 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         if (!siren && lookup.siren) {
           siren = lookup.siren;
           watchlistEntry.siren = siren;
+          watchlistDirty = true;
           console.log('[SignalEngine] Auto-found SIREN for ' + nom + ': ' + siren);
         }
         if (!siteWeb && lookup.site_web) {
           siteWeb = lookup.site_web;
           watchlistEntry.site_web = siteWeb;
+          watchlistDirty = true;
           console.log('[SignalEngine] Auto-found site_web for ' + nom + ': ' + siteWeb);
         }
-        nomOfficiel = lookup.nom_officiel || '';
-        libelleNaf = lookup.libelle_naf || '';
+        if (!nomOfficiel && lookup.nom_officiel) {
+          nomOfficiel = lookup.nom_officiel;
+        }
+        if (!libelleNaf && lookup.libelle_naf) {
+          libelleNaf = lookup.libelle_naf;
+        }
       }
     }
 
@@ -811,6 +872,22 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     if (pappers?.site_web && !siteWeb) {
       siteWeb = pappers.site_web;
       watchlistEntry.site_web = siteWeb;
+      watchlistDirty = true;
+    }
+
+    // Persist enriched Pappers data (SIREN, nom_officiel, libelle_naf) in watchlist
+    // so subsequent analyses don't need to re-search Pappers by name
+    if (nomOfficiel && !watchlistEntry.nom_officiel) {
+      watchlistEntry.nom_officiel = nomOfficiel;
+      watchlistDirty = true;
+    }
+    if (libelleNaf && !watchlistEntry.libelle_naf) {
+      watchlistEntry.libelle_naf = libelleNaf;
+      watchlistDirty = true;
+    }
+    if (watchlistDirty) {
+      await _saveWatchlist();
+      console.log('[SignalEngine] Persisted enriched data for ' + nom + ' (SIREN=' + siren + ', officiel=' + nomOfficiel + ')');
     }
 
     // 1. Scrape site + Google News + Google Search in parallel
@@ -818,7 +895,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     const [siteData, articles, searchContext] = await Promise.all([
       _scrapeSite(siteWeb),
       _scrapeGoogleNews(nom, region, ville, { nomOfficiel, libelleNaf }),
-      _scrapeGoogleSearch(nom, region),
+      _scrapeGoogleSearch(nom, region, { ville, nomOfficiel, libelleNaf }),
     ]);
 
     // Post-filter articles: discard those clearly not about this company
@@ -827,8 +904,25 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       console.log('[SignalEngine] Filtered ' + (articles.length - filteredArticles.length) + '/' + articles.length + ' irrelevant articles for "' + nom + '"');
     }
 
+    // For ambiguous names: clean searchContext to remove paragraphs about the geographic term
+    let cleanedSearchContext = searchContext;
+    if (_isAmbiguousName(nom) && searchContext) {
+      const paragraphs = searchContext.split('\n');
+      const filtered = paragraphs.filter(p => {
+        if (p.trim().length < 20) return true; // keep short lines (headers, etc.)
+        const hasGeo = GEO_CONTEXT_TERMS.test(p);
+        const hasBusiness = /entreprise|societe|société|groupe|investissement|recrutement|nomination|acquisition|chiffre|effectif|filiale|direction/i.test(p);
+        // Discard paragraphs with geo context and no business context
+        return !hasGeo || hasBusiness;
+      });
+      cleanedSearchContext = filtered.join('\n');
+      if (cleanedSearchContext.length < searchContext.length * 0.5) {
+        console.log('[SignalEngine] Cleaned ' + Math.round((1 - cleanedSearchContext.length / searchContext.length) * 100) + '% of search context for ambiguous name "' + nom + '"');
+      }
+    }
+
     // Combine all text sources
-    const allText = [siteData.site_texte, searchContext].filter(Boolean).join('\n\n');
+    const allText = [siteData.site_texte, cleanedSearchContext].filter(Boolean).join('\n\n');
 
     // 3. Detect signals via OpenAI
     const aiResult = await _detectSignaux(nom, allText, filteredArticles, pappers, { nomOfficiel, ville, libelleNaf });
