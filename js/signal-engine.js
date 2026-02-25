@@ -191,7 +191,7 @@ const SignalEngine = (() => {
     if (!url.startsWith('http')) url = 'https://' + url;
     const baseUrl = url.replace(/\/+$/, '');
 
-    // Phase 1: Scrape main pages
+    // Phase 1: Scrape main pages + try common subdomains for /actualites
     const pagePaths = ['', '/actualites', '/news'];
     const results = await Promise.allSettled(
       pagePaths.map(p => _fetchPageTextWithLinks(baseUrl + p, baseUrl))
@@ -206,6 +206,26 @@ const SignalEngine = (() => {
         if (r.value.links) articleLinks.push(...r.value.links);
       }
     });
+
+    // Phase 1b: If /actualites returned nothing, try common subdomains
+    const hasActu = results[1]?.status === 'fulfilled' && results[1].value?.text?.length > 50;
+    if (!hasActu) {
+      try {
+        const parsedUrl = new URL(baseUrl);
+        const domain = parsedUrl.hostname.replace(/^www\./, '');
+        const subdomains = ['particuliers', 'www', 'corporate', 'pro'].filter(s => !parsedUrl.hostname.startsWith(s + '.'));
+        for (const sub of subdomains.slice(0, 2)) {
+          const subUrl = `${parsedUrl.protocol}//${sub}.${domain}`;
+          const subResult = await _fetchPageTextWithLinks(subUrl + '/actualites', subUrl);
+          if (subResult?.text?.length > 50) {
+            parts.push('ACTUALITES_' + sub.toUpperCase() + ':\n' + subResult.text);
+            if (subResult.links) articleLinks.push(...subResult.links);
+            console.log('[SignalEngine] Found /actualites on subdomain ' + sub + '.' + domain);
+            break;
+          }
+        }
+      } catch { /* best effort */ }
+    }
 
     // Phase 2: Follow up to 3 article links found on /actualites or /news pages
     if (articleLinks.length > 0) {
@@ -260,9 +280,11 @@ const SignalEngine = (() => {
   // SCRAPING — Google News RSS
   // ============================================================
 
-  async function _scrapeGoogleNews(entrepriseNom, region) {
+  async function _scrapeGoogleNews(entrepriseNom, region, ville) {
     try {
-      const query = encodeURIComponent(`"${entrepriseNom}" investissement OR industrie OR nomination OR direction OR cession OR acquisition OR croissance OR recrutement OR transformation ${region || ''}`);
+      // Include city for disambiguation (e.g. "Bocage" is also a geographic term)
+      const villeClause = ville ? `"${ville}" OR` : '';
+      const query = encodeURIComponent(`"${entrepriseNom}" ${villeClause} investissement OR industrie OR nomination OR direction OR cession OR acquisition OR croissance OR recrutement OR transformation ${region || ''}`);
       const rssUrl = `https://news.google.com/rss/search?q=${query}&hl=fr&gl=FR&ceid=FR:fr`;
 
       const xmlText = await _fetchViaProxy(rssUrl, 10000);
@@ -292,10 +314,29 @@ const SignalEngine = (() => {
         });
       });
 
+      // Enrich articles: try to fetch full content from article URLs (best effort)
+      await _enrichArticlesContent(articles);
+
       return articles;
     } catch {
       return [];
     }
+  }
+
+  // Fetch full article content for richer AI analysis (best effort, parallel)
+  async function _enrichArticlesContent(articles) {
+    const enrichPromises = articles.slice(0, 3).map(async (article, i) => {
+      try {
+        if (!article.url) return;
+        const fullText = await _fetchPageText(article.url);
+        if (fullText && fullText.length > article.extrait.length) {
+          // Keep enriched content (truncated to reasonable length for AI)
+          article.extrait = fullText.substring(0, 1500);
+          article.enriched = true;
+        }
+      } catch { /* best effort — keep RSS description */ }
+    });
+    await Promise.allSettled(enrichPromises);
   }
 
   // ============================================================
@@ -685,9 +726,10 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     }
 
     // 1. Scrape site + Google News + Google Search in parallel
+    const ville = watchlistEntry.ville || '';
     const [siteData, articles, searchContext] = await Promise.all([
       _scrapeSite(siteWeb),
-      _scrapeGoogleNews(nom, region),
+      _scrapeGoogleNews(nom, region, ville),
       _scrapeGoogleSearch(nom, region),
     ]);
 
@@ -1669,6 +1711,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
 
     try {
       const result = await analyseEntreprise(wl);
+      // Force fresh load from storage (clear cache to avoid stale data on rescan)
+      _signaux = null;
       await _loadSignaux();
 
       _upsertSignal(result, wl);
