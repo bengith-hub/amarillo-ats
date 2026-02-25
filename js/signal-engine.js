@@ -983,6 +983,11 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       ? `<a href="entreprise.html?id=${s.entreprise_id}" class="btn btn-secondary" style="font-size:0.75rem;padding:3px 8px;">Fiche ATS</a>`
       : '';
 
+    const hasArticles = (s.donnees_scraping?.actualites || []).length > 0;
+    const hasSiteText = !!(s.donnees_scraping?.site_texte);
+    const hasData = hasArticles || hasSiteText || s.donnees_pappers?.ca;
+    const hasDataButNoSignals = hasData && (s.signaux || []).length === 0;
+
     return `
       <div class="card" style="margin-bottom:12px;border-left:4px solid ${scoreColor};">
         <div class="card-body" style="padding:14px 18px;">
@@ -997,6 +1002,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
             </div>
           </div>
           <div style="margin:8px 0;">${signauxList || '<span style="color:#94a3b8;font-size:0.8125rem;">Aucun signal</span>'}</div>
+          ${hasDataButNoSignals ? '<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;padding:6px 10px;font-size:0.8125rem;color:#92400e;margin-bottom:8px;">Des donnees sont disponibles mais aucun signal detecte — un re-scan avec le moteur ameliore est recommande.</div>' : ''}
           <div style="display:flex;align-items:center;gap:12px;font-size:0.75rem;color:#94a3b8;margin-bottom:8px;">
             <span>CA: ${ca} EUR</span>
             <span>Effectif: ${effectif}</span>
@@ -1387,17 +1393,37 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       <p style="font-size:0.8125rem;color:#64748b;margin-top:8px;"><em>${UI.escHtml(s.notes || '')}</em></p>
 
       ${genHtml}
+
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;gap:8px;">
+        <button class="btn btn-primary se-btn-rescan-detail" data-siren="${UI.escHtml(s.entreprise_siren || '')}" data-nom="${UI.escHtml(s.entreprise_nom)}" style="font-size:0.8125rem;">Re-scanner cette entreprise</button>
+      </div>
     `;
 
     UI.modal(s.entreprise_nom + ' — Detail signal', bodyHtml, { width: 700 });
 
-    // Copy LinkedIn button
+    // Copy LinkedIn button + rescan button
     setTimeout(() => {
       document.querySelector('.se-copy-linkedin')?.addEventListener('click', () => {
         if (s.generation?.message_linkedin) {
           navigator.clipboard.writeText(s.generation.message_linkedin);
           UI.toast('Message LinkedIn copie');
         }
+      });
+      document.querySelector('.se-btn-rescan-detail')?.addEventListener('click', async (e) => {
+        const btn = e.target;
+        btn.disabled = true;
+        btn.textContent = 'Scan en cours...';
+        // Find watchlist entry for this signal
+        await _loadWatchlist();
+        const wl = _watchlist.find(w =>
+          (s.entreprise_id && w.entreprise_id === s.entreprise_id) ||
+          (s.entreprise_siren && w.siren === s.entreprise_siren) ||
+          (w.nom.toLowerCase() === s.entreprise_nom.toLowerCase())
+        );
+        if (!wl) { UI.toast('Entreprise non trouvee dans la watchlist', 'error'); return; }
+        await _scanOneEntreprise(wl.id);
+        // Close modal
+        document.getElementById('modal-overlay')?.classList.remove('visible');
       });
     }, 100);
   }
