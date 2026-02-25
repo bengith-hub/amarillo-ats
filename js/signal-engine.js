@@ -1208,10 +1208,13 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
 
   function _renderCarteTab(container, signaux, activeRegion) {
     const regionData = SignalRegions.getRegion(activeRegion);
-    container.innerHTML = `<div id="se-map" style="height:500px;border-radius:8px;overflow:hidden;"></div>`;
+    container.innerHTML = `
+      <div style="font-size:0.8125rem;color:#64748b;margin-bottom:8px;">Geocodage de ${signaux.length} signal(s)...</div>
+      <div id="se-map" style="height:500px;border-radius:8px;overflow:hidden;"></div>
+    `;
 
     // Wait for DOM then init Leaflet
-    setTimeout(() => {
+    setTimeout(async () => {
       if (typeof L === 'undefined') {
         container.innerHTML = '<p style="color:#94a3b8;">Leaflet non disponible sur cette page.</p>';
         return;
@@ -1224,11 +1227,23 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         attribution: '&copy; OpenStreetMap'
       }).addTo(map);
 
-      // Add markers for each signal with a known city
+      // Geocode and add markers for each signal
+      let placed = 0;
       for (const s of signaux) {
-        if (!s.ville) continue;
-        // Use geocoder if available, otherwise approximate
-        const coords = _approxCoords(s.ville);
+        if (!s.ville && !s.code_postal) continue;
+
+        // Try geocoding: ville + code_postal for precision
+        const locationStr = [s.ville, s.code_postal].filter(Boolean).join(' ');
+        let coords = _approxCoords(s.ville);
+
+        // Use Geocoder API for unknown cities
+        if (!coords && typeof Geocoder !== 'undefined') {
+          try {
+            const geo = await Geocoder.geocodeLocation(locationStr);
+            if (geo) coords = [geo.lat, geo.lng];
+          } catch { /* fallback: skip */ }
+        }
+
         if (!coords) continue;
 
         const color = s.score_global >= 70 ? '#059669' : s.score_global >= 40 ? '#d97706' : '#94a3b8';
@@ -1244,9 +1259,14 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         marker.bindPopup(`
           <strong>${UI.escHtml(s.entreprise_nom)}</strong><br>
           Score: <strong>${s.score_global}/100</strong><br>
-          ${sigLabels}
+          ${sigLabels || '<em>Aucun signal</em>'}
         `);
+        placed++;
       }
+
+      // Update status
+      const statusEl = container.querySelector('div:first-child');
+      if (statusEl) statusEl.textContent = placed + '/' + signaux.length + ' entreprise(s) placee(s) sur la carte';
     }, 100);
   }
 
@@ -1423,6 +1443,54 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
   // ACTIONS — Manual scan
   // ============================================================
 
+  function _upsertSignal(result, watchlistEntry) {
+    // Find existing signal: by entreprise_id, then SIREN, then nom (case-insensitive)
+    const existingIdx = _signaux.findIndex(s =>
+      (watchlistEntry.entreprise_id && s.entreprise_id === watchlistEntry.entreprise_id) ||
+      (watchlistEntry.siren && s.entreprise_siren === watchlistEntry.siren) ||
+      (s.entreprise_nom.toLowerCase() === watchlistEntry.nom.toLowerCase())
+    );
+    if (existingIdx >= 0) {
+      // Preserve original id and creation date
+      _signaux[existingIdx] = { ...result, id: _signaux[existingIdx].id, date_creation: _signaux[existingIdx].date_creation };
+    } else {
+      _signaux.push(result);
+    }
+  }
+
+  function _showScanProgress(containerId, current, total, currentName, status) {
+    let bar = document.getElementById('se-scan-progress');
+    if (!bar) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      const div = document.createElement('div');
+      div.id = 'se-scan-progress';
+      div.style.cssText = 'position:sticky;top:0;z-index:100;background:linear-gradient(135deg,#1e40af,#3b82f6);color:#fff;border-radius:10px;padding:14px 18px;margin-bottom:16px;box-shadow:0 4px 12px rgba(59,130,246,0.3);';
+      container.prepend(div);
+      bar = div;
+    }
+    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+    const dots = status === 'running' ? '<span class="se-scan-dots"></span>' : '';
+    bar.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div style="font-weight:600;font-size:0.9375rem;">
+          ${status === 'running' ? 'Scan en cours' + dots : status === 'done' ? 'Scan termine' : 'Scan interrompu'}
+        </div>
+        <div style="font-size:0.8125rem;opacity:0.9;">${current}/${total}</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.25);border-radius:6px;height:8px;overflow:hidden;">
+        <div style="background:#fff;height:100%;border-radius:6px;width:${pct}%;transition:width 0.4s ease;"></div>
+      </div>
+      ${currentName ? '<div style="font-size:0.8125rem;margin-top:6px;opacity:0.85;">Analyse: ' + UI.escHtml(currentName) + '...</div>' : ''}
+      <style>.se-scan-dots::after{content:"...";animation:se-dots 1.5s infinite}@keyframes se-dots{0%{content:"."}33%{content:".."}66%{content:"..."}}</style>
+    `;
+
+    if (status === 'done') {
+      bar.style.background = 'linear-gradient(135deg,#059669,#10b981)';
+      setTimeout(() => { bar?.remove(); }, 5000);
+    }
+  }
+
   async function _runManualScan(containerId) {
     await _loadWatchlist();
     const config = await _loadConfig();
@@ -1439,36 +1507,41 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       return;
     }
 
-    UI.toast('Scan en cours... ' + toScan.length + ' entreprise(s)');
+    // Disable scan button
+    const scanBtn = document.getElementById('se-btn-scan');
+    if (scanBtn) { scanBtn.disabled = true; scanBtn.textContent = 'Scan en cours...'; }
+
+    _showScanProgress(containerId, 0, toScan.length, toScan[0]?.nom, 'running');
 
     await _loadSignaux();
     let count = 0;
 
-    for (const wl of toScan) {
+    for (let i = 0; i < toScan.length; i++) {
+      const wl = toScan[i];
+      _showScanProgress(containerId, i, toScan.length, wl.nom, 'running');
+
       try {
         const result = await analyseEntreprise(wl);
-
-        // Update or add signal
-        const existingIdx = _signaux.findIndex(s => s.entreprise_siren === wl.siren && wl.siren);
-        if (existingIdx >= 0) {
-          _signaux[existingIdx] = { ..._signaux[existingIdx], ...result, id: _signaux[existingIdx].id, date_creation: _signaux[existingIdx].date_creation };
-        } else {
-          _signaux.push(result);
-        }
-
-        // Update watchlist derniere_analyse
+        _upsertSignal(result, wl);
         wl.derniere_analyse = new Date().toISOString().split('T')[0];
         count++;
+
+        // Incremental save every 3 companies (prevents data loss)
+        if (count % 3 === 0) {
+          await _saveSignaux();
+          await _saveWatchlist();
+        }
       } catch (e) {
         console.error('Scan error for ' + wl.nom + ':', e);
-        UI.toast('Erreur scan ' + wl.nom + ': ' + (e.message || 'echec'), 'error');
       }
     }
 
+    // Final save
     await _saveSignaux();
     await _saveWatchlist();
 
-    UI.toast(count + '/' + toScan.length + ' entreprise(s) analysee(s) avec succes');
+    _showScanProgress(containerId, toScan.length, toScan.length, null, 'done');
+
     _signaux = null;
     _watchlist = null;
     renderPage(containerId);
@@ -1484,29 +1557,31 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       return;
     }
 
-    UI.toast('Analyse de ' + wl.nom + '...');
+    // Visual feedback on the button
+    const btn = document.querySelector(`.se-btn-scan-one[data-id="${watchlistId}"]`);
+    if (btn) { btn.disabled = true; btn.textContent = 'Scan...'; btn.style.opacity = '0.6'; }
+
+    _showScanProgress('signaux-content', 0, 1, wl.nom, 'running');
 
     try {
       const result = await analyseEntreprise(wl);
       await _loadSignaux();
 
-      const existingIdx = _signaux.findIndex(s => s.entreprise_siren === wl.siren && wl.siren);
-      if (existingIdx >= 0) {
-        _signaux[existingIdx] = { ..._signaux[existingIdx], ...result, id: _signaux[existingIdx].id };
-      } else {
-        _signaux.push(result);
-      }
+      _upsertSignal(result, wl);
 
       wl.derniere_analyse = new Date().toISOString().split('T')[0];
       await _saveSignaux();
       await _saveWatchlist();
 
-      UI.toast('Analyse terminee — Score: ' + result.score_global + '/100');
+      _showScanProgress('signaux-content', 1, 1, null, 'done');
+
       _signaux = null;
       _watchlist = null;
       renderPage('signaux-content');
     } catch (e) {
       UI.toast('Erreur: ' + e.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Scanner'; btn.style.opacity = '1'; }
+      document.getElementById('se-scan-progress')?.remove();
     }
   }
 
