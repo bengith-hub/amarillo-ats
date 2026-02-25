@@ -123,8 +123,6 @@ const SignalEngine = (() => {
     }
     return [...seen.values()];
   }
-    return _signaux;
-  }
 
   async function _saveSignaux() {
     await API.updateBin('signaux', _signaux);
