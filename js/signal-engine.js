@@ -84,6 +84,8 @@ const SignalEngine = (() => {
     } catch {
       _watchlist = [];
     }
+    // Auto-dedup watchlist on load (cleanup legacy duplicates)
+    _watchlist = _dedup(_watchlist, w => w.nom?.toLowerCase().trim());
     return _watchlist;
   }
 
@@ -99,6 +101,28 @@ const SignalEngine = (() => {
     } catch {
       _signaux = [];
     }
+    // Auto-dedup signals on load (keep most recent by date_mise_a_jour)
+    _signaux = _dedup(_signaux, s => s.entreprise_nom?.toLowerCase().trim());
+    return _signaux;
+  }
+
+  function _dedup(arr, keyFn) {
+    const seen = new Map();
+    for (const item of arr) {
+      const key = keyFn(item);
+      if (!key) { seen.set(Symbol(), item); continue; }
+      const existing = seen.get(key);
+      if (!existing) {
+        seen.set(key, item);
+      } else {
+        // Keep the one with the most data (more recent or more filled)
+        const existingDate = existing.date_mise_a_jour || existing.date_ajout || '';
+        const itemDate = item.date_mise_a_jour || item.date_ajout || '';
+        if (itemDate > existingDate) seen.set(key, item);
+      }
+    }
+    return [...seen.values()];
+  }
     return _signaux;
   }
 
@@ -442,16 +466,22 @@ const SignalEngine = (() => {
   }
 
   async function _detectSignaux(entrepriseNom, siteTexte, articles, pappers) {
-    const system = `Tu es un analyste business specialise dans la detection de signaux declencheurs de besoins en DSI (Directeur des Systemes d'Information) pour des entreprises industrielles.
+    const system = `Tu es un analyste business specialise dans la detection de signaux declencheurs de besoins en DSI (Directeur des Systemes d'Information) pour tout type d'entreprise.
 
-Analyse les donnees fournies et detecte les signaux suivants :
-- investissement : Investissement industriel significatif (>10M EUR)
-- expansion : Extension multi-sites, ouverture de nouveaux sites
-- erp_mes : Projet ERP, SAP, MES, transformation digitale, SI
-- croissance : Croissance forte du CA (>15%)
-- rachat_lbo : Rachat, acquisition, LBO, fusion
-- internationalisation : Expansion internationale, export
-- recrutement_it : Recrutement de profils IT, DSI, CTO
+Analyse TOUTES les donnees fournies (site web, articles de presse, donnees Pappers) et detecte le maximum de signaux pertinents parmi :
+- investissement : Investissement significatif, levee de fonds, nouveau projet, demenagement, nouveaux locaux
+- expansion : Extension multi-sites, ouverture de filiales, nouveaux bureaux, croissance geographique
+- erp_mes : Projet ERP, SAP, MES, CRM, transformation digitale, migration SI, cybersecurite, cloud
+- croissance : Croissance du CA, augmentation des effectifs, nouveaux clients, nouveaux contrats importants
+- rachat_lbo : Rachat, acquisition, LBO, fusion, cession, changement d'actionnariat
+- internationalisation : Expansion internationale, export, nouveaux marches etrangers
+- recrutement_it : Recrutement IT, DSI, CTO, developpeurs, postes tech ouverts
+
+IMPORTANT :
+- Sois EXHAUSTIF : detecte tout signal meme faible ou indirect. Un recrutement, un demenagement, un nouveau client important sont des signaux.
+- Analyse CHAQUE article de presse individuellement — chacun peut contenir un signal different.
+- Si le site web mentionne des projets, actualites ou recrutements, ce sont des signaux.
+- Meme des indices faibles (nouvelle certification, nouveau partenariat, prix recu) meritent d'etre mentionnes avec une confiance basse.
 
 Reponds UNIQUEMENT en JSON valide avec cette structure :
 {
@@ -469,7 +499,7 @@ Reponds UNIQUEMENT en JSON valide avec cette structure :
   "justification": "Explication en 2 phrases du scoring"
 }
 
-Si aucun signal n'est detecte, retourne {"signaux":[],"score_besoin_dsi":10,"score_urgence":5,"score_complexite_si":5,"justification":"Aucun signal significatif detecte."}`;
+Si vraiment AUCUNE information exploitable n'est disponible, retourne {"signaux":[],"score_besoin_dsi":10,"score_urgence":5,"score_complexite_si":5,"justification":"Aucune donnee exploitable trouvee."}`;
 
     const articlesSummary = (articles || []).map(a => `[${a.date}] ${a.titre}\n${a.extrait}`).join('\n\n');
 
@@ -1461,12 +1491,10 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
   function _showScanProgress(containerId, current, total, currentName, status) {
     let bar = document.getElementById('se-scan-progress');
     if (!bar) {
-      const container = document.getElementById(containerId);
-      if (!container) return;
       const div = document.createElement('div');
       div.id = 'se-scan-progress';
-      div.style.cssText = 'position:sticky;top:0;z-index:100;background:linear-gradient(135deg,#1e40af,#3b82f6);color:#fff;border-radius:10px;padding:14px 18px;margin-bottom:16px;box-shadow:0 4px 12px rgba(59,130,246,0.3);';
-      container.prepend(div);
+      div.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;background:linear-gradient(135deg,#1e40af,#3b82f6);color:#fff;border-radius:12px;padding:16px 20px;min-width:340px;max-width:420px;box-shadow:0 8px 24px rgba(30,64,175,0.4);font-family:Inter,sans-serif;';
+      document.body.appendChild(div);
       bar = div;
     }
     const pct = total > 0 ? Math.round((current / total) * 100) : 0;
