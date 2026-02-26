@@ -667,7 +667,7 @@ const SignalEngine = (() => {
           par_page: options.par_page || '20',
         });
         if (options.code_naf) params.set('code_naf', options.code_naf);
-        if (options.effectif_min) params.set('effectif_min', String(options.effectif_min));
+        if (options.chiffre_affaires_min) params.set('chiffre_affaires_min', String(options.chiffre_affaires_min));
 
         const response = await fetch('https://api.pappers.fr/v2/recherche?' + params.toString());
         if (!response.ok) {
@@ -682,7 +682,25 @@ const SignalEngine = (() => {
 
         for (const r of results) {
           const effectif = _parseEffectif(r.tranche_effectif);
-          if (effectif < (config.effectif_min_decouverte || 50)) continue;
+          const ca = r.chiffre_affaires || 0;
+          const effectifMin = config.effectif_min_decouverte || 50;
+          const caMin = config.ca_min_decouverte || 2000000;
+          const hasFinancialData = (effectif > 0 || ca > 0);
+
+          if (hasFinancialData) {
+            // Has data: keep if CA OR effectif meets threshold
+            if (effectif < effectifMin && ca < caMin) continue;
+          } else {
+            // No financial data (confidential): keep only if targeted NAF + 5yr seniority
+            const nafCodes = config.codes_naf_cibles || CODES_NAF_EXTENDED;
+            const nafPrefix = (r.code_naf || '').substring(0, 2);
+            const isTargetedNaf = nafCodes.includes(nafPrefix);
+            const dateCreation = r.date_creation ? new Date(r.date_creation) : null;
+            const fiveYearsAgo = new Date();
+            fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
+            const hasSeniority = dateCreation && dateCreation <= fiveYearsAgo;
+            if (!isTargetedNaf || !hasSeniority) continue;
+          }
 
           allResults.push({
             siren: r.siren || '',
@@ -694,7 +712,7 @@ const SignalEngine = (() => {
             secteur_naf: r.code_naf || '',
             libelle_naf: r.libelle_code_naf || '',
             effectif: effectif,
-            ca: r.chiffre_affaires || 0,
+            ca: ca,
             forme_juridique: r.forme_juridique || '',
           });
         }
@@ -1671,7 +1689,9 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
 
     // --- Watchlist table events ---
     container.querySelectorAll('.se-btn-scan-one').forEach(btn => {
-      btn.addEventListener('click', () => _scanOneEntreprise(btn.dataset.id));
+      btn.addEventListener('click', async () => {
+        await _scanOneEntreprise(btn.dataset.id);
+      });
     });
     container.querySelectorAll('.se-btn-remove-wl').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -1737,7 +1757,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         const results = await _searchPappersByRegion(activeRegion, {
           code_naf: naf,
           par_page: '50',
-          effectif_min: config.effectif_min_decouverte || 50,
+          chiffre_affaires_min: config.ca_min_decouverte || 2000000,
         });
 
         // Dedup with existing watchlist
@@ -2407,15 +2427,14 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     const wlSirens = new Set(_watchlist.map(w => w.siren).filter(Boolean));
     const wlNoms = new Set(_watchlist.map(w => w.nom?.toLowerCase()));
     const candidates = [];
-    const effectifMin = config.effectif_min_decouverte || 50;
-
     for (const naf of nafBatch) {
       try {
         const results = await _searchPappersByRegion(activeRegion, {
           code_naf: naf,
           par_page: '50',
-          effectif_min: effectifMin,
+          chiffre_affaires_min: config.ca_min_decouverte || 2000000,
         });
+        console.log('[SignalEngine] Discovery NAF ' + naf + ': ' + results.length + ' results from Pappers');
         for (const r of results) {
           if (wlSirens.has(r.siren)) continue;
           if (wlNoms.has(r.nom.toLowerCase())) continue;
