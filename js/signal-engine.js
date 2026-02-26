@@ -2273,7 +2273,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         const mainSignal = s.signaux?.[0];
         const typeInfo = mainSignal ? SIGNAL_TYPES[mainSignal.type] : null;
         return `
-          <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f1f5f9;">
+          <div data-signal-id="${UI.escHtml(s.id)}" style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f1f5f9;cursor:pointer;border-radius:6px;transition:background 0.15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
             <span style="font-size:1.1rem;">${typeInfo?.icon || '📊'}</span>
             <div style="flex:1;min-width:0;">
               <div style="font-weight:500;font-size:0.8125rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${UI.escHtml(s.entreprise_nom)}</div>
@@ -2283,6 +2283,13 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
           </div>
         `;
       }).join('') + `<div style="text-align:right;margin-top:8px;"><a href="signaux.html" style="color:#3b82f6;font-size:0.8125rem;">Voir tout →</a></div>`;
+
+      // Make each signal row clickable to open detail modal
+      container.querySelectorAll('[data-signal-id]').forEach(row => {
+        row.addEventListener('click', () => {
+          showSignalDetail(row.dataset.signalId);
+        });
+      });
     } catch {
       container.innerHTML = '';
     }
@@ -2796,6 +2803,11 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
   // PUBLIC API
   // ============================================================
 
+  async function showSignalDetail(signalId) {
+    await _loadSignaux();
+    _showSignalDetail(signalId);
+  }
+
   return {
     renderPage,
     renderDashboardWidget,
@@ -2805,6 +2817,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     removeFromWatchlist,
     analyseEntreprise,
     generateApproche,
+    showSignalDetail,
     SIGNAL_TYPES,
   };
 
