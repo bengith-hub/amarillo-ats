@@ -351,6 +351,7 @@
             const fu = await createFollowUp({ ...a, ...data });
             if (fu) UI.toast(`Action suivante créée : ${fu.action}`);
           }
+          await Store.syncRelanceDates(data);
         } else {
           data.id = API.generateId('act');
           data.phase = '';
@@ -359,6 +360,7 @@
           data.moment_suivi = '';
           await Store.add('actions', data);
           UI.toast('Action créée');
+          await Store.syncRelanceDates(data);
         }
         location.reload();
       }

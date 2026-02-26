@@ -67,7 +67,7 @@
       const todayIso = new Date().toISOString().split('T')[0];
       const doneActions = actions.filter(a => a.statut === 'Fait' && a.date_action);
       const computedDernier = doneActions.length > 0 ? doneActions.reduce((max, a) => a.date_action > max ? a.date_action : max, '') : null;
-      const futureRelances = actions.filter(a => (a.statut === 'À faire' || a.statut === 'A faire' || a.statut === 'En cours') && a.date_relance && a.date_relance >= todayIso);
+      const futureRelances = actions.filter(a => a.date_relance && a.date_relance >= todayIso && a.statut !== 'Annulé');
       const computedRelance = futureRelances.length > 0 ? futureRelances.reduce((min, a) => a.date_relance < min ? a.date_relance : min, futureRelances[0].date_relance) : null;
       const updates = {};
       if (computedDernier && computedDernier !== d.dernier_contact) updates.dernier_contact = computedDernier;
@@ -92,7 +92,16 @@
               </div>
             </div>
           </div>
-          <div style="display:flex;gap:8px;align-items:center;">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            ${d.prochaine_relance ? (() => {
+              const isOverdue = d.prochaine_relance < todayIso;
+              const isToday = d.prochaine_relance === todayIso;
+              const bgColor = isOverdue ? '#fef2f2' : isToday ? '#fffbeb' : '#f0fdf4';
+              const borderColor = isOverdue ? '#fecaca' : isToday ? '#fde68a' : '#bbf7d0';
+              const textColor = isOverdue ? '#dc2626' : isToday ? '#d97706' : '#16a34a';
+              const label = isOverdue ? 'RELANCE EN RETARD' : isToday ? 'RELANCE AUJOURD\'HUI' : 'Prochaine relance';
+              return `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:6px;font-size:0.75rem;font-weight:700;background:${bgColor};border:1.5px solid ${borderColor};color:${textColor};" title="Prochaine relance prévue">📅 ${label} : ${UI.formatDate(d.prochaine_relance)}</span>`;
+            })() : ''}
             ${UI.statusBadge(d.niveau_relation || 'À contacter', STATUTS_RELATION, { entity: 'decideurs', recordId: id, fieldName: 'niveau_relation', onUpdate: () => renderPage() })}
             ${UI.statusBadge(d.priorite_prospection || 'Moyenne', PRIORITES, { entity: 'decideurs', recordId: id, fieldName: 'priorite_prospection', onUpdate: () => renderPage() })}
             <button class="btn btn-danger btn-sm" id="btn-delete-decideur" title="Supprimer ce décideur">🗑️</button>
@@ -202,7 +211,7 @@
         entity: 'decideurs', recordId: id,
         fields: [
           { key: 'fonction', label: 'Fonction', type: 'text' },
-          { key: 'fonction_macro', label: 'Fonction macro', type: 'text' },
+          { key: 'fonction_macro', label: 'Fonction macro', type: 'select', options: Referentiels.get('decideur_fonctions_macro') },
           { key: 'niveau_hierarchique', label: 'Niveau hiérarchique', type: 'select', options: Referentiels.get('decideur_niveaux_hierarchiques') },
           { key: 'role_decision', label: 'Rôle décision', type: 'select', options: Referentiels.get('decideur_roles_decision') },
           { key: 'perimetre', label: 'Périmètre', type: 'text' },
@@ -215,7 +224,8 @@
         entity: 'decideurs', recordId: id,
         fields: [
           { key: 'email', label: 'Email', type: 'text', render: (v) => v ? `<a href="mailto:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
-          { key: 'telephone', label: 'Téléphone', type: 'text', render: (v) => v ? `<a href="tel:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
+          { key: 'telephone', label: 'Tél. pro', type: 'text', render: (v) => v ? `<a href="tel:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
+          { key: 'telephone_mobile', label: 'Tél. mobile', type: 'text', render: (v) => v ? `<a href="tel:${UI.escHtml(v)}" class="entity-link">${UI.escHtml(v)}</a>` : '' },
           { key: 'linkedin', label: 'LinkedIn', type: 'text', render: (v) => v ? UI.linkedinBadge(v, { compact: true }) : '' },
         ]
       });
@@ -233,7 +243,15 @@
         entity: 'decideurs', recordId: id,
         fields: [
           { key: 'dernier_contact', label: 'Dernier contact', type: 'date', render: (v) => UI.formatDate(v) },
-          { key: 'prochaine_relance', label: 'Prochaine relance', type: 'date', render: (v) => UI.formatDate(v) },
+          { key: 'prochaine_relance', label: 'Prochaine relance', type: 'date', render: (v) => {
+            if (!v) return '';
+            const today = new Date().toISOString().split('T')[0];
+            const isOverdue = v < today;
+            const isToday = v === today;
+            const color = isOverdue ? '#dc2626' : isToday ? '#d97706' : '#16a34a';
+            const weight = (isOverdue || isToday) ? 'font-weight:700;' : '';
+            return `<span style="color:${color};${weight}">${UI.formatDate(v)}${isOverdue ? ' (en retard)' : isToday ? ' (aujourd\'hui)' : ''}</span>`;
+          }},
         ]
       });
 
@@ -300,6 +318,7 @@
               priorite: null, phase: '', finalite: '', objectif: '', moment_suivi: '',
             };
             await Store.add('actions', action);
+            await Store.syncRelanceDates(action);
             UI.toast('Action créée');
             renderPage();
           }
@@ -443,7 +462,7 @@
         width: 640,
         draftKey: 'action_edit_' + a.id,
         onSave: async (overlay) => {
-          await Store.update('actions', a.id, {
+          const updatedData = {
             action: overlay.querySelector('#ea-action').value.trim(),
             type_action: overlay.querySelector('#ea-type').value,
             canal: overlay.querySelector('#ea-canal').value,
@@ -454,7 +473,9 @@
             message_notes: overlay.querySelector('#ea-notes').value.trim(),
             next_step: overlay.querySelector('#ea-next').value.trim(),
             date_relance: overlay.querySelector('#ea-relance').value || null,
-          });
+          };
+          await Store.update('actions', a.id, updatedData);
+          await Store.syncRelanceDates({ ...a, ...updatedData });
           UI.toast('Action mise à jour');
           renderPage();
         }

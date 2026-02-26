@@ -263,10 +263,41 @@ const Store = (() => {
     return results.slice(0, 15);
   }
 
+  // Sync prochaine_relance on décideur + entreprise after action create/update
+  async function syncRelanceDates(action) {
+    if (!action) return;
+    const todayIso = new Date().toISOString().split('T')[0];
+
+    if (action.decideur_id) {
+      const decActions = filter('actions', a => a.decideur_id === action.decideur_id);
+      const futureRelances = decActions.filter(a => a.date_relance && a.date_relance >= todayIso && a.statut !== 'Annulé');
+      const earliest = futureRelances.length > 0 ? futureRelances.reduce((min, a) => a.date_relance < min ? a.date_relance : min, futureRelances[0].date_relance) : null;
+      const doneActions = decActions.filter(a => a.statut === 'Fait' && a.date_action);
+      const latestContact = doneActions.length > 0 ? doneActions.reduce((max, a) => a.date_action > max ? a.date_action : max, '') : null;
+      const updates = {};
+      if (earliest !== null) updates.prochaine_relance = earliest;
+      if (latestContact) updates.dernier_contact = latestContact;
+      if (Object.keys(updates).length > 0) await update('decideurs', action.decideur_id, updates);
+    }
+
+    if (action.entreprise_id) {
+      const entActions = filter('actions', a => a.entreprise_id === action.entreprise_id);
+      const futureRelances = entActions.filter(a => a.date_relance && a.date_relance >= todayIso && a.statut !== 'Annulé');
+      const earliest = futureRelances.length > 0 ? futureRelances.reduce((min, a) => a.date_relance < min ? a.date_relance : min, futureRelances[0].date_relance) : null;
+      const doneActions = entActions.filter(a => a.statut === 'Fait' && a.date_action);
+      const latestContact = doneActions.length > 0 ? doneActions.reduce((max, a) => a.date_action > max ? a.date_action : max, '') : null;
+      const updates = {};
+      if (earliest !== null) updates.prochaine_relance = earliest;
+      if (latestContact) updates.dernier_contact = latestContact;
+      if (Object.keys(updates).length > 0) await update('entreprises', action.entreprise_id, updates);
+    }
+  }
+
   return {
     load, loadAll, get, findById, filter,
     add, update, remove,
     refresh, refreshAll,
-    on, onSyncError, search, resolve
+    on, onSyncError, search, resolve,
+    syncRelanceDates
   };
 })();
