@@ -145,6 +145,11 @@ const Referentiels = (() => {
       'Montpellier', 'Nice', 'Grenoble', 'France entière',
       'Remote France', 'International', 'Autre'
     ],
+
+    // --- JOURNAL DE SUIVI ---
+    journal_categories: [
+      'Contexte', 'Relation', 'Signal', 'Besoin', 'Feedback', 'Autre'
+    ],
   };
 
   // ============================================================
@@ -322,6 +327,15 @@ const Referentiels = (() => {
         color: '#64748b',
         items: [
           { key: 'localisations', label: 'Localisations' },
+        ]
+      },
+      {
+        id: 'journal',
+        label: 'Journal de suivi',
+        icon: '📓',
+        color: '#6366f1',
+        items: [
+          { key: 'journal_categories', label: 'Catégories du journal' },
         ]
       },
     ];

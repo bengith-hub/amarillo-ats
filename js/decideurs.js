@@ -36,7 +36,8 @@
         return name.includes(q) ||
           (d.fonction || '').toLowerCase().includes(q) ||
           (d.email || '').toLowerCase().includes(q) ||
-          (d.telephone || '').toLowerCase().includes(q);
+          (d.telephone || '').toLowerCase().includes(q) ||
+          (d.telephone_mobile || '').toLowerCase().includes(q);
       });
     }
 
@@ -224,9 +225,10 @@
           <select id="d-perimetre"><option value="">—</option>${['France','Europe','International'].map(s=>`<option value="${s}" ${d.perimetre===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
       </div>
+      <div class="form-group"><label>Email</label><input type="email" id="d-email" value="${UI.escHtml(d.email||'')}" /></div>
       <div class="form-row">
-        <div class="form-group"><label>Email</label><input type="email" id="d-email" value="${UI.escHtml(d.email||'')}" /></div>
-        <div class="form-group"><label>Téléphone</label><input type="tel" id="d-tel" value="${UI.escHtml(d.telephone||'')}" /></div>
+        <div class="form-group"><label>Tél. pro</label><input type="tel" id="d-tel" value="${UI.escHtml(d.telephone||'')}" /></div>
+        <div class="form-group"><label>Tél. mobile</label><input type="tel" id="d-tel-mobile" value="${UI.escHtml(d.telephone_mobile||'')}" /></div>
       </div>
       <div class="form-group"><label>LinkedIn</label><input type="url" id="d-linkedin" value="${UI.escHtml(d.linkedin||'')}" /></div>
       <div class="form-group"><label>Localisation</label><input type="text" id="d-loc" value="${UI.escHtml(d.localisation||'')}" /></div>
@@ -249,6 +251,7 @@
           perimetre: overlay.querySelector('#d-perimetre').value,
           email: overlay.querySelector('#d-email').value.trim(),
           telephone: overlay.querySelector('#d-tel').value.trim(),
+          telephone_mobile: overlay.querySelector('#d-tel-mobile').value.trim(),
           linkedin: overlay.querySelector('#d-linkedin').value.trim(),
           localisation: overlay.querySelector('#d-loc').value.trim(),
           notes_relation: overlay.querySelector('#d-notes').value.trim(),
