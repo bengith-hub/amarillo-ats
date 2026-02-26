@@ -212,6 +212,11 @@
       UI.inlineEdit('dec-info-fields', {
         entity: 'decideurs', recordId: id,
         fields: [
+          { key: 'entreprise_id', label: 'Entreprise', type: 'entreprise_autocomplete', render: (v) => {
+            if (!v) return '';
+            const ent = Store.resolve('entreprises', v);
+            return ent ? `<a href="entreprise.html?id=${ent.id}" class="entity-link">${UI.escHtml(ent.displayName)}</a>` : '';
+          }},
           { key: 'fonction', label: 'Fonction', type: 'text' },
           { key: 'fonction_macro', label: 'Fonction macro', type: 'select', options: Referentiels.get('decideur_fonctions_macro') },
           { key: 'niveau_hierarchique', label: 'Niveau hiérarchique', type: 'select', options: Referentiels.get('decideur_niveaux_hierarchiques') },

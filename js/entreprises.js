@@ -221,6 +221,7 @@
         </div>
       </div>
       <div class="form-group"><label>Site web</label><input type="url" id="e-site" value="${UI.escHtml(e.site_web||'')}" /></div>
+      <div class="form-group"><label>LinkedIn</label><input type="url" id="e-linkedin" value="${UI.escHtml(e.linkedin||'')}" placeholder="https://www.linkedin.com/company/..." /></div>
       <div class="form-group"><label>Téléphone</label><input type="tel" id="e-tel" value="${UI.escHtml(e.telephone||'')}" /></div>
       <div class="form-group"><label>Adresse siège social</label><textarea id="e-siege-adresse" placeholder="Rue, bâtiment...">${UI.escHtml(e.siege_adresse||'')}</textarea></div>
       <div class="form-row">
@@ -246,6 +247,7 @@
           priorite: overlay.querySelector('#e-prio').value,
           statut: overlay.querySelector('#e-statut').value,
           site_web: overlay.querySelector('#e-site').value.trim(),
+          linkedin: overlay.querySelector('#e-linkedin').value.trim(),
           telephone: overlay.querySelector('#e-tel').value.trim(),
           siege_adresse: overlay.querySelector('#e-siege-adresse').value.trim(),
           siege_code_postal: overlay.querySelector('#e-siege-cp').value.trim(),
@@ -317,7 +319,7 @@
           const fieldMap = {
             nom: '#e-nom', secteur: '#e-secteur', taille: '#e-taille',
             ca: '#e-ca', localisation: '#e-loc', site_web: '#e-site',
-            telephone: '#e-tel', siege_adresse: '#e-siege-adresse',
+            linkedin: '#e-linkedin', telephone: '#e-tel', siege_adresse: '#e-siege-adresse',
             siege_code_postal: '#e-siege-cp', siege_ville: '#e-siege-ville',
             angle_approche: '#e-angle', notes: '#e-notes',
           };
