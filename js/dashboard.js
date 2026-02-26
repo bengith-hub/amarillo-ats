@@ -1,4 +1,4 @@
-// Amarillo ATS — Dashboard logic (v2 — actionnable)
+// Amarillo ATS — Dashboard logic (v3 — sections collapsibles)
 
 (async function() {
   if (!API.isConfigured()) {
@@ -56,17 +56,91 @@
          || a.type_action === 'Relance décideur');
   }
 
+  function isTeaserAction(a) {
+    return a.type_action === 'Envoi teaser'
+        || a.type_action === 'Retour teaser'
+        || a.type_action === 'Relance teaser';
+  }
+
+  // ========== Collapsible sections management ==========
+  const SECTION_STORAGE_KEY = 'ats_dashboard_sections';
+
+  function getSectionStates() {
+    try {
+      return JSON.parse(localStorage.getItem(SECTION_STORAGE_KEY) || '{}');
+    } catch (e) { return {}; }
+  }
+
+  function saveSectionState(sectionId, expanded) {
+    const states = getSectionStates();
+    states[sectionId] = expanded;
+    localStorage.setItem(SECTION_STORAGE_KEY, JSON.stringify(states));
+  }
+
+  window.toggleSection = function(sectionId) {
+    const card = document.getElementById('section-' + sectionId);
+    if (!card) return;
+    const isExpanded = card.classList.toggle('expanded');
+    saveSectionState(sectionId, isExpanded);
+  };
+
+  function restoreSectionStates() {
+    const states = getSectionStates();
+    Object.entries(states).forEach(([sectionId, expanded]) => {
+      const card = document.getElementById('section-' + sectionId);
+      if (card && expanded) card.classList.add('expanded');
+    });
+  }
+
+  // Helper: resolve contact name
+  function resolveWho(a) {
+    if (a.candidat_id) return Store.resolve('candidats', a.candidat_id)?.displayName || '';
+    if (a.decideur_id) return Store.resolve('decideurs', a.decideur_id)?.displayName || '';
+    return '';
+  }
+
+  // Helper: render an action row for collapsible lists
+  function renderActionRow(a, options = {}) {
+    const who = resolveWho(a);
+    const isOverdue = a.date_action && a.date_action < today;
+    const isRelance = a.date_relance && a.date_relance <= today;
+    const bgColor = options.bgColor || (isOverdue ? '#fff5f5' : '#f8fafc');
+    const borderColor = options.borderColor || (isOverdue ? '#fecaca' : '#e2e8f0');
+    const titleColor = isOverdue ? '#dc2626' : '#1e293b';
+
+    return `
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:${bgColor};border:1px solid ${borderColor};border-radius:8px;">
+        <div style="flex-shrink:0;width:20px;text-align:center;">
+          ${a.priorite === 'Haute' ? '🔴' : a.priorite === 'Moyenne' ? '🟡' : ''}
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:0.8125rem;font-weight:600;color:${titleColor};">${UI.escHtml(a.action || '')}</div>
+          <div style="font-size:0.75rem;color:#64748b;">
+            ${who ? who + ' · ' : ''}${UI.badge(a.canal || '')} · ${UI.formatDate(a.date_action)}
+            ${isRelance ? ' · <span style="color:#dc2626;">Relance ' + UI.formatDate(a.date_relance) + '</span>' : ''}
+          </div>
+        </div>
+        ${a.next_step ? `<div style="font-size:0.75rem;color:#c9a000;max-width:180px;text-align:right;flex-shrink:0;">→ ${UI.escHtml(a.next_step)}</div>` : ''}
+        <button class="btn btn-sm" onclick="event.stopPropagation(); window.__markDone('${a.id}')"
+          style="white-space:nowrap;font-size:0.6875rem;background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;flex-shrink:0;">
+          ✓ Fait
+        </button>
+      </div>
+    `;
+  }
+
+  // ========== Render all sections ==========
   renderKPIs();
-  renderTeaserAlert();
-  renderTeaserKPIs();
-  renderProspection();
   renderUrgentBlock();
+  renderProspectionSection();
+  renderCandidatsSection();
   renderNextSteps();
-  renderTodoActions();
-  renderRelances();
-  renderPipelineCandidats();
-  renderPipelineMissions();
-  renderRecentActivity();
+  restoreSectionStates();
+
+  // Signal Engine widget
+  if (typeof SignalEngine !== 'undefined') {
+    SignalEngine.renderDashboardWidget('dashboard-signaux');
+  }
 
   // ========== KPIs ==========
   function renderKPIs() {
@@ -76,7 +150,7 @@
     const activeStatuses = ['Approché', 'En qualification', 'Shortlisté', 'Présenté'];
     const activeCandidats = candidats.filter(c => activeStatuses.includes(c.statut));
     const pendingActions = actions.filter(a => isPending(a.statut));
-    const overdueActions = pendingActions.filter(a => a.date_action && a.date_action < today);
+    const overdueActions = actions.filter(a => isActive(a.statut) && a.date_action && a.date_action < today);
     const totalFees = activeMissions.reduce((sum, m) => sum + (m.fee_estimee || 0), 0);
     const doneThisWeek = actions.filter(a => isDone(a.statut) && a.date_action >= weekAgo);
 
@@ -86,218 +160,333 @@
       (overdueActions.length > 0 ? ` <span style="font-size:0.75rem;color:#dc2626;font-weight:600;">(${overdueActions.length} en retard)</span>` : '');
     document.getElementById('kpi-fees').textContent = UI.formatCurrency(totalFees);
 
-    // Sub info
     const kpiSub = document.getElementById('kpi-actions-sub');
     if (kpiSub) kpiSub.textContent = `${doneThisWeek.length} faites cette semaine`;
   }
 
-  // ========== Teaser Alert Banner ==========
-  function renderTeaserAlert() {
-    // Collect all teaser presentations across all candidats with due relances
+  // ========== Aujourd'hui & En retard ==========
+  function renderUrgentBlock() {
+    const container = document.getElementById('dashboard-urgent');
+    if (!container) return;
+
+    // All active actions due today or overdue
+    const todayActions = actions.filter(a =>
+      isActive(a.statut) && a.date_action && a.date_action === today
+    );
+    const overdue = actions.filter(a =>
+      isActive(a.statut) && a.date_action && a.date_action < today
+    );
+    const overdueRelances = actions.filter(a =>
+      a.date_relance && a.date_relance <= today && isActive(a.statut)
+    );
+
+    // Deduplicate
+    const allUrgent = [...new Map(
+      [...overdue, ...todayActions, ...overdueRelances].map(a => [a.id, a])
+    ).values()];
+
+    // Sort: overdue first (oldest first), then today
+    allUrgent.sort((a, b) => {
+      const aDate = a.date_action || '';
+      const bDate = b.date_action || '';
+      return aDate.localeCompare(bDate);
+    });
+
+    // Update count badge
+    const countEl = document.getElementById('urgent-count');
+    if (countEl) {
+      countEl.textContent = allUrgent.length > 0
+        ? `${allUrgent.length} action${allUrgent.length > 1 ? 's' : ''}`
+        : '';
+    }
+
+    if (allUrgent.length === 0) {
+      container.innerHTML = '<div style="text-align:center;padding:24px;color:#16a34a;font-weight:600;">✓ Rien d\'urgent — tout est à jour !</div>';
+      return;
+    }
+
+    container.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:8px;max-height:600px;overflow-y:auto;">
+        ${allUrgent.map(a => {
+          const who = resolveWho(a);
+          const isRelance = a.date_relance && a.date_relance <= today;
+          const isOverdue = a.date_action && a.date_action < today;
+          const bgColor = isOverdue ? '#fff5f5' : '#fffbeb';
+          const borderColor = isOverdue ? '#fecaca' : '#fde68a';
+          return `
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:${bgColor};border:1px solid ${borderColor};border-radius:8px;">
+              <span style="font-size:1.1rem;">${isOverdue ? '⚠️' : isRelance ? '🔔' : '📅'}</span>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:0.8125rem;font-weight:600;color:${isOverdue ? '#dc2626' : '#92400e'};">${UI.escHtml(a.action || '')}</div>
+                <div style="font-size:0.75rem;color:#64748b;">
+                  ${who ? who + ' · ' : ''}${UI.badge(a.canal || '')}
+                  · ${UI.badge(a.statut || 'À faire')}
+                  · ${isRelance ? 'Relance ' : ''}${UI.formatDate(isRelance ? a.date_relance : a.date_action)}
+                </div>
+              </div>
+              ${a.next_step ? `<div style="font-size:0.75rem;color:#c9a000;max-width:200px;text-align:right;flex-shrink:0;">→ ${UI.escHtml(a.next_step)}</div>` : ''}
+              <button class="btn btn-sm" onclick="event.stopPropagation(); window.__markDone('${a.id}')"
+                style="white-space:nowrap;font-size:0.6875rem;background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;flex-shrink:0;">
+                ✓ Fait
+              </button>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  // ========== Section collapsible : Prospection ==========
+  function renderProspectionSection() {
+    const summaryEl = document.getElementById('summary-prospection');
+    const contentEl = document.getElementById('content-prospection');
+    if (!contentEl) return;
+
+    // Prospection actions (decideur-linked prospection types)
+    const prospectionActions = actions.filter(isProspectionAction);
+    const prospectionPending = prospectionActions.filter(a => isActive(a.statut));
+    const prospectionOverdue = prospectionActions.filter(a => isActive(a.statut) && a.date_action && a.date_action < today);
+
+    // Teaser data
     const allTeasers = [];
     candidats.forEach(c => {
       (c.presentations || []).forEach(p => {
         if (p.type === 'teaser') allTeasers.push({ ...p, candidat_id: c.id });
       });
     });
-
     const dueRelances = allTeasers.filter(t =>
       t.relance_prevue && t.relance_prevue <= today && t.email_status === 'sent' && t.relance_auto
     );
 
-    const alertContainer = document.getElementById('dashboard-teaser-alert');
-    if (!alertContainer) {
-      // Create alert container above the urgent block
-      const urgentEl = document.getElementById('dashboard-urgent');
-      if (!urgentEl) return;
-      const div = document.createElement('div');
-      div.id = 'dashboard-teaser-alert';
-      urgentEl.parentNode.insertBefore(div, urgentEl);
+    // Teaser actions
+    const teaserActions = actions.filter(a => isTeaserAction(a) && isActive(a.statut));
+
+    const totalPending = prospectionPending.length + teaserActions.length;
+    const totalOverdue = prospectionOverdue.length;
+
+    // Summary badges
+    if (summaryEl) {
+      summaryEl.innerHTML = `
+        ${totalPending > 0 ? `<span class="count-badge">${totalPending} à faire</span>` : ''}
+        ${totalOverdue > 0 ? `<span class="count-badge overdue">${totalOverdue} en retard</span>` : ''}
+        ${dueRelances.length > 0 ? `<span class="count-badge overdue">${dueRelances.length} relance${dueRelances.length > 1 ? 's' : ''} teaser</span>` : ''}
+      `;
     }
 
-    const el = document.getElementById('dashboard-teaser-alert');
-    if (!el) return;
+    // Content
+    let html = '';
 
-    if (dueRelances.length === 0) {
-      el.innerHTML = '';
-      return;
-    }
-
-    el.innerHTML = `
-      <div style="background:#FFFDF0;border:1px solid #FEE566;border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <span style="font-size:1.25rem;">✈️</span>
-          <div>
-            <div style="font-size:0.875rem;font-weight:700;color:#92780c;">${dueRelances.length} relance${dueRelances.length > 1 ? 's' : ''} teaser en attente</div>
-            <div style="font-size:0.75rem;color:#b8960a;">Des profils envoyés en teaser n'ont pas reçu de réponse et la date de relance est dépassée.</div>
+    // Teaser alert banner (if relances due)
+    if (dueRelances.length > 0) {
+      html += `
+        <div style="background:#FFFDF0;border:1px solid #FEE566;border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:1.25rem;">✈️</span>
+            <div>
+              <div style="font-size:0.875rem;font-weight:700;color:#92780c;">${dueRelances.length} relance${dueRelances.length > 1 ? 's' : ''} teaser en attente</div>
+              <div style="font-size:0.75rem;color:#b8960a;">Des profils envoyés en teaser n'ont pas reçu de réponse et la date de relance est dépassée.</div>
+            </div>
           </div>
+          <a href="actions.html#teasers" class="btn btn-sm" style="background:#1e293b;color:#FECC02;border:none;font-size:0.75rem;">Voir les relances</a>
         </div>
-        <a href="actions.html" class="btn btn-sm" style="background:#1e293b;color:#FECC02;border:none;font-size:0.75rem;">Voir les relances</a>
-      </div>
-    `;
-  }
-
-  // ========== Teaser KPIs ==========
-  function renderTeaserKPIs() {
-    const kpiContainer = document.getElementById('dashboard-teaser-kpis');
-    if (!kpiContainer) return;
-
-    const allTeasers = [];
-    candidats.forEach(c => {
-      (c.presentations || []).forEach(p => {
-        if (p.type === 'teaser') allTeasers.push(p);
-      });
-    });
-
-    if (allTeasers.length === 0) {
-      kpiContainer.innerHTML = '';
-      return;
+      `;
     }
 
-    const sent = allTeasers.filter(t => t.email_status === 'sent').length;
-    const replied = allTeasers.filter(t => t.email_status === 'replied').length;
-    const interested = allTeasers.filter(t => t.statut_retour === 'Intéressé' || t.statut_retour === 'Entretien planifié').length;
-    const noReply = allTeasers.filter(t => t.email_status === 'no-reply').length;
-    const total = allTeasers.length;
-    const taux = total > 0 ? Math.round((replied + interested) / total * 100) : 0;
-
-    kpiContainer.innerHTML = `
-      <div style="display:flex;gap:16px;flex-wrap:wrap;">
-        <div style="flex:1;min-width:100px;background:#f8fafc;border-radius:8px;padding:12px;text-align:center;">
-          <div style="font-size:0.6875rem;color:#64748b;text-transform:uppercase;font-weight:600;">Envoyés</div>
-          <div style="font-size:1.25rem;font-weight:700;color:#1e293b;">${total}</div>
-        </div>
-        <div style="flex:1;min-width:100px;background:#eff6ff;border-radius:8px;padding:12px;text-align:center;">
-          <div style="font-size:0.6875rem;color:#3b82f6;text-transform:uppercase;font-weight:600;">En attente</div>
-          <div style="font-size:1.25rem;font-weight:700;color:#3b82f6;">${sent}</div>
-        </div>
-        <div style="flex:1;min-width:100px;background:#f0fdf4;border-radius:8px;padding:12px;text-align:center;">
-          <div style="font-size:0.6875rem;color:#16a34a;text-transform:uppercase;font-weight:600;">Répondus</div>
-          <div style="font-size:1.25rem;font-weight:700;color:#16a34a;">${replied + interested}</div>
-        </div>
-        <div style="flex:1;min-width:100px;background:#FFFDF0;border-radius:8px;padding:12px;text-align:center;">
-          <div style="font-size:0.6875rem;color:#c9a000;text-transform:uppercase;font-weight:600;">Taux réponse</div>
-          <div style="font-size:1.25rem;font-weight:700;color:#c9a000;">${taux}%</div>
-        </div>
-      </div>
-    `;
-  }
-
-  // ========== Prospection KPIs ==========
-  function renderProspection() {
-    const kpiContainer = document.getElementById('dashboard-prospection-kpis');
-    if (!kpiContainer) return;
-
-    const prospectionActions = actions.filter(isProspectionAction);
-
+    // Prospection KPIs
     const todayPending = prospectionActions.filter(a =>
       isPending(a.statut) && a.date_action && a.date_action <= today
     ).length;
-
     const doneThisWeek = prospectionActions.filter(a =>
       isDone(a.statut) && a.date_action && a.date_action >= weekAgo
     ).length;
-
     const totalDone = prospectionActions.filter(a => isDone(a.statut)).length;
     const withResponse = prospectionActions.filter(a => isDone(a.statut) && a.reponse).length;
     const tauxReponse = totalDone > 0 ? Math.round(withResponse / totalDone * 100) : 0;
 
-    const totalPending = prospectionActions.filter(a => isPending(a.statut)).length;
-
-    kpiContainer.innerHTML = `
-      <div style="display:flex;gap:16px;flex-wrap:wrap;">
-        <div style="flex:1;min-width:100px;background:#faf5ff;border-radius:8px;padding:12px;text-align:center;">
-          <div style="font-size:0.6875rem;color:#7c3aed;text-transform:uppercase;font-weight:600;">Appels aujourd'hui</div>
-          <div style="font-size:1.25rem;font-weight:700;color:#7c3aed;">${todayPending}</div>
-        </div>
-        <div style="flex:1;min-width:100px;background:#f5f3ff;border-radius:8px;padding:12px;text-align:center;">
-          <div style="font-size:0.6875rem;color:#8b5cf6;text-transform:uppercase;font-weight:600;">Faits cette semaine</div>
-          <div style="font-size:1.25rem;font-weight:700;color:#8b5cf6;">${doneThisWeek}</div>
-        </div>
-        <div style="flex:1;min-width:100px;background:#ede9fe;border-radius:8px;padding:12px;text-align:center;">
-          <div style="font-size:0.6875rem;color:#6d28d9;text-transform:uppercase;font-weight:600;">Taux réponse</div>
-          <div style="font-size:1.25rem;font-weight:700;color:#6d28d9;">${tauxReponse}%</div>
-        </div>
-        <div style="flex:1;min-width:100px;background:#f3e8ff;border-radius:8px;padding:12px;text-align:center;">
-          <div style="font-size:0.6875rem;color:#9333ea;text-transform:uppercase;font-weight:600;">En attente</div>
-          <div style="font-size:1.25rem;font-weight:700;color:#9333ea;">${totalPending}</div>
+    html += `
+      <div style="margin-bottom:16px;">
+        <div style="font-size:0.75rem;font-weight:600;color:#64748b;text-transform:uppercase;margin-bottom:8px;">📞 Prospection</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:80px;background:#faf5ff;border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:0.625rem;color:#7c3aed;text-transform:uppercase;font-weight:600;">Aujourd'hui</div>
+            <div style="font-size:1.125rem;font-weight:700;color:#7c3aed;">${todayPending}</div>
+          </div>
+          <div style="flex:1;min-width:80px;background:#f5f3ff;border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:0.625rem;color:#8b5cf6;text-transform:uppercase;font-weight:600;">Faits/sem.</div>
+            <div style="font-size:1.125rem;font-weight:700;color:#8b5cf6;">${doneThisWeek}</div>
+          </div>
+          <div style="flex:1;min-width:80px;background:#ede9fe;border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:0.625rem;color:#6d28d9;text-transform:uppercase;font-weight:600;">Taux rép.</div>
+            <div style="font-size:1.125rem;font-weight:700;color:#6d28d9;">${tauxReponse}%</div>
+          </div>
         </div>
       </div>
     `;
-  }
 
-  // ========== Bloc Urgent (overdue + relances dépassées) ==========
-  function renderUrgentBlock() {
-    const container = document.getElementById('dashboard-urgent');
-    if (!container) return;
+    // Teaser KPIs (if teasers exist)
+    if (allTeasers.length > 0) {
+      const sent = allTeasers.filter(t => t.email_status === 'sent').length;
+      const replied = allTeasers.filter(t => t.email_status === 'replied').length;
+      const interested = allTeasers.filter(t => t.statut_retour === 'Intéressé' || t.statut_retour === 'Entretien planifié').length;
+      const total = allTeasers.length;
+      const taux = total > 0 ? Math.round((replied + interested) / total * 100) : 0;
 
-    const overdue = actions.filter(a =>
-      isPending(a.statut) && a.date_action && a.date_action < today
-    );
-    const overdueRelances = actions.filter(a =>
-      a.date_relance && a.date_relance <= today && isActive(a.statut)
-    );
-    const urgentItems = [...new Map([...overdue, ...overdueRelances].map(a => [a.id, a])).values()];
-
-    if (urgentItems.length === 0) {
-      container.innerHTML = '<div style="text-align:center;padding:24px;color:#16a34a;font-weight:600;">✓ Rien d\'urgent — tout est à jour !</div>';
-      return;
+      html += `
+        <div style="margin-bottom:16px;">
+          <div style="font-size:0.75rem;font-weight:600;color:#64748b;text-transform:uppercase;margin-bottom:8px;">✈️ Teasers</div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:80px;background:#f8fafc;border-radius:8px;padding:10px;text-align:center;">
+              <div style="font-size:0.625rem;color:#64748b;text-transform:uppercase;font-weight:600;">Envoyés</div>
+              <div style="font-size:1.125rem;font-weight:700;color:#1e293b;">${total}</div>
+            </div>
+            <div style="flex:1;min-width:80px;background:#eff6ff;border-radius:8px;padding:10px;text-align:center;">
+              <div style="font-size:0.625rem;color:#3b82f6;text-transform:uppercase;font-weight:600;">En attente</div>
+              <div style="font-size:1.125rem;font-weight:700;color:#3b82f6;">${sent}</div>
+            </div>
+            <div style="flex:1;min-width:80px;background:#f0fdf4;border-radius:8px;padding:10px;text-align:center;">
+              <div style="font-size:0.625rem;color:#16a34a;text-transform:uppercase;font-weight:600;">Répondus</div>
+              <div style="font-size:1.125rem;font-weight:700;color:#16a34a;">${replied + interested}</div>
+            </div>
+            <div style="flex:1;min-width:80px;background:#FFFDF0;border-radius:8px;padding:10px;text-align:center;">
+              <div style="font-size:0.625rem;color:#c9a000;text-transform:uppercase;font-weight:600;">Taux rép.</div>
+              <div style="font-size:1.125rem;font-weight:700;color:#c9a000;">${taux}%</div>
+            </div>
+          </div>
+        </div>
+      `;
     }
 
-    container.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        ${urgentItems.slice(0, 8).map(a => {
-          const candidatName = a.candidat_id ? (Store.resolve('candidats', a.candidat_id)?.displayName || '') : '';
-          const decideurName = a.decideur_id ? (Store.resolve('decideurs', a.decideur_id)?.displayName || '') : '';
-          const who = candidatName || decideurName;
-          const isRelance = a.date_relance && a.date_relance <= today;
-          return `
-            <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:#fff5f5;border:1px solid #fecaca;border-radius:8px;cursor:pointer;"
-              onclick="window.location.href='actions.html'">
-              <span style="font-size:1.1rem;">${isRelance ? '🔔' : '⚠️'}</span>
-              <div style="flex:1;min-width:0;">
-                <div style="font-size:0.8125rem;font-weight:600;color:#dc2626;">${UI.escHtml(a.action || '')}</div>
-                <div style="font-size:0.75rem;color:#64748b;">${who ? who + ' · ' : ''}${UI.badge(a.canal || '')} · ${isRelance ? 'Relance prévue ' : ''}${UI.formatDate(isRelance ? a.date_relance : a.date_action)}</div>
-              </div>
-              ${a.next_step ? `<div style="font-size:0.75rem;color:#c9a000;max-width:200px;text-align:right;">→ ${UI.escHtml(a.next_step)}</div>` : ''}
-            </div>
-          `;
-        }).join('')}
-        ${urgentItems.length > 8 ? `<div style="text-align:center;font-size:0.75rem;color:#dc2626;">+ ${urgentItems.length - 8} autres actions urgentes</div>` : ''}
-      </div>
-    `;
+    // Action list: prospection + teaser actions that are active
+    const allProspActions = [...new Map(
+      [...prospectionPending, ...teaserActions].map(a => [a.id, a])
+    ).values()]
+      .sort((a, b) => {
+        // Overdue first, then by date
+        const aGroup = (a.date_action && a.date_action < today) ? 0 : 1;
+        const bGroup = (b.date_action && b.date_action < today) ? 0 : 1;
+        if (aGroup !== bGroup) return aGroup - bGroup;
+        return (a.date_action || 'zzz').localeCompare(b.date_action || 'zzz');
+      });
+
+    if (allProspActions.length > 0) {
+      html += `
+        <div style="font-size:0.75rem;font-weight:600;color:#64748b;text-transform:uppercase;margin-bottom:8px;">Actions à traiter</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${allProspActions.map(a => renderActionRow(a)).join('')}
+        </div>
+      `;
+    } else {
+      html += '<div style="text-align:center;padding:12px;color:#16a34a;font-size:0.8125rem;">✓ Aucune action de prospection en attente</div>';
+    }
+
+    contentEl.innerHTML = html;
   }
 
-  // ========== Prochaines étapes orphelines ==========
+  // ========== Section collapsible : Candidats ==========
+  function renderCandidatsSection() {
+    const summaryEl = document.getElementById('summary-candidats');
+    const contentEl = document.getElementById('content-candidats');
+    if (!contentEl) return;
+
+    // Candidate-related actions: have candidat_id and are active
+    const candidatActions = actions.filter(a => a.candidat_id && isActive(a.statut))
+      .sort((a, b) => {
+        const aGroup = (a.date_action && a.date_action < today) ? 0 : 1;
+        const bGroup = (b.date_action && b.date_action < today) ? 0 : 1;
+        if (aGroup !== bGroup) return aGroup - bGroup;
+        return (a.date_action || 'zzz').localeCompare(b.date_action || 'zzz');
+      });
+    const candidatOverdue = candidatActions.filter(a => a.date_action && a.date_action < today);
+
+    // Summary badges
+    if (summaryEl) {
+      summaryEl.innerHTML = `
+        ${candidatActions.length > 0 ? `<span class="count-badge">${candidatActions.length} action${candidatActions.length > 1 ? 's' : ''}</span>` : ''}
+        ${candidatOverdue.length > 0 ? `<span class="count-badge overdue">${candidatOverdue.length} en retard</span>` : ''}
+      `;
+    }
+
+    let html = '';
+
+    // Action list
+    if (candidatActions.length > 0) {
+      html += `
+        <div style="font-size:0.75rem;font-weight:600;color:#64748b;text-transform:uppercase;margin-bottom:8px;">Actions candidats</div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:20px;">
+          ${candidatActions.map(a => renderActionRow(a)).join('')}
+        </div>
+      `;
+    } else {
+      html += '<div style="text-align:center;padding:12px;color:#16a34a;font-size:0.8125rem;margin-bottom:16px;">✓ Aucune action candidat en attente</div>';
+    }
+
+    // Mini pipeline candidats
+    const stages = ['Approché', 'En qualification', 'Shortlisté', 'Présenté'];
+    const stageCounts = stages.map(s => ({
+      label: s,
+      count: candidats.filter(c => c.statut === s).length,
+      items: candidats.filter(c => c.statut === s).slice(0, 3)
+    }));
+
+    const totalInPipeline = stageCounts.reduce((sum, s) => sum + s.count, 0);
+    if (totalInPipeline > 0) {
+      html += `
+        <div style="font-size:0.75rem;font-weight:600;color:#64748b;text-transform:uppercase;margin-bottom:8px;">Pipeline</div>
+        <div style="display:grid;grid-template-columns:repeat(${stages.length},1fr);gap:12px;">
+          ${stageCounts.map(s => `
+            <div style="text-align:center;">
+              <div style="font-size:1.25rem;font-weight:700;color:#1e293b;">${s.count}</div>
+              <div style="font-size:0.6875rem;color:#64748b;margin-bottom:6px;">${s.label}</div>
+              ${s.items.map(c => `
+                <a href="candidat.html?id=${c.id}" style="display:block;font-size:0.6875rem;color:#2563eb;text-decoration:none;padding:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                  ${UI.escHtml((c.prenom || '') + ' ' + (c.nom || ''))}
+                </a>
+              `).join('')}
+              ${s.count > 3 ? `<div style="font-size:0.625rem;color:#94a3b8;">+ ${s.count - 3} autres</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+        <div style="text-align:right;margin-top:8px;">
+          <a href="candidats.html" style="font-size:0.75rem;color:#2563eb;text-decoration:none;">Voir tous les candidats →</a>
+        </div>
+      `;
+    }
+
+    contentEl.innerHTML = html;
+  }
+
+  // ========== Section collapsible : Prochaines étapes ==========
   function renderNextSteps() {
-    const card = document.getElementById('card-next-steps');
+    const summaryEl = document.getElementById('summary-next-steps');
     const container = document.getElementById('dashboard-next-steps');
-    if (!container || !card) return;
+    if (!container) return;
 
     // Find "Fait" actions with a next_step that don't have a follow-up action created
     const doneWithNext = actions.filter(a => isDone(a.statut) && a.next_step);
-
-    // Check if a follow-up already exists (action whose message_notes contains "Suite de")
-    // and whose action name matches the next_step
-    const pendingActions = actions.filter(a => isActive(a.statut));
+    const activeActions = actions.filter(a => isActive(a.statut));
     const orphans = doneWithNext.filter(a => {
       const ns = a.next_step.toLowerCase().trim();
-      return !pendingActions.some(p =>
+      return !activeActions.some(p =>
         (p.action || '').toLowerCase().trim() === ns
       );
     }).sort((a, b) => (b.date_action || '').localeCompare(a.date_action || ''));
 
+    // Summary badge
+    if (summaryEl) {
+      summaryEl.innerHTML = orphans.length > 0
+        ? `<span class="count-badge">${orphans.length} à traiter</span>`
+        : '';
+    }
+
     if (orphans.length === 0) {
-      card.style.display = 'none';
+      container.innerHTML = '<div style="text-align:center;padding:12px;color:#16a34a;font-size:0.8125rem;">✓ Toutes les prochaines étapes sont traitées</div>';
       return;
     }
 
-    card.style.display = '';
     container.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:6px;">
-        ${orphans.slice(0, 8).map(a => {
-          const who = a.candidat_id ? (Store.resolve('candidats', a.candidat_id)?.displayName || '') :
-                      a.decideur_id ? (Store.resolve('decideurs', a.decideur_id)?.displayName || '') : '';
+        ${orphans.map(a => {
+          const who = resolveWho(a);
           return `
             <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;">
               <span style="font-size:1rem;">📌</span>
@@ -316,12 +505,45 @@
             </div>
           `;
         }).join('')}
-        ${orphans.length > 8 ? `<div style="text-align:center;font-size:0.75rem;color:#92400e;">+ ${orphans.length - 8} autres prochaines étapes</div>` : ''}
       </div>
     `;
   }
 
-  // Global handler for creating follow-up from dashboard
+  // ========== Global handlers ==========
+
+  // Mark action as done from dashboard
+  window.__markDone = async (actionId) => {
+    const action = Store.findById('actions', actionId);
+    if (!action) return;
+    await Store.update('actions', actionId, { statut: 'Fait' });
+    if (action.next_step) {
+      const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+      const followUp = {
+        id: API.generateId('act'),
+        action: action.next_step,
+        type_action: action.type_action || '',
+        canal: action.canal || '',
+        statut: 'À faire',
+        priorite: action.priorite || null,
+        date_action: action.date_relance || tomorrow,
+        date_relance: null,
+        candidat_id: action.candidat_id || null,
+        decideur_id: action.decideur_id || null,
+        mission_id: action.mission_id || null,
+        entreprise_id: action.entreprise_id || null,
+        reponse: false,
+        message_notes: `Suite de : ${action.action || ''}`,
+        next_step: '',
+      };
+      await Store.add('actions', followUp);
+      UI.toast(`Fait ! Action suivante créée : ${followUp.action}`);
+    } else {
+      UI.toast('Action marquée comme faite');
+    }
+    location.reload();
+  };
+
+  // Create follow-up from orphan next step
   window.__createFollowUp = async (actionId) => {
     const action = Store.findById('actions', actionId);
     if (!action || !action.next_step) return;
@@ -348,7 +570,7 @@
     location.reload();
   };
 
-  // Global handler for dismissing an orphan next step
+  // Dismiss orphan next step
   window.__dismissNextStep = async (actionId) => {
     const action = Store.findById('actions', actionId);
     if (!action) return;
@@ -356,165 +578,4 @@
     UI.toast('Prochaine étape ignorée');
     location.reload();
   };
-
-  // ========== Actions à faire ==========
-  function renderTodoActions() {
-    const pending = actions
-      .filter(a => isPending(a.statut))
-      .sort((a, b) => {
-        // Today first, then future, then past (most recent past first)
-        const aDate = a.date_action || '';
-        const bDate = b.date_action || '';
-        const aIsToday = aDate === today ? 0 : (aDate >= today ? 1 : 2);
-        const bIsToday = bDate === today ? 0 : (bDate >= today ? 1 : 2);
-        if (aIsToday !== bIsToday) return aIsToday - bIsToday;
-        // Within same group, closest date first
-        if (aIsToday <= 1) return (aDate || 'zzz').localeCompare(bDate || 'zzz');
-        return bDate.localeCompare(aDate); // past: most recent first
-      });
-
-    UI.dataTable('dashboard-actions', {
-      columns: [
-        { key: 'priorite', label: '', render: r => {
-          if (r.priorite === 'Haute') return '🔴';
-          if (r.priorite === 'Moyenne') return '🟡';
-          return '';
-        }},
-        { key: 'action', label: 'Action', render: r => `<strong>${UI.escHtml(r.action || '')}</strong>` },
-        { key: 'canal', label: 'Canal', render: r => UI.badge(r.canal) },
-        { key: 'candidat', label: 'Contact', render: r => {
-          if (r.candidat_id) return UI.resolveLink('candidats', r.candidat_id);
-          if (r.decideur_id) return UI.resolveLink('decideurs', r.decideur_id);
-          return '—';
-        }},
-        { key: 'date_action', label: 'Date', render: r => UI.formatDate(r.date_action) },
-        { key: 'next_step', label: 'Next step', render: r => r.next_step ? `<span style="font-size:0.75rem;color:#c9a000;">→ ${UI.escHtml(r.next_step)}</span>` : '' },
-      ],
-      data: pending.slice(0, 10),
-      onRowClick: () => window.location.href = 'actions.html',
-      emptyMessage: 'Aucune action en attente — bravo !'
-    });
-  }
-
-  // ========== Relances à venir ==========
-  function renderRelances() {
-    const container = document.getElementById('dashboard-relances');
-    if (!container) return;
-
-    const upcoming = actions
-      .filter(a => a.date_relance && a.date_relance >= today && a.date_relance <= weekFromNow && isActive(a.statut))
-      .sort((a, b) => (a.date_relance || '').localeCompare(b.date_relance || ''));
-
-    if (upcoming.length === 0) {
-      container.innerHTML = '<div class="empty-state"><p>Aucune relance prévue cette semaine</p></div>';
-      return;
-    }
-
-    container.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:6px;">
-        ${upcoming.slice(0, 8).map(a => {
-          const who = a.candidat_id ? (Store.resolve('candidats', a.candidat_id)?.displayName || '') :
-                      a.decideur_id ? (Store.resolve('decideurs', a.decideur_id)?.displayName || '') : '';
-          return `
-            <div style="display:flex;align-items:center;gap:12px;padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;">
-              <span style="font-size:0.75rem;font-weight:600;color:#c9a000;min-width:70px;">${UI.formatDate(a.date_relance)}</span>
-              <div style="flex:1;font-size:0.8125rem;">
-                <strong>${UI.escHtml(a.action || '')}</strong>
-                ${who ? `<span style="color:#64748b;"> · ${who}</span>` : ''}
-              </div>
-              ${UI.badge(a.canal || '')}
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `;
-  }
-
-  // ========== Pipeline candidats par statut ==========
-  function renderPipelineCandidats() {
-    const container = document.getElementById('dashboard-pipeline-candidats');
-    if (!container) return;
-
-    const stages = ['Approché', 'En qualification', 'Shortlisté', 'Présenté'];
-    const stageCounts = stages.map(s => ({
-      label: s,
-      count: candidats.filter(c => c.statut === s).length,
-      items: candidats.filter(c => c.statut === s).slice(0, 5)
-    }));
-
-    container.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(${stages.length},1fr);gap:12px;">
-        ${stageCounts.map(s => `
-          <div style="text-align:center;">
-            <div style="font-size:1.5rem;font-weight:700;color:#1e293b;">${s.count}</div>
-            <div style="font-size:0.75rem;color:#64748b;margin-bottom:8px;">${s.label}</div>
-            ${s.items.map(c => `
-              <a href="candidat.html?id=${c.id}" style="display:block;font-size:0.75rem;color:#2563eb;text-decoration:none;padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                ${UI.escHtml((c.prenom || '') + ' ' + (c.nom || ''))}
-              </a>
-            `).join('')}
-            ${s.count > 5 ? `<div style="font-size:0.6875rem;color:#94a3b8;">+ ${s.count - 5} autres</div>` : ''}
-          </div>
-        `).join('')}
-      </div>
-    `;
-  }
-
-  // ========== Pipeline Missions (kanban) ==========
-  function renderPipelineMissions() {
-    const stages = [
-      'Ciblage décideurs', 'Cadrage', 'Proposition',
-      'Mission lancée', 'Shortlist', 'Entretiens client',
-      'Offre', 'Placé', 'Suivi intégration'
-    ];
-
-    const container = document.getElementById('dashboard-pipeline');
-    if (!container) return;
-
-    if (missions.length === 0) {
-      container.innerHTML = '<div class="empty-state"><p>Aucune mission</p></div>';
-      return;
-    }
-
-    const html = `
-      <div class="kanban">
-        ${stages.map(stage => {
-          const items = missions.filter(m => m.statut === stage);
-          return `
-            <div class="kanban-column">
-              <div class="kanban-column-header">
-                ${stage}
-                <span class="kanban-column-count">${items.length}</span>
-              </div>
-              ${items.map(m => `
-                <a href="mission.html?id=${m.id}" class="kanban-card" style="display:block;text-decoration:none;color:inherit;">
-                  <div class="kanban-card-title">${UI.escHtml(m.nom || m.ref || '')}</div>
-                  <div class="kanban-card-sub">
-                    ${UI.badge(m.niveau)}
-                    ${m.fee_estimee ? UI.formatCurrency(m.fee_estimee) : ''}
-                  </div>
-                </a>
-              `).join('')}
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `;
-    container.innerHTML = html;
-  }
-
-  // ========== Activité récente ==========
-  function renderRecentActivity() {
-    const recent = [...actions]
-      .filter(a => isDone(a.statut))
-      .sort((a, b) => (b.date_action || '').localeCompare(a.date_action || ''))
-      .slice(0, 8);
-
-    UI.timeline('dashboard-recent', recent);
-  }
-
-  // Signal Engine widget
-  if (typeof SignalEngine !== 'undefined') {
-    SignalEngine.renderDashboardWidget('dashboard-signaux');
-  }
 })();

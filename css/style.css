@@ -1519,6 +1519,92 @@ body {
   z-index: 45;
 }
 
+/* ===== Collapsible dashboard sections ===== */
+.collapsible-card {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.collapsible-header {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+
+.collapsible-header:hover {
+  background: #f8fafc;
+}
+
+.collapsible-header h2 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collapsible-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.collapsible-summary {
+  font-size: 0.8125rem;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collapsible-summary .count-badge {
+  background: #f1f5f9;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.collapsible-summary .count-badge.overdue {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.collapsible-chevron {
+  transition: transform 0.25s ease;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.collapsible-card.expanded .collapsible-chevron {
+  transform: rotate(180deg);
+}
+
+.collapsible-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.35s ease;
+}
+
+.collapsible-card.expanded .collapsible-body {
+  max-height: 3000px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.collapsible-body-inner {
+  padding: 20px;
+}
+
 @media (max-width: 768px) {
   .sidebar-toggle { display: flex; }
   .sidebar {

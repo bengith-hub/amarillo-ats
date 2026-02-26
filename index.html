@@ -95,53 +95,66 @@
         </div>
       </div>
 
-      <!-- Bloc urgent (priorité haute) -->
+      <!-- Aujourd'hui & En retard (toujours visible) -->
       <div class="card" style="border-left:4px solid #dc2626;">
         <div class="card-header">
-          <h2>⚠️ Urgent — Actions en retard & relances</h2>
+          <h2>⚠️ Aujourd'hui & En retard</h2>
+          <span id="urgent-count" style="font-size:0.75rem;color:#dc2626;font-weight:600;"></span>
         </div>
         <div class="card-body">
           <div id="dashboard-urgent"></div>
         </div>
       </div>
 
-      <!-- Prochaines étapes (next steps orphelins) -->
-      <div class="card" id="card-next-steps" style="display:none; border-left:4px solid #c9a000;">
-        <div class="card-header">
-          <h2>📌 Prochaines étapes à traiter</h2>
-          <a href="actions.html" class="btn btn-sm btn-secondary">Voir les actions</a>
-        </div>
-        <div class="card-body">
-          <div id="dashboard-next-steps"></div>
-        </div>
-      </div>
-
-      <!-- Outbound: Prospection + Teasers côte à côte -->
-      <div class="dashboard-2col">
-        <!-- Prospection -->
-        <div class="card" data-accent="purple" id="card-prospection">
-          <div class="card-header">
-            <h2>📞 Prospection</h2>
-            <a href="actions.html#prospection" class="btn btn-sm btn-secondary" style="font-size:0.6875rem;">Vue prospection</a>
-          </div>
-          <div class="card-body">
-            <div id="dashboard-prospection-kpis"></div>
+      <!-- Section collapsible : Prospection -->
+      <div class="collapsible-card" id="section-prospection">
+        <div class="collapsible-header" onclick="toggleSection('prospection')">
+          <h2>📞 Prospection</h2>
+          <div class="collapsible-right">
+            <div class="collapsible-summary" id="summary-prospection"></div>
+            <svg class="collapsible-chevron" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
           </div>
         </div>
-
-        <!-- Teaser KPIs -->
-        <div class="card" data-accent="gold" id="card-teaser-kpis">
-          <div class="card-header">
-            <h2>✈️ Teasers</h2>
-            <a href="actions.html#teasers" class="btn btn-sm btn-secondary" style="font-size:0.6875rem;">Voir les actions</a>
-          </div>
-          <div class="card-body">
-            <div id="dashboard-teaser-kpis"></div>
-          </div>
+        <div class="collapsible-body">
+          <div class="collapsible-body-inner" id="content-prospection"></div>
         </div>
       </div>
 
-      <!-- Signal Engine -->
+      <!-- Section collapsible : Candidats -->
+      <div class="collapsible-card" id="section-candidats">
+        <div class="collapsible-header" onclick="toggleSection('candidats')">
+          <h2>👥 Candidats</h2>
+          <div class="collapsible-right">
+            <div class="collapsible-summary" id="summary-candidats"></div>
+            <svg class="collapsible-chevron" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </div>
+        </div>
+        <div class="collapsible-body">
+          <div class="collapsible-body-inner" id="content-candidats"></div>
+        </div>
+      </div>
+
+      <!-- Section collapsible : Prochaines étapes -->
+      <div class="collapsible-card" id="section-next-steps">
+        <div class="collapsible-header" onclick="toggleSection('next-steps')">
+          <h2>📌 Prochaines étapes</h2>
+          <div class="collapsible-right">
+            <div class="collapsible-summary" id="summary-next-steps"></div>
+            <svg class="collapsible-chevron" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </div>
+        </div>
+        <div class="collapsible-body">
+          <div class="collapsible-body-inner" id="dashboard-next-steps"></div>
+        </div>
+      </div>
+
+      <!-- Signaux business -->
       <div class="card" style="border-left:4px solid #3b82f6;">
         <div class="card-header">
           <h2>Signaux business</h2>
@@ -149,59 +162,6 @@
         </div>
         <div class="card-body">
           <div id="dashboard-signaux"></div>
-        </div>
-      </div>
-
-      <!-- Actions à faire -->
-      <div class="card">
-        <div class="card-header">
-          <h2>Actions à faire</h2>
-          <a href="actions.html" class="btn btn-sm btn-secondary">Voir tout</a>
-        </div>
-        <div class="card-body">
-          <div id="dashboard-actions"></div>
-        </div>
-      </div>
-
-      <!-- Relances à venir -->
-      <div class="card">
-        <div class="card-header">
-          <h2>🔔 Relances à venir (7 jours)</h2>
-        </div>
-        <div class="card-body">
-          <div id="dashboard-relances"></div>
-        </div>
-      </div>
-
-      <!-- Pipeline candidats -->
-      <div class="card">
-        <div class="card-header">
-          <h2>Pipeline Candidats</h2>
-          <a href="candidats.html" class="btn btn-sm btn-secondary">Voir tout</a>
-        </div>
-        <div class="card-body">
-          <div id="dashboard-pipeline-candidats"></div>
-        </div>
-      </div>
-
-      <!-- Pipeline missions -->
-      <div class="card">
-        <div class="card-header">
-          <h2>Pipeline Missions</h2>
-          <a href="missions.html" class="btn btn-sm btn-secondary">Voir tout</a>
-        </div>
-        <div class="card-body">
-          <div id="dashboard-pipeline"></div>
-        </div>
-      </div>
-
-      <!-- Dernières activités -->
-      <div class="card">
-        <div class="card-header">
-          <h2>Dernières activités</h2>
-        </div>
-        <div class="card-body">
-          <div id="dashboard-recent"></div>
         </div>
       </div>
     </div>
