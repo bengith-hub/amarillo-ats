@@ -99,6 +99,14 @@
     return '';
   }
 
+  // Helper: get link URL for an action's related entity
+  function actionHref(a) {
+    if (a.candidat_id) return `candidat.html?id=${a.candidat_id}`;
+    if (a.decideur_id) return `decideur.html?id=${a.decideur_id}`;
+    if (a.mission_id) return `mission.html?id=${a.mission_id}`;
+    return 'actions.html';
+  }
+
   // Helper: render an action row for collapsible lists
   function renderActionRow(a, options = {}) {
     const who = resolveWho(a);
@@ -108,8 +116,11 @@
     const borderColor = options.borderColor || (isOverdue ? '#fecaca' : '#e2e8f0');
     const titleColor = isOverdue ? '#dc2626' : '#1e293b';
 
+    const href = actionHref(a);
+
     return `
-      <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:${bgColor};border:1px solid ${borderColor};border-radius:8px;">
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:${bgColor};border:1px solid ${borderColor};border-radius:8px;cursor:pointer;"
+        onclick="window.location.href='${href}'">
         <div style="flex-shrink:0;width:20px;text-align:center;">
           ${a.priorite === 'Haute' ? '🔴' : a.priorite === 'Moyenne' ? '🟡' : ''}
         </div>
@@ -213,8 +224,10 @@
           const isOverdue = a.date_action && a.date_action < today;
           const bgColor = isOverdue ? '#fff5f5' : '#fffbeb';
           const borderColor = isOverdue ? '#fecaca' : '#fde68a';
+          const href = actionHref(a);
           return `
-            <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:${bgColor};border:1px solid ${borderColor};border-radius:8px;">
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:${bgColor};border:1px solid ${borderColor};border-radius:8px;cursor:pointer;"
+              onclick="window.location.href='${href}'">
               <span style="font-size:1.1rem;">${isOverdue ? '⚠️' : isRelance ? '🔔' : '📅'}</span>
               <div style="flex:1;min-width:0;">
                 <div style="font-size:0.8125rem;font-weight:600;color:${isOverdue ? '#dc2626' : '#92400e'};">${UI.escHtml(a.action || '')}</div>
