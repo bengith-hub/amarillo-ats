@@ -139,6 +139,7 @@
   // ========== Render all sections ==========
   renderKPIs();
   renderUrgentBlock();
+  renderDoneSection();
   renderProspectionSection();
   renderCandidatsSection();
   renderNextSteps();
@@ -241,6 +242,60 @@
           `;
         }).join('')}
       </div>
+    `;
+  }
+
+  // ========== Section collapsible : Fait récemment ==========
+  function renderDoneSection() {
+    const summaryEl = document.getElementById('summary-done');
+    const contentEl = document.getElementById('content-done');
+    if (!contentEl) return;
+
+    const doneRecent = actions
+      .filter(a => isDone(a.statut) && a.date_action && a.date_action >= weekAgo)
+      .sort((a, b) => (b.date_action || '').localeCompare(a.date_action || ''));
+
+    // Summary badge
+    if (summaryEl) {
+      summaryEl.innerHTML = doneRecent.length > 0
+        ? `<span class="count-badge" style="background:#dcfce7;color:#16a34a;">${doneRecent.length} cette semaine</span>`
+        : '';
+    }
+
+    if (doneRecent.length === 0) {
+      contentEl.innerHTML = '<div style="text-align:center;padding:12px;color:#64748b;font-size:0.8125rem;">Aucune action terminée cette semaine</div>';
+      return;
+    }
+
+    const displayed = doneRecent.slice(0, 10);
+    contentEl.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${displayed.map(a => {
+          const who = resolveWho(a);
+          const href = actionHref(a);
+          return `
+            <div data-action-id="${a.id}" style="display:flex;align-items:center;gap:12px;padding:8px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;cursor:pointer;opacity:0.85;"
+              onclick="window.location.href='${href}'">
+              <span style="font-size:0.9rem;color:#16a34a;">✓</span>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:0.8125rem;font-weight:500;color:#64748b;text-decoration:line-through;">${UI.escHtml(a.action || '')}</div>
+                <div style="font-size:0.7rem;color:#94a3b8;">
+                  ${who ? who + ' · ' : ''}${UI.badge(a.canal || '')} · ${UI.formatDate(a.date_action)}
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      ${doneRecent.length > 10 ? `
+        <div style="text-align:center;margin-top:10px;">
+          <a href="actions.html#done" style="font-size:0.75rem;color:#16a34a;text-decoration:none;">Voir toutes les actions faites →</a>
+        </div>
+      ` : `
+        <div style="text-align:right;margin-top:8px;">
+          <a href="actions.html#done" style="font-size:0.75rem;color:#16a34a;text-decoration:none;">Voir tout →</a>
+        </div>
+      `}
     `;
   }
 
