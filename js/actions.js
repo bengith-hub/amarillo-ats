@@ -26,7 +26,7 @@
   const VIEWS = {
     all: { label: 'Toutes', icon: '📋', filter: () => allActions },
     todo: { label: 'À faire', icon: '🎯', filter: () => allActions.filter(a => a.statut === 'À faire' || a.statut === 'A faire') },
-    overdue: { label: 'En retard', icon: '🔴', filter: () => allActions.filter(a => (a.statut === 'À faire' || a.statut === 'A faire') && a.date_action && a.date_action < today) },
+    overdue: { label: 'En retard', icon: '🔴', filter: () => allActions.filter(a => a.statut !== 'Fait' && a.statut !== 'Annulé' && a.date_action && a.date_action < today) },
     relances: { label: 'Relances à faire', icon: '🔔', filter: () => allActions.filter(a => a.date_relance && a.date_relance <= today && a.statut !== 'Fait' && a.statut !== 'Annulé') },
     today: { label: 'Aujourd\'hui', icon: '📅', filter: () => allActions.filter(a => a.date_action === today) },
     week: { label: 'Cette semaine', icon: '📆', filter: () => {
@@ -131,6 +131,7 @@
       filtersContainer.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       currentView = tab.dataset.view;
+      window.location.hash = currentView;
       applyFilters();
     });
   });
