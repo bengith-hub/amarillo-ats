@@ -293,6 +293,8 @@
         </div>
         <div class="card-body" id="profil-notes"></div>
       </div>
+
+      <div id="candidat-journal-section"></div>
     `;
 
     // Inline editable — Informations générales
@@ -399,6 +401,8 @@
         { key: 'notes', label: 'Notes', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' }
       ]
     });
+
+    UI.journalSection('candidat-journal-section', { entity: 'candidats', recordId: id, onUpdate: () => renderProfil() });
 
     // =============================================
     // CV Profile Completion — event handlers

@@ -1880,6 +1880,146 @@ const UI = (() => {
     }
   }
 
+  // ─── Journal de suivi ──────────────────────────────────
+  function journalSection(containerId, { entity, recordId, onUpdate }) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    function render() {
+      const record = Store.findById(entity, recordId);
+      if (!record) return;
+
+      const entries = (record.journal || []).slice().sort((a, b) => {
+        const cmp = (b.date || '').localeCompare(a.date || '');
+        return cmp !== 0 ? cmp : (b.created_at || '').localeCompare(a.created_at || '');
+      });
+      const categories = Referentiels.get('journal_categories');
+      const todayStr = new Date().toISOString().split('T')[0];
+      const uid = containerId;
+
+      container.innerHTML = `
+        <div class="card" data-accent="purple" style="margin-bottom:16px;">
+          <div class="card-header">
+            <h2>Journal de suivi (${entries.length})</h2>
+          </div>
+          <div class="card-body">
+            <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:${entries.length > 0 ? '16' : '0'}px;${entries.length > 0 ? 'padding-bottom:12px;border-bottom:1px solid #e2e8f0;' : ''}">
+              <input type="date" id="jnl-date-${uid}" value="${todayStr}" style="width:130px;font-size:0.8125rem;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;" />
+              <select id="jnl-cat-${uid}" style="width:130px;font-size:0.8125rem;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;">
+                <option value="">-- Cat\u00e9gorie --</option>
+                ${categories.map(c => '<option value="' + escHtml(c) + '">' + escHtml(c) + '</option>').join('')}
+              </select>
+              <input type="text" id="jnl-text-${uid}" placeholder="Nouvelle note..." style="flex:1;font-size:0.8125rem;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;" />
+              <button class="btn btn-sm btn-primary" id="jnl-add-${uid}" style="padding:6px 12px;">+</button>
+            </div>
+            <div id="jnl-entries-${uid}">
+              ${entries.length === 0 ? '<div class="empty-state" style="padding:8px 0;"><p>Aucune note dans le journal</p></div>' :
+                entries.map(e => `
+                  <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9;" data-journal-id="${e.id}">
+                    <div style="min-width:80px;font-size:0.75rem;font-weight:600;color:#64748b;padding-top:2px;">${formatDate(e.date)}</div>
+                    <div style="flex:1;min-width:0;">
+                      ${e.categorie ? badge(e.categorie) + ' ' : ''}<span class="jnl-content" data-jnl-edit="${e.id}" style="font-size:0.8125rem;white-space:pre-wrap;cursor:pointer;" title="Cliquer pour modifier">${escHtml(e.content)}</span>
+                    </div>
+                    <button data-jnl-delete="${e.id}" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:1rem;padding:0 4px;flex-shrink:0;" title="Supprimer">&times;</button>
+                  </div>
+                `).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+
+      // --- Add entry ---
+      const addBtn = document.getElementById('jnl-add-' + uid);
+      const textInput = document.getElementById('jnl-text-' + uid);
+
+      async function addEntry() {
+        const content = textInput.value.trim();
+        if (!content) return;
+        const newEntry = {
+          id: API.generateId('j'),
+          date: document.getElementById('jnl-date-' + uid).value || todayStr,
+          content: content,
+          categorie: document.getElementById('jnl-cat-' + uid).value || '',
+          created_at: new Date().toISOString(),
+        };
+        const current = record.journal || [];
+        await Store.update(entity, recordId, { journal: [...current, newEntry] });
+        toast('Note ajout\u00e9e');
+        render();
+        if (onUpdate) onUpdate();
+      }
+
+      addBtn?.addEventListener('click', addEntry);
+      textInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addEntry(); }
+      });
+
+      // --- Delete entries ---
+      container.querySelectorAll('[data-jnl-delete]').forEach(btn => {
+        btn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const jId = btn.dataset.jnlDelete;
+          const entry = entries.find(en => en.id === jId);
+          modal('Supprimer l\'entr\u00e9e', `
+            <p style="color:#dc2626;">Supprimer cette note du journal ?</p>
+            <div style="background:#f8fafc;border-radius:8px;padding:12px;margin-top:8px;font-size:0.8125rem;border:1px solid #e2e8f0;">
+              <strong>${formatDate(entry?.date)}</strong>${entry?.categorie ? ' \u2014 ' + escHtml(entry.categorie) : ''}<br/>${escHtml(entry?.content || '')}
+            </div>
+          `, {
+            saveLabel: 'Supprimer',
+            onSave: async () => {
+              const updated = (record.journal || []).filter(en => en.id !== jId);
+              await Store.update(entity, recordId, { journal: updated });
+              toast('Entr\u00e9e supprim\u00e9e');
+              render();
+              if (onUpdate) onUpdate();
+            }
+          });
+        });
+      });
+
+      // --- Inline edit on content ---
+      container.querySelectorAll('.jnl-content').forEach(span => {
+        span.addEventListener('click', () => {
+          if (span.querySelector('input')) return;
+          const jId = span.dataset.jnlEdit;
+          const entry = entries.find(en => en.id === jId);
+          if (!entry) return;
+
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.value = entry.content;
+          input.className = 'inline-edit-input';
+          input.style.cssText = 'width:100%;font-size:0.8125rem;padding:4px 8px;border:1px solid #bfdbfe;border-radius:4px;';
+          span.innerHTML = '';
+          span.appendChild(input);
+          input.focus();
+          input.select();
+
+          const finish = async () => {
+            const newVal = input.value.trim();
+            if (newVal && newVal !== entry.content) {
+              const updatedJournal = (record.journal || []).map(en =>
+                en.id === jId ? { ...en, content: newVal } : en
+              );
+              await Store.update(entity, recordId, { journal: updatedJournal });
+              toast('Note modifi\u00e9e');
+            }
+            render();
+          };
+
+          input.addEventListener('blur', finish);
+          input.addEventListener('keydown', (ke) => {
+            if (ke.key === 'Enter') { ke.preventDefault(); input.blur(); }
+            if (ke.key === 'Escape') { render(); }
+          });
+        });
+      });
+    }
+
+    render();
+  }
+
   return {
     badge, autoBadgeStyle, entityLink, resolveLink,
     dataTable, filterBar, modal, toast,
@@ -1887,7 +2027,7 @@ const UI = (() => {
     initGlobalSearch, entrepriseAutocomplete, candidatAutocomplete, localisationAutocomplete, addressAutocomplete,
     candidatDecideurLink,
     inlineEdit, statusBadge, showStatusPicker,
-    documentsSection, drawer,
+    documentsSection, drawer, journalSection,
     linkedinBadge, rowCount,
     escHtml, renderRichText, normalizeUrl, formatDate, formatMonthYear, formatCurrency, getParam
   };

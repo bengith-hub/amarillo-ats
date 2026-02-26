@@ -139,6 +139,8 @@
               <div class="card-body" id="dec-notes-fields"></div>
             </div>
 
+            <div id="dec-journal-section"></div>
+
             <div id="dec-documents-section"></div>
 
             <div class="card">
@@ -237,6 +239,8 @@
           { key: 'notes_relation', label: 'Notes', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
         ]
       });
+
+      UI.journalSection('dec-journal-section', { entity: 'decideurs', recordId: id, onUpdate: () => renderPage() });
 
       // Inline editable — Dates in sidebar
       UI.inlineEdit('dec-dates-fields', {

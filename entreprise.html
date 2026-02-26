@@ -169,6 +169,8 @@
             <div class="card-body" id="ent-notes-fields"></div>
           </div>
 
+          <div id="ent-journal-section"></div>
+
           <div id="ent-signal-widget" style="margin-bottom:16px;"></div>
 
           <div id="ent-documents-section"></div>
@@ -383,6 +385,8 @@
         { key: 'notes', label: 'Notes', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
       ]
     });
+
+    UI.journalSection('ent-journal-section', { entity: 'entreprises', recordId: entId, onUpdate: () => renderEntreprisePage() });
 
     // Documents section
     UI.documentsSection('ent-documents-section', {
