@@ -399,4 +399,13 @@
     const action = Store.findById('actions', id);
     if (action) showActionModal(action);
   }
+
+  // Auto-open edit modal if ?edit=ACTION_ID is in the URL (from dashboard click)
+  const editParam = new URLSearchParams(window.location.search).get('edit');
+  if (editParam) {
+    const action = Store.findById('actions', editParam);
+    if (action) showActionModal(action);
+    // Clean URL without reloading
+    window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+  }
 })();

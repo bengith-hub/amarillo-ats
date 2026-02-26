@@ -99,12 +99,9 @@
     return '';
   }
 
-  // Helper: get link URL for an action's related entity
+  // Helper: get link URL for an action's edit page
   function actionHref(a) {
-    if (a.candidat_id) return `candidat.html?id=${a.candidat_id}`;
-    if (a.decideur_id) return `decideur.html?id=${a.decideur_id}`;
-    if (a.mission_id) return `mission.html?id=${a.mission_id}`;
-    return 'actions.html';
+    return `actions.html?edit=${a.id}`;
   }
 
   // Helper: render an action row for collapsible lists
@@ -119,7 +116,7 @@
     const href = actionHref(a);
 
     return `
-      <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:${bgColor};border:1px solid ${borderColor};border-radius:8px;cursor:pointer;"
+      <div data-action-id="${a.id}" style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:${bgColor};border:1px solid ${borderColor};border-radius:8px;cursor:pointer;"
         onclick="window.location.href='${href}'">
         <div style="flex-shrink:0;width:20px;text-align:center;">
           ${a.priorite === 'Haute' ? '🔴' : a.priorite === 'Moyenne' ? '🟡' : ''}
@@ -132,8 +129,7 @@
           </div>
         </div>
         ${a.next_step ? `<div style="font-size:0.75rem;color:#c9a000;max-width:180px;text-align:right;flex-shrink:0;">→ ${UI.escHtml(a.next_step)}</div>` : ''}
-        <button class="btn btn-sm" onclick="event.stopPropagation(); window.__markDone('${a.id}')"
-          style="white-space:nowrap;font-size:0.6875rem;background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;flex-shrink:0;">
+        <button class="btn-done" data-action-id="${a.id}" onclick="event.stopPropagation(); window.__markDone(this, '${a.id}')">
           ✓ Fait
         </button>
       </div>
@@ -226,7 +222,7 @@
           const borderColor = isOverdue ? '#fecaca' : '#fde68a';
           const href = actionHref(a);
           return `
-            <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:${bgColor};border:1px solid ${borderColor};border-radius:8px;cursor:pointer;"
+            <div data-action-id="${a.id}" style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:${bgColor};border:1px solid ${borderColor};border-radius:8px;cursor:pointer;"
               onclick="window.location.href='${href}'">
               <span style="font-size:1.1rem;">${isOverdue ? '⚠️' : isRelance ? '🔔' : '📅'}</span>
               <div style="flex:1;min-width:0;">
@@ -238,8 +234,7 @@
                 </div>
               </div>
               ${a.next_step ? `<div style="font-size:0.75rem;color:#c9a000;max-width:200px;text-align:right;flex-shrink:0;">→ ${UI.escHtml(a.next_step)}</div>` : ''}
-              <button class="btn btn-sm" onclick="event.stopPropagation(); window.__markDone('${a.id}')"
-                style="white-space:nowrap;font-size:0.6875rem;background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;flex-shrink:0;">
+              <button class="btn-done" data-action-id="${a.id}" onclick="event.stopPropagation(); window.__markDone(this, '${a.id}')">
                 ✓ Fait
               </button>
             </div>
@@ -524,11 +519,25 @@
 
   // ========== Global handlers ==========
 
-  // Mark action as done from dashboard
-  window.__markDone = async (actionId) => {
+  // Mark action as done from dashboard — with visual feedback
+  window.__markDone = async (btn, actionId) => {
     const action = Store.findById('actions', actionId);
     if (!action) return;
+
+    // Disable button immediately
+    btn.disabled = true;
+    btn.textContent = '...';
+
+    // Find the parent action row and animate it
+    const row = btn.closest('[data-action-id]') || btn.parentElement;
+    row.style.transition = 'all 0.4s ease';
+    row.style.opacity = '0.5';
+    row.style.textDecoration = 'line-through';
+    row.style.background = '#f0fdf4';
+    row.style.borderColor = '#bbf7d0';
+
     await Store.update('actions', actionId, { statut: 'Fait' });
+
     if (action.next_step) {
       const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
       const followUp = {
@@ -553,7 +562,21 @@
     } else {
       UI.toast('Action marquée comme faite');
     }
-    location.reload();
+
+    // Show done state briefly, then fade out and reload
+    btn.textContent = '✓ OK';
+    btn.style.background = '#16a34a';
+    btn.style.color = '#fff';
+    setTimeout(() => {
+      row.style.maxHeight = row.offsetHeight + 'px';
+      row.offsetHeight; // force reflow
+      row.style.maxHeight = '0';
+      row.style.padding = '0 14px';
+      row.style.margin = '0';
+      row.style.overflow = 'hidden';
+      row.style.opacity = '0';
+      setTimeout(() => location.reload(), 400);
+    }, 600);
   };
 
   // Create follow-up from orphan next step
