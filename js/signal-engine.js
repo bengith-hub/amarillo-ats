@@ -124,8 +124,10 @@ const SignalEngine = (() => {
   async function _loadConfig() {
     if (_config) return _config;
     try {
-      _config = await API.fetchBin('signal_config');
-      if (!_config || !_config.regions_actives) {
+      const stored = await API.fetchBin('signal_config');
+      // Merge defaults with stored config so new fields get default values
+      _config = { ..._defaultConfig(), ...(stored || {}) };
+      if (!_config.regions_actives) {
         _config = _defaultConfig();
       }
     } catch {
@@ -680,7 +682,7 @@ const SignalEngine = (() => {
 
         for (const r of results) {
           const effectif = _parseEffectif(r.tranche_effectif);
-          if (effectif < (config.effectif_min_decouverte || 100)) continue;
+          if (effectif < (config.effectif_min_decouverte || 50)) continue;
 
           allResults.push({
             siren: r.siren || '',
@@ -1512,7 +1514,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     const hasArticles = (s.donnees_scraping?.actualites || []).length > 0;
     const hasSiteText = !!(s.donnees_scraping?.site_texte);
     const hasData = hasArticles || hasSiteText || s.donnees_pappers?.ca;
-    const hasDataButNoSignals = hasData && (s.signaux || []).length === 0;
+    const scanToday = s.date_mise_a_jour === new Date().toISOString().split('T')[0];
+    const hasDataButNoSignals = hasData && (s.signaux || []).length === 0 && !scanToday;
 
     return `
       <div class="card" style="margin-bottom:12px;border-left:4px solid ${scoreColor};">
@@ -1730,7 +1733,12 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       resultsDiv.innerHTML = '<p style="color:#64748b;">Recherche en cours...</p>';
 
       try {
-        const results = await _searchPappersByRegion(activeRegion, { code_naf: naf });
+        const config = await _loadConfig();
+        const results = await _searchPappersByRegion(activeRegion, {
+          code_naf: naf,
+          par_page: '50',
+          effectif_min: config.effectif_min_decouverte || 50,
+        });
 
         // Dedup with existing watchlist
         await _loadWatchlist();
@@ -2406,6 +2414,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         const results = await _searchPappersByRegion(activeRegion, {
           code_naf: naf,
           par_page: '50',
+          effectif_min: effectifMin,
         });
         for (const r of results) {
           if (wlSirens.has(r.siren)) continue;
