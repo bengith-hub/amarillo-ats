@@ -772,6 +772,19 @@ const SignalEngine = (() => {
             continue;
           }
 
+          // Exclure les formes juridiques non pertinentes (entreprises individuelles, auto-entrepreneurs)
+          const formeJur = (r.forme_juridique || '').toLowerCase();
+          if (formeJur.includes('entrepreneur individuel') ||
+              formeJur.includes('commerçant') ||
+              formeJur.includes('artisan') ||
+              formeJur.includes('auto-entrepreneur') ||
+              formeJur.includes('micro-entrepreneur') ||
+              formeJur.includes('profession lib') ||
+              formeJur.includes('exploitation agricole')) {
+            clientFilteredCount++;
+            continue;
+          }
+
           // Client-side NAF filter: if NAF codes were specified, check prefix
           if (nafFilter) {
             const nafPrefix = (r.code_naf || '').substring(0, 2);
@@ -794,7 +807,10 @@ const SignalEngine = (() => {
             } else if (effectif > 0) {
               if (effectif < effectifMin) { clientFilteredCount++; continue; }
             } else {
-              // No financial data: keep if targeted NAF + 5yr seniority
+              // No financial data at all: if CA threshold is high (>=10M), skip entirely
+              // — a company with no known CA cannot realistically meet a 10M+ threshold
+              if (caMin >= 10000000) { clientFilteredCount++; continue; }
+              // For lower thresholds, keep if targeted NAF + 5yr seniority
               const targetNafCodes = config.codes_naf_cibles || CODES_NAF_EXTENDED;
               const nafPrefix = (r.code_naf || '').substring(0, 2);
               const isTargetedNaf = targetNafCodes.includes(nafPrefix);
