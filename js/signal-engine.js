@@ -693,6 +693,7 @@ const SignalEngine = (() => {
       console.error('[SignalEngine] ABORT: No departments found for region "' + regionName + '"');
       return [];
     }
+    const depsSet = new Set(deps);
 
     const config = await _loadConfig();
     const allResults = [];
@@ -792,6 +793,13 @@ const SignalEngine = (() => {
           // Departement reel du siege (extrait du code postal), pas celui de la requete
           const siegeCP = r.siege?.code_postal || '';
           const siegeDep = siegeCP.length >= 2 ? siegeCP.substring(0, 2) : dep;
+
+          // Exclure les entreprises dont le siege est hors de la region recherchee
+          // (Pappers renvoie des entreprises ayant un etablissement dans le dept, pas forcement le siege)
+          if (!depsSet.has(siegeDep)) {
+            clientFilteredCount++;
+            continue;
+          }
 
           allResults.push({
             siren: r.siren || '',
@@ -1579,15 +1587,22 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       _loadSuggestions(),
     ]);
 
+    const activeRegion = config.regions_actives?.[0] || 'Pays de la Loire';
+    const regionDepsArr = SignalRegions.getDepartements(activeRegion);
+    const regionDepsSet = new Set(regionDepsArr);
+
     // Migration: move unscanned auto_discovery entries from watchlist to suggestions
+    let needSave = false;
     const autoUnscanned = _watchlist.filter(w => w.source === 'auto_discovery' && !w.derniere_analyse);
     if (autoUnscanned.length > 0) {
       console.log('[SignalEngine] Migrating ' + autoUnscanned.length + ' unscanned auto-discoveries from watchlist to suggestions');
       for (const w of autoUnscanned) {
+        const cp = w.code_postal || '';
+        const realDep = cp.length >= 2 ? cp.substring(0, 2) : w.departement;
         _suggestions.push({
           id: 'sug_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
           siren: w.siren, nom: w.nom, ville: w.ville,
-          code_postal: w.code_postal, departement: w.departement,
+          code_postal: cp, departement: realDep,
           region: w.region, secteur_naf: w.secteur_naf,
           libelle_naf: w.libelle_naf || '', effectif: w.effectif || 0,
           ca: w.ca || 0, linkedin_url: w.linkedin_url || '',
@@ -1597,14 +1612,31 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         });
       }
       _watchlist = _watchlist.filter(w => !(w.source === 'auto_discovery' && !w.derniere_analyse));
-      // Remove associated signals
       const migratedSirens = new Set(autoUnscanned.map(w => w.siren).filter(Boolean));
-      const prevSigLen = _signaux.length;
       _signaux = _signaux.filter(s => !migratedSirens.has(s.entreprise_siren));
-      await Promise.all([_saveSuggestions(), _saveWatchlist(), ...((_signaux.length < prevSigLen) ? [_saveSignaux()] : [])]);
+      needSave = true;
     }
 
-    const activeRegion = config.regions_actives?.[0] || 'Pays de la Loire';
+    // Fix existing suggestions: recalculate departement from code_postal and remove hors-region
+    const prevSugLen = (_suggestions || []).length;
+    for (const s of _suggestions) {
+      if (s.code_postal && s.code_postal.length >= 2) {
+        s.departement = s.code_postal.substring(0, 2);
+      }
+    }
+    // Remove suggestions whose real siege is outside the active region
+    _suggestions = (_suggestions || []).filter(s => {
+      if (!s.departement) return true;
+      return regionDepsSet.has(s.departement);
+    });
+    if (_suggestions.length !== prevSugLen) {
+      console.log('[SignalEngine] Cleaned suggestions: ' + prevSugLen + ' → ' + _suggestions.length + ' (removed hors-region)');
+      needSave = true;
+    }
+
+    if (needSave) {
+      await Promise.all([_saveSuggestions(), _saveWatchlist(), _saveSignaux()]);
+    }
 
     // Filter signaux by active region
     const regionSignaux = signaux.filter(s => !activeRegion || s.region === activeRegion);
