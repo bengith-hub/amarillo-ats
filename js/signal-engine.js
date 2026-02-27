@@ -676,27 +676,26 @@ const SignalEngine = (() => {
     const allResults = [];
     const serverFilteredByCA = !!options.chiffre_affaires_min;
 
-    // Use comma-separated departments in a single API call instead of looping
+    // Build URL manually to avoid URLSearchParams encoding commas as %2C
+    // (Pappers expects raw commas for multi-value params like departement=44,49,53)
     try {
-      const params = new URLSearchParams({
-        api_token: apiKey,
-        departement: deps.join(','),
-        par_page: options.par_page || '25',
-        entreprise_cessee: 'false',
-      });
-      // Support comma-separated NAF codes (array or single string)
+      const queryParts = [
+        'api_token=' + encodeURIComponent(apiKey),
+        'departement=' + deps.join(','),
+        'par_page=' + (options.par_page || '25'),
+      ];
       if (options.code_naf) {
         const nafValue = Array.isArray(options.code_naf) ? options.code_naf.join(',') : options.code_naf;
-        params.set('code_naf', nafValue);
+        queryParts.push('code_naf=' + nafValue);
       }
-      if (options.chiffre_affaires_min) params.set('chiffre_affaires_min', String(options.chiffre_affaires_min));
+      if (options.chiffre_affaires_min) {
+        queryParts.push('chiffre_affaires_min=' + options.chiffre_affaires_min);
+      }
+      const apiUrl = 'https://api.pappers.fr/v2/recherche?' + queryParts.join('&');
 
-      console.log('[SignalEngine] Pappers API call: departement=' + deps.join(',') +
-        (options.code_naf ? ' code_naf=' + (Array.isArray(options.code_naf) ? options.code_naf.join(',') : options.code_naf) : '') +
-        (options.chiffre_affaires_min ? ' ca_min=' + options.chiffre_affaires_min : '') +
-        ' par_page=' + (options.par_page || '25'));
+      console.log('[SignalEngine] Pappers API call: ' + apiUrl.replace(/api_token=[^&]+/, 'api_token=***'));
 
-      const response = await fetch('https://api.pappers.fr/v2/recherche?' + params.toString());
+      const response = await fetch(apiUrl);
       if (!response.ok) {
         if (response.status === 429) {
           UI.toast('Quota Pappers atteint', 'error');
