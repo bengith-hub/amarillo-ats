@@ -381,6 +381,15 @@ const Backup = (() => {
 
     await _saveBackupMeta(meta);
 
+    // Persist status to Netlify Blobs for monitoring
+    try {
+      await fetch('/.netlify/functions/store?entity=_backup_status', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(meta.status)
+      });
+    } catch (_) {}
+
     localStorage.setItem('ats_backup_last_success', snapshotDate);
     localStorage.setItem(LS_LAST_BACKUP, snapshotDate);
     localStorage.removeItem('ats_backup_last_error');

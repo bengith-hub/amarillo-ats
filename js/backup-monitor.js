@@ -33,42 +33,11 @@ const BackupMonitor = (() => {
     const cached = _getCachedStatus();
     if (cached) return cached;
 
-    let backupBinId = (typeof ATS_CONFIG !== 'undefined' && ATS_CONFIG.bins && ATS_CONFIG.bins.backups)
-      ? ATS_CONFIG.bins.backups : '';
-
-    // Also check localStorage (bin may have been auto-created by a manual snapshot)
-    if (!backupBinId) {
-      try {
-        const saved = localStorage.getItem('ats_config');
-        if (saved) {
-          const cfg = JSON.parse(saved);
-          if (cfg.bins && cfg.bins.backups) {
-            backupBinId = cfg.bins.backups;
-            // Sync back to in-memory config so future checks work immediately
-            if (typeof ATS_CONFIG !== 'undefined' && ATS_CONFIG.bins) {
-              ATS_CONFIG.bins.backups = backupBinId;
-            }
-          }
-        }
-      } catch (_) {}
-    }
-
-    if (!backupBinId) return null;
-
-    const apiKey = (typeof ATS_CONFIG !== 'undefined' && ATS_CONFIG.apiKey) ? ATS_CONFIG.apiKey : '';
-    if (!apiKey) return null;
-
     try {
-      const res = await fetch(`https://api.jsonbin.io/v3/b/${backupBinId}/latest`, {
-        headers: { 'X-Master-Key': apiKey }
-      });
-
+      const res = await fetch('/.netlify/functions/store?entity=_backup_status');
       if (!res.ok) return null;
-
-      const data = await res.json();
-      const record = data.record || {};
-      const status = record.status || {};
-
+      const status = await res.json();
+      if (!status || typeof status !== 'object' || !status.last_success) return null;
       _cacheStatus(status);
       return status;
     } catch (_) {

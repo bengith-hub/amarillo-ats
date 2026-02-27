@@ -22,7 +22,7 @@ const JSONBIN_BINS = {
 // Signal Engine entities (no JSONBin migration, born in Netlify Blobs)
 const SIGNAL_ENTITIES = new Set(['signaux', 'watchlist', 'signal_config', 'entreprises_ecartees']);
 
-const VALID_ENTITIES = new Set([...Object.keys(JSONBIN_BINS), ...SIGNAL_ENTITIES]);
+const VALID_ENTITIES = new Set([...Object.keys(JSONBIN_BINS), ...SIGNAL_ENTITIES, '_backup_status']);
 
 async function migrateFromJsonBin(entity) {
   const binId = JSONBIN_BINS[entity];
