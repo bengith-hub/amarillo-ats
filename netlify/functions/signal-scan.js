@@ -107,9 +107,21 @@ REGLES :
 - Sois EXHAUSTIF : detecte tout signal meme faible ou indirect.
 - Un article mentionnant des TRAVAUX, CONSTRUCTION, AGRANDISSEMENT, MODERNISATION ou NOUVEAU SITE est TOUJOURS un signal "investissement".
 - En cas de doute, INCLUS le signal avec une confiance basse (0.3-0.5) plutot que de l'ignorer.
+- Les articles de presse peuvent utiliser des variantes du nom de l'entreprise : acronyme, nom commercial, nom abrege, nom du groupe parent. Considere qu'un article parle de l'entreprise si le nom, l'acronyme, ou une partie significative du nom apparait dans le contexte du bon secteur.
+- IGNORE les articles qui parlent clairement d'un lieu ou d'une entite sans rapport, mais ne rejette PAS un article simplement parce qu'il utilise un nom abrege ou acronyme.
 
 Reponds en JSON: {"signaux":[{"type":"...","label":"...","confiance":0.8,"extrait":"..."}],"score_besoin_dsi":75,"score_urgence":60,"score_complexite_si":70,"justification":"..."}
 Si rien: {"signaux":[],"score_besoin_dsi":10,"score_urgence":5,"score_complexite_si":5,"justification":"Aucun signal."}`;
+
+// Generate acronym from company name (e.g. "SOCIETE INDUSTRIELLE RAISON FRERES" → "SIRF")
+const STOP_WORDS_RE = /^(de|des|du|la|le|les|et|en|a|au|aux|l|d|sa|sas|sarl|srl|eurl|sci)$/i;
+function makeAcronym(name) {
+  if (!name) return '';
+  const words = name.split(/[\s'-]+/).filter(w => w.length > 1 && !STOP_WORDS_RE.test(w));
+  if (words.length < 2) return '';
+  const acr = words.map(w => w[0].toUpperCase()).join('');
+  return acr.length >= 2 && acr.length <= 6 ? acr : '';
+}
 
 export default async function handler(req) {
   const BATCH_SIZE = 5;
@@ -176,8 +188,9 @@ export default async function handler(req) {
         }
 
         // Detect signals via OpenAI
+        const acronym = makeAcronym(wl.nom_officiel || wl.nom);
         const articlesSummary = articles.map(a => `[${a.date}] ${a.titre}\n${a.extrait || ''}`).join('\n\n');
-        const userPrompt = `ENTREPRISE: ${wl.nom}\nSITE WEB:\n${siteText || 'Non disponible'}\nARTICLES DE PRESSE RECENTS:\n${articlesSummary || 'Aucun'}`;
+        const userPrompt = `ENTREPRISE: ${wl.nom}${acronym ? '\nACRONYME: ' + acronym : ''}${wl.ville ? '\nVILLE: ' + wl.ville : ''}\nSITE WEB:\n${siteText || 'Non disponible'}\nARTICLES DE PRESSE RECENTS:\n${articlesSummary || 'Aucun'}`;
         const raw = await callOpenAI(openaiKey, SIGNAL_DETECTION_PROMPT, userPrompt);
 
         let aiResult;
