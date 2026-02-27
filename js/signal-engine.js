@@ -1709,6 +1709,47 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       await Promise.all([_saveSuggestions(), _saveWatchlist(), _saveSignaux(), _saveConfig()]);
     }
 
+    // Retroactive: create entreprise records for watchlist entries without entreprise_id
+    const wlWithoutFiche = _watchlist.filter(w => !w.entreprise_id && w.nom);
+    if (wlWithoutFiche.length > 0) {
+      const entreprises = Store.get('entreprises') || [];
+      let created = 0;
+      for (const w of wlWithoutFiche) {
+        // Check if fiche already exists by SIREN or nom
+        const existing = entreprises.find(e =>
+          (w.siren && e._pappers_siren === w.siren) ||
+          ((e.nom || '').toLowerCase().trim() === w.nom.toLowerCase().trim())
+        );
+        if (existing) {
+          w.entreprise_id = existing.id;
+        } else {
+          const newEnt = {
+            id: API.generateId('ent'),
+            nom: w.nom,
+            secteur: '', taille: '', ca: '',
+            localisation: w.ville || '',
+            siege_adresse: '', siege_code_postal: w.code_postal || '', siege_ville: w.ville || '',
+            telephone: '', site_web: w.site_web || '',
+            linkedin: w.linkedin_url || '',
+            source: 'Decouverte auto', statut: 'A cibler', priorite: '',
+            angle_approche: '', notes: '',
+            _pappers_siren: w.siren || '',
+            _pappers_naf: (w.secteur_naf ? w.secteur_naf + ' - ' : '') + (w.libelle_naf || ''),
+            _pappers_forme: '',
+            autres_sites: [], dernier_contact: null, prochaine_relance: null,
+            created_at: new Date().toISOString(),
+          };
+          await Store.add('entreprises', newEnt);
+          w.entreprise_id = newEnt.id;
+          created++;
+        }
+      }
+      await _saveWatchlist();
+      if (created > 0) {
+        console.log('[SignalEngine] Retroactive: created ' + created + ' entreprise records for watchlist entries');
+      }
+    }
+
     // Filter signaux by active region
     const regionSignaux = signaux.filter(s => !activeRegion || s.region === activeRegion);
     const regionWatchlist = watchlist.filter(w => !activeRegion || w.region === activeRegion);
