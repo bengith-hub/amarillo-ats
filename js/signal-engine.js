@@ -110,6 +110,7 @@ const SignalEngine = (() => {
   let _config = null;
   let _watchlist = null;
   let _signaux = null;
+  let _ecartees = null;
   let _activeTab = 'signaux';
   let _filters = { score: null, type: null, departement: null };
 
@@ -179,6 +180,21 @@ const SignalEngine = (() => {
 
   async function _saveWatchlist() {
     await API.updateBin('watchlist', _watchlist);
+  }
+
+  async function _loadEcartees() {
+    if (_ecartees) return _ecartees;
+    try {
+      _ecartees = await API.fetchBin('entreprises_ecartees');
+      if (!Array.isArray(_ecartees)) _ecartees = [];
+    } catch {
+      _ecartees = [];
+    }
+    return _ecartees;
+  }
+
+  async function _saveEcartees() {
+    await API.updateBin('entreprises_ecartees', _ecartees);
   }
 
   async function _loadSignaux() {
@@ -685,13 +701,15 @@ const SignalEngine = (() => {
           const ca = r.chiffre_affaires || 0;
           const effectifMin = config.effectif_min_decouverte || 50;
           const caMin = config.ca_min_decouverte || 2000000;
-          const hasFinancialData = (effectif > 0 || ca > 0);
 
-          if (hasFinancialData) {
-            // Has data: keep if CA OR effectif meets threshold
-            if (effectif < effectifMin && ca < caMin) continue;
+          if (ca > 0) {
+            // CA disponible : critere principal
+            if (ca < caMin) continue;
+          } else if (effectif > 0) {
+            // Pas de CA mais effectif disponible : critere de repli
+            if (effectif < effectifMin) continue;
           } else {
-            // No financial data (confidential): keep only if targeted NAF + 5yr seniority
+            // Aucune donnee financiere (confidentiel) : garder si NAF cible + anciennete >= 5 ans
             const nafCodes = config.codes_naf_cibles || CODES_NAF_EXTENDED;
             const nafPrefix = (r.code_naf || '').substring(0, 2);
             const isTargetedNaf = nafCodes.includes(nafPrefix);
@@ -810,6 +828,79 @@ const SignalEngine = (() => {
     // Pappers free tier doesn't always have historical CA
     // Return 0 as default, can be improved with paid plan
     return 0;
+  }
+
+  // ============================================================
+  // LINKEDIN — Generation d'URL de recherche
+  // ============================================================
+
+  function _generateLinkedInUrl(companyName) {
+    if (!companyName) return '';
+    return 'https://www.linkedin.com/search/results/companies/?keywords=' + encodeURIComponent(companyName.trim());
+  }
+
+  // ============================================================
+  // OSINT — Pre-check leger avant ajout en decouverte
+  // ============================================================
+
+  async function _lightOsintCheck(candidate) {
+    let score = 0;
+    const signals = [];
+    const nom = candidate.nom || '';
+    const ville = candidate.ville || '';
+
+    // 1. Google News RSS — cherche articles business recents
+    try {
+      const query = `"${nom}" ${ville ? '"' + ville + '"' : ''} entreprise OR société OR groupe`;
+      const articles = await _fetchGoogleNewsRSS(query, 3);
+      if (articles.length > 0) {
+        const relevant = articles.filter(a => {
+          const text = ((a.titre || '') + ' ' + (a.extrait || '')).toLowerCase();
+          const mentionsCompany = text.includes(nom.toLowerCase());
+          const hasBusiness = /investissement|recrutement|croissance|acquisition|nomination|projet|extension|ouverture|embauche|DSI|directeur.*(information|digital|num[eé]rique)|transformation/i.test(text);
+          return mentionsCompany && hasBusiness;
+        });
+        if (relevant.length > 0) {
+          score += 30 + (relevant.length - 1) * 10;
+          signals.push('news_business (' + relevant.length + ' articles)');
+        } else if (articles.length > 0) {
+          // Des articles existent meme si pas business = entreprise visible
+          score += 10;
+          signals.push('news_presence');
+        }
+      }
+      await new Promise(r => setTimeout(r, 300));
+    } catch (e) {
+      console.warn('[SignalEngine] OSINT news check error:', e);
+    }
+
+    // 2. Google Search — contexte web plus large (via scrapeGoogleSearch existant)
+    try {
+      const gsResults = await _scrapeGoogleSearch(nom, candidate.region || '', {
+        ville, nomOfficiel: nom, libelleNaf: candidate.libelle_naf || ''
+      });
+      if (gsResults && gsResults.length > 0) {
+        const gsText = gsResults.map(r => (r.titre || '') + ' ' + (r.extrait || '')).join(' ').toLowerCase();
+        const dsiKeywords = /DSI|directeur.*(information|digital|num[eé]rique|syst[eè]me)|CTO|CIO|transformation\s+digitale|ERP|syst[eè]me\s+d.information/i;
+        if (dsiKeywords.test(gsText)) {
+          score += 25;
+          signals.push('google_dsi_signal');
+        }
+        const growthKeywords = /investissement|croissance|recrutement|embauche|extension|expansion|nouveau\s+site|acquisition/i;
+        if (growthKeywords.test(gsText)) {
+          score += 15;
+          signals.push('google_growth_signal');
+        }
+      }
+    } catch (e) {
+      console.warn('[SignalEngine] OSINT Google search error:', e);
+    }
+
+    // 3. LinkedIn URL
+    const linkedinUrl = _generateLinkedInUrl(nom);
+
+    console.log('[SignalEngine] OSINT pre-check "' + nom + '": score=' + score + ' signals=' + signals.join(', '));
+    return { score, signals, linkedinUrl };
   }
 
   // ============================================================
@@ -1177,6 +1268,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       ville: entry.ville || '',
       code_postal: entry.code_postal || '',
       secteur_naf: entry.secteur_naf || '',
+      libelle_naf: entry.libelle_naf || '',
+      linkedin_url: entry.linkedin_url || _generateLinkedInUrl(entry.nom),
       source: entry.source || 'manual',
       actif: true,
       date_ajout: now,
@@ -1211,6 +1304,69 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         await _saveSignaux();
         console.log('[SignalEngine] Removed signal for "' + entry.nom + '"');
       }
+    }
+  }
+
+  async function dismissToEcartees(watchlistId) {
+    await _loadWatchlist();
+    await _loadEcartees();
+
+    const entry = _watchlist.find(w => w.id === watchlistId);
+    if (!entry) return;
+
+    // Creer l'entree ecartee
+    const ecartee = {
+      ...entry,
+      id: 'ec_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+      watchlist_id_original: entry.id,
+      source_originale: entry.source || 'manual',
+      date_ecartee: new Date().toISOString().split('T')[0],
+    };
+    _ecartees.push(ecartee);
+
+    // Retirer de la watchlist
+    _watchlist = _watchlist.filter(w => w.id !== watchlistId);
+
+    // Retirer le signal associe
+    await _loadSignaux();
+    const prevLen = _signaux.length;
+    _signaux = _signaux.filter(s =>
+      !(
+        (entry.entreprise_id && s.entreprise_id === entry.entreprise_id) ||
+        (entry.siren && s.entreprise_siren === entry.siren) ||
+        (s.entreprise_nom?.toLowerCase() === entry.nom?.toLowerCase())
+      )
+    );
+
+    await _saveEcartees();
+    await _saveWatchlist();
+    if (_signaux.length < prevLen) await _saveSignaux();
+
+    console.log('[SignalEngine] Dismissed "' + entry.nom + '" to ecartees');
+    UI.toast('"' + entry.nom + '" ecartee (accessible dans l\'onglet Ecartees)');
+  }
+
+  async function restoreFromEcartees(ecarteeId) {
+    await _loadEcartees();
+
+    const entry = _ecartees.find(e => e.id === ecarteeId);
+    if (!entry) return;
+
+    // Ajouter a la watchlist (sans les champs specifiques ecartees)
+    const { watchlist_id_original, source_originale, date_ecartee, ...wlFields } = entry;
+    const added = await addToWatchlist({
+      ...wlFields,
+      source: source_originale || 'manual',
+    }, { silent: true });
+
+    if (added) {
+      // Retirer de ecartees
+      _ecartees = _ecartees.filter(e => e.id !== ecarteeId);
+      await _saveEcartees();
+      console.log('[SignalEngine] Restored "' + entry.nom + '" from ecartees');
+      UI.toast('"' + entry.nom + '" restauree dans la watchlist');
+    } else {
+      UI.toast('Entreprise deja dans la watchlist', 'error');
     }
   }
 
@@ -1277,6 +1433,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       _loadConfig(),
       _loadWatchlist(),
       _loadSignaux(),
+      _loadEcartees(),
     ]);
 
     const activeRegion = config.regions_actives?.[0] || 'Pays de la Loire';
@@ -1344,11 +1501,15 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       ${_renderAutoScanStatus(config)}
 
       <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e2e8f0;">
-        ${['signaux', 'watchlist', 'decouverte', 'carte'].map(tab => `
+        ${['signaux', 'watchlist', 'decouverte', 'ecartees', 'carte'].map(tab => {
+          const labels = { signaux: 'Signaux', watchlist: 'Watchlist', decouverte: 'Decouverte', ecartees: 'Ecartees', carte: 'Carte' };
+          const ecCount = tab === 'ecartees' ? (_ecartees || []).length : 0;
+          const badge = (tab === 'ecartees' && ecCount > 0) ? ' <span style="font-size:0.65rem;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:8px;">' + ecCount + '</span>' : '';
+          return `
           <button class="se-tab ${_activeTab === tab ? 'se-tab-active' : ''}" data-tab="${tab}" style="padding:8px 16px;border:none;background:${_activeTab === tab ? '#fff' : 'transparent'};border-bottom:${_activeTab === tab ? '2px solid #3b82f6' : '2px solid transparent'};margin-bottom:-2px;font-size:0.875rem;font-weight:${_activeTab === tab ? '600' : '400'};color:${_activeTab === tab ? '#1e293b' : '#64748b'};cursor:pointer;">
-            ${{ signaux: 'Signaux', watchlist: 'Watchlist', decouverte: 'Decouverte', carte: 'Carte' }[tab]}
-          </button>
-        `).join('')}
+            ${labels[tab]}${badge}
+          </button>`;
+        }).join('')}
       </div>
 
       <div id="se-tab-content"></div>
@@ -1362,6 +1523,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       _renderWatchlistTab(tabContent, regionWatchlist, activeRegion);
     } else if (_activeTab === 'decouverte') {
       _renderDecouverteTab(tabContent, activeRegion);
+    } else if (_activeTab === 'ecartees') {
+      _renderEcarteesTab(tabContent, activeRegion);
     } else if (_activeTab === 'carte') {
       _renderCarteTab(tabContent, regionSignaux, activeRegion);
     }
@@ -1391,61 +1554,11 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     });
 
     document.getElementById('se-btn-discover-auto')?.addEventListener('click', async () => {
-      const btn = document.getElementById('se-btn-discover-auto');
       if (!_getPappersKey()) {
         UI.toast('Configurez votre cle Pappers d\'abord', 'error');
         return;
       }
-      if (!CVParser.getOpenAIKey()) {
-        UI.toast('Configurez votre cle OpenAI d\'abord', 'error');
-        return;
-      }
-      btn.disabled = true;
-      btn.textContent = 'Recherche...';
-      try {
-        const config = await _loadConfig();
-        const region = config.regions_actives?.[0] || 'Pays de la Loire';
-        _showAutoScanBanner(containerId, 0);
-        const discovered = await _runAutoDiscovery(region, containerId);
-
-        if (discovered.length > 0) {
-          // Scan discovered companies
-          _watchlist = null;
-          await _loadWatchlist();
-          _signaux = null;
-          await _loadSignaux();
-
-          for (let i = 0; i < discovered.length; i++) {
-            const d = discovered[i];
-            const wl = _watchlist.find(w => w.siren === d.siren);
-            if (!wl) continue;
-            _updateAutoScanBanner(i, discovered.length, 'Scan: ' + d.nom);
-            try {
-              const result = await analyseEntreprise(wl);
-              _upsertSignal(result, wl);
-              wl.derniere_analyse = new Date().toISOString().split('T')[0];
-            } catch (e) {
-              console.error('[SignalEngine] Scan error for discovered ' + d.nom + ':', e);
-            }
-          }
-          await _saveSignaux();
-          await _saveWatchlist();
-
-          UI.toast(discovered.length + ' entreprise' + (discovered.length > 1 ? 's' : '') + ' decouverte' + (discovered.length > 1 ? 's' : '') + ' et scannee' + (discovered.length > 1 ? 's' : ''));
-        } else {
-          UI.toast('Aucune nouvelle entreprise avec des signaux business trouvee');
-        }
-        _removeAutoScanBanner();
-        _signaux = null;
-        _watchlist = null;
-        await renderPage(containerId);
-      } catch (e) {
-        console.error('[SignalEngine] Manual discovery error:', e);
-        UI.toast('Erreur: ' + e.message, 'error');
-        _removeAutoScanBanner();
-        btn.disabled = false;
-        btn.textContent = 'Decouverte auto';
-      }
+      _showDiscoverySettingsModal(containerId);
     });
 
     // Notification bell listener
@@ -1617,16 +1730,21 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         const sourceBadge = w.source === 'auto_discovery'
           ? ' <span style="font-size:0.6rem;background:#ede9fe;color:#7c3aed;padding:1px 5px;border-radius:3px;vertical-align:middle;">auto</span>'
           : '';
+        const linkedinLink = w.linkedin_url
+          ? '<a href="' + UI.escHtml(w.linkedin_url) + '" target="_blank" style="color:#0077b5;" title="Rechercher sur LinkedIn">LinkedIn</a>'
+          : '—';
         return `
         <tr>
           <td style="font-weight:500;">${UI.escHtml(w.nom)}${sourceBadge}</td>
           <td>${UI.escHtml(w.ville || '')} (${w.departement || ''})</td>
           <td style="font-size:0.8125rem;">${UI.escHtml(w.siren || '—')}</td>
           <td style="font-size:0.8125rem;">${w.site_web ? '<a href="' + UI.escHtml(w.site_web) + '" target="_blank" style="color:#3b82f6;">Site</a>' : '—'}</td>
+          <td style="font-size:0.8125rem;">${linkedinLink}</td>
           <td style="font-size:0.8125rem;">${w.derniere_analyse || 'Jamais'}</td>
           <td>
             <button class="btn btn-secondary se-btn-scan-one" data-id="${w.id}" style="font-size:0.6875rem;padding:2px 8px;">Scanner</button>
-            <button class="btn btn-secondary se-btn-remove-wl" data-id="${w.id}" style="font-size:0.6875rem;padding:2px 8px;color:#dc2626;">Retirer</button>
+            <button class="btn btn-secondary se-btn-dismiss-wl" data-id="${w.id}" style="font-size:0.6875rem;padding:2px 8px;color:#d97706;" title="Ecarter temporairement">Ecarter</button>
+            <button class="btn btn-secondary se-btn-remove-wl" data-id="${w.id}" style="font-size:0.6875rem;padding:2px 8px;color:#dc2626;">Supprimer</button>
           </td>
         </tr>
       `}).join('');
@@ -1640,6 +1758,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
                 <th>Localisation</th>
                 <th>SIREN</th>
                 <th>Site web</th>
+                <th>LinkedIn</th>
                 <th>Dernier scan</th>
                 <th>Actions</th>
               </tr>
@@ -1693,6 +1812,24 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         await _scanOneEntreprise(btn.dataset.id);
       });
     });
+    container.querySelectorAll('.se-btn-dismiss-wl').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          btn.disabled = true;
+          btn.textContent = '...';
+          await dismissToEcartees(btn.dataset.id);
+          _watchlist = null;
+          _signaux = null;
+          _ecartees = null;
+          await renderPage('signaux-content');
+        } catch (e) {
+          console.error('[SignalEngine] Dismiss failed:', e);
+          UI.toast('Erreur: ' + e.message, 'error');
+          btn.disabled = false;
+          btn.textContent = 'Ecarter';
+        }
+      });
+    });
     container.querySelectorAll('.se-btn-remove-wl').forEach(btn => {
       btn.addEventListener('click', async () => {
         try {
@@ -1706,10 +1843,169 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
           console.error('[SignalEngine] Remove failed:', e);
           UI.toast('Erreur lors de la suppression: ' + e.message, 'error');
           btn.disabled = false;
-          btn.textContent = 'Retirer';
+          btn.textContent = 'Supprimer';
         }
       });
     });
+  }
+
+  // ============================================================
+  // UI — MODALE PARAMETRAGE DECOUVERTE
+  // ============================================================
+
+  function _showDiscoverySettingsModal(containerId) {
+    const config = _config || {};
+    const currentRegion = config.regions_actives?.[0] || 'Pays de la Loire';
+    const currentCaMin = (config.ca_min_decouverte || 2000000) / 1000000;
+    const allNafCodes = CODES_NAF_EXTENDED;
+    const currentNaf = config.codes_naf_cibles || CODES_NAF_EXTENDED;
+
+    const nafLabels = {
+      '10': 'Alimentaire', '11': 'Boissons', '12': 'Tabac', '13': 'Textile',
+      '14': 'Habillement', '15': 'Cuir', '16': 'Bois', '17': 'Papier',
+      '18': 'Imprimerie', '19': 'Cokefaction/raffinage', '20': 'Chimie',
+      '21': 'Pharma', '22': 'Caoutchouc/plastique', '23': 'Mineraux non metalliques',
+      '24': 'Metallurgie', '25': 'Produits metalliques', '26': 'Informatique/electronique',
+      '27': 'Equipements electriques', '28': 'Machines/equipements', '29': 'Automobile',
+      '30': 'Materiels de transport', '31': 'Meubles', '32': 'Autres industries',
+      '33': 'Reparation/installation', '46': 'Commerce de gros', '47': 'Commerce de detail',
+      '62': 'Services informatiques', '63': 'Services d\'information',
+      '70': 'Conseil en gestion', '71': 'Ingenierie/controle', '72': 'R&D scientifique',
+      '74': 'Autres activites specialisees', '82': 'Services administratifs',
+    };
+
+    const nafCheckboxes = allNafCodes.map(code => {
+      const checked = currentNaf.includes(code) ? 'checked' : '';
+      const label = nafLabels[code] || code;
+      return `<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 8px 2px 0;font-size:0.8rem;">
+        <input type="checkbox" class="se-disc-naf-cb" value="${code}" ${checked} style="width:14px;height:14px;" /> ${code} - ${label}
+      </label>`;
+    }).join('');
+
+    const bodyHtml = `
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div>
+          <label style="font-weight:600;font-size:0.8125rem;display:block;margin-bottom:4px;">Region cible</label>
+          <select id="se-disc-region" style="width:100%;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.875rem;">
+            ${SignalRegions.getRegionNames().map(r => `<option value="${UI.escHtml(r)}" ${r === currentRegion ? 'selected' : ''}>${UI.escHtml(r)}</option>`).join('')}
+          </select>
+        </div>
+
+        <div>
+          <label style="font-weight:600;font-size:0.8125rem;display:block;margin-bottom:4px;">Chiffre d'affaires minimum (en millions EUR)</label>
+          <input type="number" id="se-disc-ca-min" value="${currentCaMin}" min="0.5" max="100" step="0.5"
+            style="width:120px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.875rem;" />
+          <span style="font-size:0.75rem;color:#64748b;margin-left:6px;">ex: 2 = entreprises avec CA >= 2M EUR</span>
+        </div>
+
+        <div>
+          <label style="font-weight:600;font-size:0.8125rem;display:block;margin-bottom:4px;">Nombre maximum de decouvertes</label>
+          <input type="number" id="se-disc-max" value="10" min="1" max="20" step="1"
+            style="width:80px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.875rem;" />
+        </div>
+
+        <div>
+          <label style="font-weight:600;font-size:0.8125rem;display:block;margin-bottom:6px;">Codes NAF cibles</label>
+          <div style="display:flex;gap:6px;margin-bottom:6px;">
+            <button type="button" id="se-disc-naf-all" class="btn btn-secondary" style="font-size:0.7rem;padding:2px 8px;">Tous</button>
+            <button type="button" id="se-disc-naf-indus" class="btn btn-secondary" style="font-size:0.7rem;padding:2px 8px;">Industrie seule</button>
+            <button type="button" id="se-disc-naf-none" class="btn btn-secondary" style="font-size:0.7rem;padding:2px 8px;">Aucun</button>
+          </div>
+          <div style="max-height:160px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;padding:6px 8px;">
+            ${nafCheckboxes}
+          </div>
+        </div>
+      </div>`;
+
+    UI.modal('Parametres de decouverte automatique', bodyHtml, {
+      width: 600,
+      saveLabel: 'Lancer la decouverte',
+      onSave: async () => {
+        const region = document.getElementById('se-disc-region')?.value || currentRegion;
+        const caMinM = parseFloat(document.getElementById('se-disc-ca-min')?.value) || currentCaMin;
+        const maxDisc = parseInt(document.getElementById('se-disc-max')?.value) || 10;
+        const selectedNaf = [...document.querySelectorAll('.se-disc-naf-cb:checked')].map(cb => cb.value);
+
+        if (!selectedNaf.length) {
+          UI.toast('Selectionnez au moins un code NAF', 'error');
+          throw new Error('validation');
+        }
+
+        // Sauvegarder les parametres dans la config pour les prochaines fois
+        _config.regions_actives = [region];
+        _config.ca_min_decouverte = caMinM * 1000000;
+        _config.codes_naf_cibles = selectedNaf;
+        await _saveConfig();
+
+        // Lancer la decouverte avec les parametres choisis
+        await _executeDiscovery(containerId, {
+          region,
+          caMin: caMinM * 1000000,
+          nafCodes: selectedNaf,
+          maxDiscovered: maxDisc,
+        });
+      },
+    });
+
+    // NAF preset buttons
+    setTimeout(() => {
+      document.getElementById('se-disc-naf-all')?.addEventListener('click', () => {
+        document.querySelectorAll('.se-disc-naf-cb').forEach(cb => { cb.checked = true; });
+      });
+      document.getElementById('se-disc-naf-indus')?.addEventListener('click', () => {
+        document.querySelectorAll('.se-disc-naf-cb').forEach(cb => {
+          cb.checked = CODES_NAF_INDUSTRIELS.includes(cb.value);
+        });
+      });
+      document.getElementById('se-disc-naf-none')?.addEventListener('click', () => {
+        document.querySelectorAll('.se-disc-naf-cb').forEach(cb => { cb.checked = false; });
+      });
+    }, 100);
+  }
+
+  async function _executeDiscovery(containerId, options) {
+    const region = options.region;
+    try {
+      _showAutoScanBanner(containerId, 0);
+      const discovered = await _runAutoDiscovery(region, containerId, options);
+
+      if (discovered.length > 0) {
+        // Scan discovered companies
+        _watchlist = null;
+        await _loadWatchlist();
+        _signaux = null;
+        await _loadSignaux();
+
+        for (let i = 0; i < discovered.length; i++) {
+          const d = discovered[i];
+          const wl = _watchlist.find(w => w.siren === d.siren);
+          if (!wl) continue;
+          _updateAutoScanBanner(i, discovered.length, 'Scan: ' + d.nom);
+          try {
+            const result = await analyseEntreprise(wl);
+            _upsertSignal(result, wl);
+            wl.derniere_analyse = new Date().toISOString().split('T')[0];
+          } catch (e) {
+            console.error('[SignalEngine] Scan error for discovered ' + d.nom + ':', e);
+          }
+        }
+        await _saveSignaux();
+        await _saveWatchlist();
+
+        UI.toast(discovered.length + ' entreprise' + (discovered.length > 1 ? 's' : '') + ' decouverte' + (discovered.length > 1 ? 's' : '') + ' et scannee' + (discovered.length > 1 ? 's' : ''));
+      } else {
+        UI.toast('Aucune nouvelle entreprise avec des signaux business trouvee');
+      }
+      _removeAutoScanBanner();
+      _signaux = null;
+      _watchlist = null;
+      _ecartees = null;
+      await renderPage(containerId);
+    } catch (e) {
+      console.error('[SignalEngine] Discovery error:', e);
+      UI.toast('Erreur: ' + e.message, 'error');
+      _removeAutoScanBanner();
+    }
   }
 
   // ============================================================
@@ -1760,27 +2056,33 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
           chiffre_affaires_min: config.ca_min_decouverte || 2000000,
         });
 
-        // Dedup with existing watchlist
+        // Dedup with existing watchlist AND ecartees
         await _loadWatchlist();
+        await _loadEcartees();
         const wlSirens = new Set(_watchlist.map(w => w.siren).filter(Boolean));
-        const filtered = results.filter(r => !wlSirens.has(r.siren));
+        const ecSirens = new Set((_ecartees || []).map(e => e.siren).filter(Boolean));
+        const filtered = results.filter(r => !wlSirens.has(r.siren) && !ecSirens.has(r.siren));
 
         if (!filtered.length) {
-          resultsDiv.innerHTML = '<p style="color:#94a3b8;">Aucune entreprise trouvee (ou toutes deja dans la watchlist).</p>';
+          resultsDiv.innerHTML = '<p style="color:#94a3b8;">Aucune entreprise trouvee (ou toutes deja dans la watchlist/ecartees).</p>';
           return;
         }
 
-        resultsDiv.innerHTML = filtered.map(r => `
+        resultsDiv.innerHTML = `<p style="font-size:0.8125rem;color:#64748b;margin-bottom:8px;">${filtered.length} entreprise${filtered.length > 1 ? 's' : ''} trouvee${filtered.length > 1 ? 's' : ''}</p>` +
+        filtered.map(r => {
+          const linkedinUrl = _generateLinkedInUrl(r.nom);
+          return `
           <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f1f5f9;">
             <div>
               <div style="font-weight:500;">${UI.escHtml(r.nom)}</div>
               <div style="font-size:0.8125rem;color:#64748b;">
                 ${UI.escHtml(r.ville)} (${r.departement}) | ${UI.escHtml(r.libelle_naf)} | CA: ${r.ca ? (r.ca / 1000000).toFixed(0) + 'M' : '?'} | ${r.effectif} sal.
+                ${linkedinUrl ? ' | <a href="' + UI.escHtml(linkedinUrl) + '" target="_blank" style="color:#0077b5;font-size:0.75rem;">LinkedIn</a>' : ''}
               </div>
             </div>
-            <button class="btn btn-secondary se-btn-add-disc" data-siren="${r.siren}" data-nom="${UI.escHtml(r.nom)}" data-ville="${UI.escHtml(r.ville)}" data-cp="${r.code_postal}" data-dep="${r.departement}" data-region="${UI.escHtml(r.region)}" data-naf="${r.secteur_naf}" style="font-size:0.75rem;padding:3px 10px;white-space:nowrap;">+ Watchlist</button>
-          </div>
-        `).join('');
+            <button class="btn btn-secondary se-btn-add-disc" data-siren="${r.siren}" data-nom="${UI.escHtml(r.nom)}" data-ville="${UI.escHtml(r.ville)}" data-cp="${r.code_postal}" data-dep="${r.departement}" data-region="${UI.escHtml(r.region)}" data-naf="${r.secteur_naf}" data-libelle-naf="${UI.escHtml(r.libelle_naf || '')}" style="font-size:0.75rem;padding:3px 10px;white-space:nowrap;">+ Watchlist</button>
+          </div>`;
+        }).join('');
 
         resultsDiv.querySelectorAll('.se-btn-add-disc').forEach(btn => {
           btn.addEventListener('click', async () => {
@@ -1792,17 +2094,115 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
               departement: btn.dataset.dep,
               region: btn.dataset.region,
               secteur_naf: btn.dataset.naf,
+              libelle_naf: btn.dataset.libelleNaf || '',
               source: 'decouverte',
             });
             btn.textContent = 'Ajoutee';
             btn.disabled = true;
-            // Invalidate cache so watchlist tab shows update on next switch
             _watchlist = null;
           });
         });
       } catch (e) {
         resultsDiv.innerHTML = `<p style="color:#dc2626;">Erreur: ${UI.escHtml(e.message)}</p>`;
       }
+    });
+  }
+
+  // ============================================================
+  // UI — ECARTEES TAB
+  // ============================================================
+
+  function _renderEcarteesTab(container, activeRegion) {
+    const ecartees = (_ecartees || []).filter(e => !activeRegion || e.region === activeRegion);
+
+    if (!ecartees.length) {
+      container.innerHTML = `
+        <div class="card"><div class="card-body">
+          <h3 style="margin:0 0 12px;font-size:0.9375rem;">Entreprises ecartees — ${UI.escHtml(activeRegion)}</h3>
+          <div class="empty-state"><p>Aucune entreprise ecartee pour le moment. Utilisez le bouton "Ecarter" dans la watchlist pour mettre de cote une entreprise.</p></div>
+        </div></div>`;
+      return;
+    }
+
+    const rows = ecartees.map(e => {
+      const linkedinLink = e.linkedin_url
+        ? '<a href="' + UI.escHtml(e.linkedin_url) + '" target="_blank" style="color:#0077b5;">LinkedIn</a>'
+        : '—';
+      const sourceBadge = {
+        auto_discovery: '<span style="font-size:0.6rem;background:#ede9fe;color:#7c3aed;padding:1px 5px;border-radius:3px;">auto</span>',
+        ats_import: '<span style="font-size:0.6rem;background:#dbeafe;color:#1e40af;padding:1px 5px;border-radius:3px;">ATS</span>',
+        decouverte: '<span style="font-size:0.6rem;background:#d1fae5;color:#065f46;padding:1px 5px;border-radius:3px;">decouverte</span>',
+        manual: '<span style="font-size:0.6rem;background:#f3f4f6;color:#374151;padding:1px 5px;border-radius:3px;">manuel</span>',
+      }[e.source_originale] || '';
+      return `
+        <tr>
+          <td style="font-weight:500;">${UI.escHtml(e.nom)} ${sourceBadge}</td>
+          <td>${UI.escHtml(e.ville || '')} (${e.departement || ''})</td>
+          <td style="font-size:0.8125rem;">${UI.escHtml(e.siren || '—')}</td>
+          <td style="font-size:0.8125rem;">${linkedinLink}</td>
+          <td style="font-size:0.8125rem;">${e.date_ecartee || '—'}</td>
+          <td>
+            <button class="btn btn-secondary se-btn-restore-ec" data-id="${e.id}" style="font-size:0.6875rem;padding:2px 8px;color:#059669;">Restaurer</button>
+            <button class="btn btn-secondary se-btn-delete-ec" data-id="${e.id}" style="font-size:0.6875rem;padding:2px 8px;color:#dc2626;">Supprimer</button>
+          </td>
+        </tr>`;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="card"><div class="card-body">
+        <h3 style="margin:0 0 12px;font-size:0.9375rem;">Entreprises ecartees — ${UI.escHtml(activeRegion)} (${ecartees.length})</h3>
+        <p style="font-size:0.8125rem;color:#64748b;margin-bottom:12px;">Entreprises mises de cote temporairement. Elles ne seront pas re-decouvertes automatiquement. Vous pouvez les restaurer dans la watchlist a tout moment.</p>
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Entreprise</th>
+                <th>Localisation</th>
+                <th>SIREN</th>
+                <th>LinkedIn</th>
+                <th>Date ecartee</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div></div>`;
+
+    // Event listeners
+    container.querySelectorAll('.se-btn-restore-ec').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          btn.disabled = true;
+          btn.textContent = '...';
+          await restoreFromEcartees(btn.dataset.id);
+          _watchlist = null;
+          _ecartees = null;
+          await renderPage('signaux-content');
+        } catch (e) {
+          console.error('[SignalEngine] Restore failed:', e);
+          UI.toast('Erreur: ' + e.message, 'error');
+          btn.disabled = false;
+          btn.textContent = 'Restaurer';
+        }
+      });
+    });
+
+    container.querySelectorAll('.se-btn-delete-ec').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          btn.disabled = true;
+          btn.textContent = '...';
+          _ecartees = _ecartees.filter(e => e.id !== btn.dataset.id);
+          await _saveEcartees();
+          await renderPage('signaux-content');
+        } catch (e) {
+          console.error('[SignalEngine] Delete ecartee failed:', e);
+          UI.toast('Erreur: ' + e.message, 'error');
+          btn.disabled = false;
+          btn.textContent = 'Supprimer';
+        }
+      });
     });
   }
 
@@ -2410,12 +2810,12 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
   // AUTO-DISCOVERY — Find new companies with business signals
   // ============================================================
 
-  async function _runAutoDiscovery(activeRegion, containerId) {
+  async function _runAutoDiscovery(activeRegion, containerId, options = {}) {
     const apiKey = _getPappersKey();
     if (!apiKey) return [];
 
     const config = await _loadConfig();
-    const nafCodes = config.codes_naf_cibles || CODES_NAF_EXTENDED;
+    const nafCodes = options.nafCodes || config.codes_naf_cibles || CODES_NAF_EXTENDED;
 
     // Rotate through NAF codes in batches of 6
     const cursor = config.discovery_cursor || 0;
@@ -2431,26 +2831,35 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
 
     // Collect candidates from Pappers with lower thresholds
     await _loadWatchlist();
+    await _loadEcartees();
     const wlSirens = new Set(_watchlist.map(w => w.siren).filter(Boolean));
     const wlNoms = new Set(_watchlist.map(w => w.nom?.toLowerCase()));
+    // Exclure aussi les entreprises ecartees pour ne pas les re-decouvrir
+    const ecSirens = new Set((_ecartees || []).map(e => e.siren).filter(Boolean));
+    const ecNoms = new Set((_ecartees || []).map(e => e.nom?.toLowerCase()));
     const candidates = [];
+    const discoveryCaMin = options.caMin || config.ca_min_decouverte || 2000000;
+    const MAX_CANDIDATES = 30;
     for (const naf of nafBatch) {
       try {
         const results = await _searchPappersByRegion(activeRegion, {
           code_naf: naf,
-          par_page: '50',
-          chiffre_affaires_min: config.ca_min_decouverte || 2000000,
+          par_page: options.parPage || '20',
+          chiffre_affaires_min: discoveryCaMin,
         });
         console.log('[SignalEngine] Discovery NAF ' + naf + ': ' + results.length + ' results from Pappers');
         for (const r of results) {
           if (wlSirens.has(r.siren)) continue;
           if (wlNoms.has(r.nom.toLowerCase())) continue;
+          if (ecSirens.has(r.siren)) continue;
+          if (ecNoms.has(r.nom.toLowerCase())) continue;
           if (candidates.some(c => c.siren === r.siren)) continue;
           candidates.push(r);
         }
       } catch (e) {
         console.warn('[SignalEngine] Discovery Pappers error for NAF ' + naf + ':', e);
       }
+      if (candidates.length >= MAX_CANDIDATES) break;
     }
 
     if (!candidates.length) {
@@ -2467,35 +2876,54 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       return scoreB - scoreA;
     });
 
-    const MAX_CHECKS = 15;
+    const MAX_CHECKS = 10;
+    const MAX_DISCOVERED = options.maxDiscovered || 10;
     const toCheck = candidates.slice(0, MAX_CHECKS);
     const discovered = [];
-    const caMin = config.ca_min_decouverte || 2000000;
+    const caMin = discoveryCaMin;
 
     for (let i = 0; i < toCheck.length; i++) {
+      if (discovered.length >= MAX_DISCOVERED) break;
       const c = toCheck[i];
       _updateAutoScanBanner(i, toCheck.length, 'Decouverte: ' + c.nom);
 
-      // Critere 1 (Pappers) : CA suffisant ET effectif suffisant → ajout direct
-      // Ces entreprises sont des cibles pertinentes par leur taille seule
-      const hasPappersSignal = (c.ca >= caMin) && (c.effectif >= effectifMin);
+      // Critere 1 (Pappers) : CA suffisant → ajout direct
+      // Le CA est le critere principal car Pappers ne renseigne pas toujours l'effectif
+      const hasPappersSignal = (c.ca >= caMin);
 
       if (hasPappersSignal) {
+        // Pre-check OSINT leger pour les entreprises dont le CA n'est pas exceptionnel
+        let osintResult = null;
+        if (c.ca < caMin * 2) {
+          try {
+            osintResult = await _lightOsintCheck(c);
+            if (osintResult.score < 20) {
+              console.log('[SignalEngine] Discovery skip (low OSINT score): ' + c.nom + ' (score=' + osintResult.score + ')');
+              continue;
+            }
+          } catch (e) {
+            console.warn('[SignalEngine] OSINT check error for ' + c.nom + ':', e);
+            // Si le check echoue, on ajoute quand meme (CA suffisant)
+          }
+        }
+
+        const linkedinUrl = _generateLinkedInUrl(c.nom);
         const added = await addToWatchlist({
           siren: c.siren, nom: c.nom, ville: c.ville,
           code_postal: c.code_postal, departement: c.departement,
           region: c.region, secteur_naf: c.secteur_naf,
           libelle_naf: c.libelle_naf || '',
           site_web: '', source: 'auto_discovery',
+          linkedin_url: linkedinUrl,
         }, { silent: true });
         if (added) {
-          discovered.push(c);
-          console.log('[SignalEngine] Discovered (Pappers): ' + c.nom + ' (CA=' + ((c.ca || 0) / 1000000).toFixed(0) + 'M, ' + c.effectif + ' sal.)');
+          discovered.push({ ...c, osint: osintResult, linkedin_url: linkedinUrl });
+          console.log('[SignalEngine] Discovered (Pappers): ' + c.nom + ' (CA=' + ((c.ca || 0) / 1000000).toFixed(0) + 'M, ' + c.effectif + ' sal.' + (osintResult ? ', OSINT=' + osintResult.score : '') + ')');
         }
         continue;
       }
 
-      // Critere 2 (Google News) : vérifier si l'entreprise a des signaux business dans l'actualité
+      // Critere 2 (Google News) : verifier si l'entreprise a des signaux business dans l'actualite
       try {
         const query = `"${c.nom}" ${c.ville ? '"' + c.ville + '"' : ''} entreprise OR société OR groupe`;
         const articles = await _fetchGoogleNewsRSS(query, 3);
@@ -2509,15 +2937,17 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
           });
 
           if (relevant.length > 0) {
+            const linkedinUrl = _generateLinkedInUrl(c.nom);
             const added = await addToWatchlist({
               siren: c.siren, nom: c.nom, ville: c.ville,
               code_postal: c.code_postal, departement: c.departement,
               region: c.region, secteur_naf: c.secteur_naf,
               libelle_naf: c.libelle_naf || '',
               site_web: '', source: 'auto_discovery',
+              linkedin_url: linkedinUrl,
             }, { silent: true });
             if (added) {
-              discovered.push(c);
+              discovered.push({ ...c, linkedin_url: linkedinUrl });
               console.log('[SignalEngine] Discovered (News): ' + c.nom + ' (' + relevant.length + ' articles)');
             }
           }
@@ -2529,7 +2959,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       }
     }
 
-    console.log('[SignalEngine] Auto-discovery done: ' + discovered.length + '/' + toCheck.length + ' new companies added');
+    console.log('[SignalEngine] Auto-discovery done: ' + discovered.length + '/' + toCheck.length + ' new companies added (max ' + MAX_DISCOVERED + ')');
     return discovered;
   }
 
@@ -2815,6 +3245,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     addToWatchlist,
     addFromATS,
     removeFromWatchlist,
+    dismissToEcartees,
+    restoreFromEcartees,
     analyseEntreprise,
     generateApproche,
     showSignalDetail,
