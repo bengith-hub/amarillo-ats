@@ -144,6 +144,7 @@ const SignalEngine = (() => {
       scan_cursor: 0,
       effectif_min_decouverte: 50,
       ca_min_decouverte: 2000000,
+      ca_max_decouverte: 0, // 0 = illimite
       codes_naf_cibles: CODES_NAF_EXTENDED,
       score_seuil_alerte: 70,
       derniere_execution: null
@@ -834,6 +835,10 @@ const SignalEngine = (() => {
               if (!isTargetedNaf || !hasSeniority) { clientFilteredCount++; continue; }
             }
           }
+
+          // Client-side CA max filter (always applied, Pappers has no server-side max)
+          const caMax = options.clientCaMax || config.ca_max_decouverte || 0;
+          if (caMax > 0 && ca > caMax) { clientFilteredCount++; continue; }
 
           // Departement reel du siege (extrait du code postal), pas celui de la requete
           const siegeCP = r.siege?.code_postal || '';
@@ -2225,6 +2230,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     const config = _config || {};
     const currentRegion = config.regions_actives?.[0] || 'Pays de la Loire';
     const currentCaMin = (config.ca_min_decouverte || 2000000) / 1000000;
+    const currentCaMax = (config.ca_max_decouverte || 0) / 1000000; // 0 = illimite
     const allNafCodes = CODES_NAF_EXTENDED;
     const currentNaf = config.codes_naf_cibles || CODES_NAF_EXTENDED;
 
@@ -2267,6 +2273,18 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         </div>
 
         <div>
+          <label style="font-weight:600;font-size:0.8125rem;display:block;margin-bottom:4px;">Chiffre d'affaires maximum (en millions EUR)</label>
+          <select id="se-disc-ca-max" style="width:160px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.875rem;">
+            ${[50, 100, 250, 500, 1000, 0].map(v => {
+              const label = v === 0 ? 'Illimite' : v + ' M\u20ac';
+              const selected = v === currentCaMax ? 'selected' : '';
+              return '<option value="' + v + '" ' + selected + '>' + label + '</option>';
+            }).join('')}
+          </select>
+          <span style="font-size:0.75rem;color:#64748b;margin-left:6px;">0 = pas de plafond</span>
+        </div>
+
+        <div>
           <label style="font-weight:600;font-size:0.8125rem;display:block;margin-bottom:4px;">Nombre maximum de decouvertes</label>
           <input type="number" id="se-disc-max" value="10" min="1" max="20" step="1"
             style="width:80px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.875rem;" />
@@ -2291,6 +2309,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       onSave: async () => {
         const region = document.getElementById('se-disc-region')?.value || currentRegion;
         const caMinM = parseFloat(document.getElementById('se-disc-ca-min')?.value) || currentCaMin;
+        const caMaxM = parseInt(document.getElementById('se-disc-ca-max')?.value) || 0;
         const maxDisc = parseInt(document.getElementById('se-disc-max')?.value) || 10;
         const selectedNaf = [...document.querySelectorAll('.se-disc-naf-cb:checked')].map(cb => cb.value);
 
@@ -2302,6 +2321,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         // Sauvegarder les parametres dans la config pour les prochaines fois
         _config.regions_actives = [region];
         _config.ca_min_decouverte = caMinM * 1000000;
+        _config.ca_max_decouverte = caMaxM ? caMaxM * 1000000 : 0;
         _config.codes_naf_cibles = selectedNaf;
         await _saveConfig();
 
@@ -2310,6 +2330,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
           _executeDiscovery(containerId, {
             region,
             caMin: caMinM * 1000000,
+            caMax: caMaxM ? caMaxM * 1000000 : 0,
             nafCodes: selectedNaf,
             maxDiscovered: maxDisc,
           });
@@ -2348,7 +2369,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       _signaux = null;
       _watchlist = null;
       _ecartees = null;
-      _suggestions = null;
+      // _suggestions NOT nullified: already up-to-date from _runAutoDiscovery
       _activeTab = 'decouverte';
       await renderPage(containerId);
     } catch (e) {
@@ -2483,6 +2504,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
           code_naf: naf,
           par_page: '50',
           chiffre_affaires_min: config.ca_min_decouverte || 2000000,
+          clientCaMax: config.ca_max_decouverte || 0,
         });
 
         // Dedup with existing watchlist, ecartees AND suggestions
@@ -3300,7 +3322,9 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     console.log('[SignalEngine] Exclusion sets: watchlist=' + wlSirens.size + ', ecartees=' + ecSirens.size + ', suggestions=' + sugSirens.size);
 
     const discoveryCaMin = options.caMin || config.ca_min_decouverte || 2000000;
-    console.log('[SignalEngine] CA minimum: ' + (discoveryCaMin / 1000000).toFixed(1) + 'M EUR');
+    const discoveryCaMax = options.caMax || config.ca_max_decouverte || 0;
+    console.log('[SignalEngine] CA minimum: ' + (discoveryCaMin / 1000000).toFixed(1) + 'M EUR' +
+      (discoveryCaMax ? ', CA maximum: ' + (discoveryCaMax / 1000000).toFixed(0) + 'M EUR' : ', CA maximum: illimite'));
     const candidates = [];
 
     function _dedupAndPush(results) {
@@ -3336,6 +3360,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         code_naf: nafBatch,
         par_page: '100',
         chiffre_affaires_min: discoveryCaMin,
+        clientCaMax: discoveryCaMax,
       });
       console.log('[SignalEngine] Search returned ' + results.length + ' results in ' + (Date.now() - t0) + 'ms');
       _dedupAndPush(results);
