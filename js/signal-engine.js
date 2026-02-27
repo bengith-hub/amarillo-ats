@@ -111,6 +111,7 @@ const SignalEngine = (() => {
   let _watchlist = null;
   let _signaux = null;
   let _ecartees = null;
+  let _suggestions = null;
   let _activeTab = 'signaux';
   let _filters = { score: null, type: null, departement: null };
 
@@ -195,6 +196,21 @@ const SignalEngine = (() => {
 
   async function _saveEcartees() {
     await API.updateBin('entreprises_ecartees', _ecartees);
+  }
+
+  async function _loadSuggestions() {
+    if (_suggestions) return _suggestions;
+    try {
+      _suggestions = await API.fetchBin('decouverte_suggestions');
+      if (!Array.isArray(_suggestions)) _suggestions = [];
+    } catch {
+      _suggestions = [];
+    }
+    return _suggestions;
+  }
+
+  async function _saveSuggestions() {
+    await API.updateBin('decouverte_suggestions', _suggestions);
   }
 
   async function _loadSignaux() {
@@ -1428,6 +1444,70 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     }
   }
 
+  async function acceptSuggestion(suggestionId) {
+    await _loadSuggestions();
+    const sug = (_suggestions || []).find(s => s.id === suggestionId);
+    if (!sug) return;
+
+    const added = await addToWatchlist({
+      siren: sug.siren,
+      nom: sug.nom,
+      ville: sug.ville,
+      code_postal: sug.code_postal,
+      departement: sug.departement,
+      region: sug.region,
+      secteur_naf: sug.secteur_naf,
+      libelle_naf: sug.libelle_naf || '',
+      linkedin_url: sug.linkedin_url || '',
+      source: 'auto_discovery',
+    }, { silent: true });
+
+    // Retirer de suggestions dans tous les cas
+    _suggestions = _suggestions.filter(s => s.id !== suggestionId);
+    await _saveSuggestions();
+
+    if (added) {
+      console.log('[SignalEngine] Suggestion accepted: "' + sug.nom + '" → watchlist');
+      UI.toast('"' + sug.nom + '" ajoutee a la watchlist');
+    } else {
+      console.log('[SignalEngine] Suggestion "' + sug.nom + '" already in watchlist');
+      UI.toast('"' + sug.nom + '" deja dans la watchlist');
+    }
+  }
+
+  async function dismissSuggestion(suggestionId) {
+    await _loadSuggestions();
+    await _loadEcartees();
+    const sug = (_suggestions || []).find(s => s.id === suggestionId);
+    if (!sug) return;
+
+    // Creer entree ecartee
+    const ecartee = {
+      id: 'ec_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+      siren: sug.siren,
+      nom: sug.nom,
+      ville: sug.ville,
+      code_postal: sug.code_postal,
+      departement: sug.departement,
+      region: sug.region,
+      secteur_naf: sug.secteur_naf,
+      libelle_naf: sug.libelle_naf || '',
+      linkedin_url: sug.linkedin_url || '',
+      source_originale: 'auto_discovery',
+      date_ecartee: new Date().toISOString().split('T')[0],
+    };
+    _ecartees.push(ecartee);
+
+    // Retirer de suggestions
+    _suggestions = _suggestions.filter(s => s.id !== suggestionId);
+
+    await _saveEcartees();
+    await _saveSuggestions();
+
+    console.log('[SignalEngine] Suggestion dismissed: "' + sug.nom + '" → ecartees');
+    UI.toast('"' + sug.nom + '" ecartee');
+  }
+
   async function addFromATS(entrepriseId, options) {
     const ent = Store.findById('entreprises', entrepriseId);
     if (!ent) return null;
@@ -1492,6 +1572,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       _loadWatchlist(),
       _loadSignaux(),
       _loadEcartees(),
+      _loadSuggestions(),
     ]);
 
     const activeRegion = config.regions_actives?.[0] || 'Pays de la Loire';
@@ -1562,7 +1643,10 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         ${['signaux', 'watchlist', 'decouverte', 'ecartees', 'carte'].map(tab => {
           const labels = { signaux: 'Signaux', watchlist: 'Watchlist', decouverte: 'Decouverte', ecartees: 'Ecartees', carte: 'Carte' };
           const ecCount = tab === 'ecartees' ? (_ecartees || []).length : 0;
-          const badge = (tab === 'ecartees' && ecCount > 0) ? ' <span style="font-size:0.65rem;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:8px;">' + ecCount + '</span>' : '';
+          const sugCount = tab === 'decouverte' ? (_suggestions || []).length : 0;
+          let badge = '';
+          if (tab === 'ecartees' && ecCount > 0) badge = ' <span style="font-size:0.65rem;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:8px;">' + ecCount + '</span>';
+          if (tab === 'decouverte' && sugCount > 0) badge = ' <span style="font-size:0.65rem;background:#ede9fe;color:#7c3aed;padding:1px 5px;border-radius:8px;">' + sugCount + '</span>';
           return `
           <button class="se-tab ${_activeTab === tab ? 'se-tab-active' : ''}" data-tab="${tab}" style="padding:8px 16px;border:none;background:${_activeTab === tab ? '#fff' : 'transparent'};border-bottom:${_activeTab === tab ? '2px solid #3b82f6' : '2px solid transparent'};margin-bottom:-2px;font-size:0.875rem;font-weight:${_activeTab === tab ? '600' : '400'};color:${_activeTab === tab ? '#1e293b' : '#64748b'};cursor:pointer;">
             ${labels[tab]}${badge}
@@ -2028,36 +2112,16 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       const discovered = await _runAutoDiscovery(region, containerId, options);
 
       if (discovered.length > 0) {
-        // Scan discovered companies
-        _watchlist = null;
-        await _loadWatchlist();
-        _signaux = null;
-        await _loadSignaux();
-
-        for (let i = 0; i < discovered.length; i++) {
-          const d = discovered[i];
-          const wl = _watchlist.find(w => w.siren === d.siren);
-          if (!wl) continue;
-          _updateAutoScanBanner(i, discovered.length, 'Scan: ' + d.nom);
-          try {
-            const result = await analyseEntreprise(wl);
-            _upsertSignal(result, wl);
-            wl.derniere_analyse = new Date().toISOString().split('T')[0];
-          } catch (e) {
-            console.error('[SignalEngine] Scan error for discovered ' + d.nom + ':', e);
-          }
-        }
-        await _saveSignaux();
-        await _saveWatchlist();
-
-        UI.toast(discovered.length + ' entreprise' + (discovered.length > 1 ? 's' : '') + ' decouverte' + (discovered.length > 1 ? 's' : '') + ' et scannee' + (discovered.length > 1 ? 's' : ''));
+        UI.toast(discovered.length + ' entreprise' + (discovered.length > 1 ? 's' : '') + ' decouverte' + (discovered.length > 1 ? 's' : '') + ' — consultez l\'onglet Decouverte');
       } else {
-        UI.toast('Aucune nouvelle entreprise avec des signaux business trouvee');
+        UI.toast('Aucune nouvelle entreprise trouvee');
       }
       _removeAutoScanBanner();
       _signaux = null;
       _watchlist = null;
       _ecartees = null;
+      _suggestions = null;
+      _activeTab = 'decouverte';
       await renderPage(containerId);
     } catch (e) {
       console.error('[SignalEngine] Discovery error:', e);
@@ -2071,9 +2135,64 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
   // ============================================================
 
   function _renderDecouverteTab(container, activeRegion) {
-    container.innerHTML = `
+    const regionSuggestions = (_suggestions || []).filter(s => !activeRegion || s.region === activeRegion);
+
+    // Section suggestions
+    let suggestionsHtml = '';
+    if (regionSuggestions.length) {
+      const rows = regionSuggestions.map(s => {
+        const caStr = s.ca ? (s.ca / 1000000).toFixed(1) + 'M' : '—';
+        const effStr = s.effectif || '—';
+        const osintBadge = s.osint_score != null
+          ? '<span style="font-size:0.65rem;background:' + (s.osint_score >= 20 ? '#d1fae5' : '#f3f4f6') + ';color:' + (s.osint_score >= 20 ? '#065f46' : '#6b7280') + ';padding:1px 5px;border-radius:3px;">OSINT ' + s.osint_score + '</span>'
+          : '';
+        const linkedinLink = s.linkedin_url
+          ? '<a href="' + UI.escHtml(s.linkedin_url) + '" target="_blank" style="color:#0077b5;font-size:0.75rem;">LinkedIn</a>'
+          : '';
+        return `
+          <tr>
+            <td style="font-weight:500;">${UI.escHtml(s.nom)} ${osintBadge}</td>
+            <td>${UI.escHtml(s.ville || '')} (${s.departement || ''})</td>
+            <td style="text-align:right;">${caStr}</td>
+            <td style="text-align:right;">${effStr}</td>
+            <td style="font-size:0.8125rem;">${UI.escHtml(s.libelle_naf || s.secteur_naf || '')}</td>
+            <td style="font-size:0.8125rem;">${linkedinLink}</td>
+            <td style="white-space:nowrap;">
+              <button class="btn btn-primary se-btn-accept-sug" data-id="${s.id}" style="font-size:0.6875rem;padding:2px 8px;">+ Watchlist</button>
+              <button class="btn btn-secondary se-btn-dismiss-sug" data-id="${s.id}" style="font-size:0.6875rem;padding:2px 8px;color:#d97706;">Ecarter</button>
+            </td>
+          </tr>`;
+      }).join('');
+
+      suggestionsHtml = `
+        <div class="card" style="margin-bottom:16px;border-left:3px solid #7c3aed;">
+          <div class="card-body">
+            <h3 style="margin:0 0 8px;font-size:0.9375rem;">Entreprises decouvertes (${regionSuggestions.length})</h3>
+            <p style="font-size:0.8125rem;color:#64748b;margin-bottom:12px;">Ces entreprises ont ete trouvees par la decouverte auto. Choisissez de les ajouter a votre watchlist ou de les ecarter.</p>
+            <div class="data-table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Entreprise</th>
+                    <th>Localisation</th>
+                    <th>CA</th>
+                    <th>Effectif</th>
+                    <th>Secteur</th>
+                    <th>LinkedIn</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // Section recherche manuelle
+    container.innerHTML = suggestionsHtml + `
       <div class="card"><div class="card-body">
-        <h3 style="margin:0 0 12px;font-size:0.9375rem;">Decouverte — ${UI.escHtml(activeRegion)}</h3>
+        <h3 style="margin:0 0 12px;font-size:0.9375rem;">Recherche manuelle — ${UI.escHtml(activeRegion)}</h3>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
           <select id="se-disc-naf" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.8125rem;">
             <option value="">Tous secteurs industriels</option>
@@ -2093,6 +2212,30 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       </div></div>
     `;
 
+    // Suggestion action buttons
+    container.querySelectorAll('.se-btn-accept-sug').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = '...';
+        await acceptSuggestion(btn.dataset.id);
+        // Re-render only the tab content
+        const tabContent = document.getElementById('se-tab-content');
+        if (tabContent) _renderDecouverteTab(tabContent, activeRegion);
+      });
+    });
+
+    container.querySelectorAll('.se-btn-dismiss-sug').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = '...';
+        await dismissSuggestion(btn.dataset.id);
+        // Re-render only the tab content
+        const tabContent = document.getElementById('se-tab-content');
+        if (tabContent) _renderDecouverteTab(tabContent, activeRegion);
+      });
+    });
+
+    // Manual search button
     document.getElementById('se-btn-discover')?.addEventListener('click', async () => {
       const nafSelect = document.getElementById('se-disc-naf');
       const naf = nafSelect?.value || '';
@@ -2114,15 +2257,16 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
           chiffre_affaires_min: config.ca_min_decouverte || 2000000,
         });
 
-        // Dedup with existing watchlist AND ecartees
+        // Dedup with existing watchlist, ecartees AND suggestions
         await _loadWatchlist();
         await _loadEcartees();
         const wlSirens = new Set(_watchlist.map(w => w.siren).filter(Boolean));
         const ecSirens = new Set((_ecartees || []).map(e => e.siren).filter(Boolean));
-        const filtered = results.filter(r => !wlSirens.has(r.siren) && !ecSirens.has(r.siren));
+        const sugSirens = new Set((_suggestions || []).map(s => s.siren).filter(Boolean));
+        const filtered = results.filter(r => !wlSirens.has(r.siren) && !ecSirens.has(r.siren) && !sugSirens.has(r.siren));
 
         if (!filtered.length) {
-          resultsDiv.innerHTML = '<p style="color:#94a3b8;">Aucune entreprise trouvee (ou toutes deja dans la watchlist/ecartees).</p>';
+          resultsDiv.innerHTML = '<p style="color:#94a3b8;">Aucune entreprise trouvee (ou toutes deja dans la watchlist/suggestions/ecartees).</p>';
           return;
         }
 
@@ -2894,10 +3038,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     // Automatic discovery (weekly scan): rotate through NAF codes in batches of 6
     let nafBatch;
     if (options.nafCodes) {
-      // Manual: use all selected codes, no cursor
       nafBatch = allNafCodes;
     } else {
-      // Automatic: batch of 6 with cursor rotation
       const cursor = config.discovery_cursor || 0;
       const BATCH_SIZE = 6;
       nafBatch = allNafCodes.slice(cursor, cursor + BATCH_SIZE);
@@ -2914,80 +3056,62 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       (options.nafCodes ? ' (manual, all codes)' : ' (auto batch)'));
     _updateAutoScanBanner(0, 0, 'Recherche de nouvelles entreprises...');
 
-    // Build exclusion sets: watchlist + ecartees
+    // Build exclusion sets: watchlist + ecartees + existing suggestions
     await _loadWatchlist();
     await _loadEcartees();
+    await _loadSuggestions();
     const wlSirens = new Set(_watchlist.map(w => w.siren).filter(Boolean));
     const wlNoms = new Set(_watchlist.map(w => w.nom?.toLowerCase()));
     const ecSirens = new Set((_ecartees || []).map(e => e.siren).filter(Boolean));
     const ecNoms = new Set((_ecartees || []).map(e => e.nom?.toLowerCase()));
-    console.log('[SignalEngine] Exclusion sets: watchlist=' + wlSirens.size + ' sirens/' + wlNoms.size + ' noms, ecartees=' + ecSirens.size + ' sirens/' + ecNoms.size + ' noms');
+    const sugSirens = new Set((_suggestions || []).map(s => s.siren).filter(Boolean));
+    const sugNoms = new Set((_suggestions || []).map(s => s.nom?.toLowerCase()));
+    console.log('[SignalEngine] Exclusion sets: watchlist=' + wlSirens.size + ', ecartees=' + ecSirens.size + ', suggestions=' + sugSirens.size);
 
     const discoveryCaMin = options.caMin || config.ca_min_decouverte || 2000000;
     console.log('[SignalEngine] CA minimum: ' + (discoveryCaMin / 1000000).toFixed(1) + 'M EUR');
     const candidates = [];
 
-    function _dedupAndPush(results, passLabel) {
-      let skipNoId = 0, skipWlSiren = 0, skipWlNom = 0, skipEcSiren = 0, skipEcNom = 0, skipDupe = 0, added = 0;
+    function _dedupAndPush(results) {
+      let skipNoId = 0, skipWl = 0, skipEc = 0, skipSug = 0, skipDupe = 0, added = 0;
       for (const r of results) {
         if (!r.siren && !r.nom) { skipNoId++; continue; }
-        if (r.siren && wlSirens.has(r.siren)) { skipWlSiren++; continue; }
-        if (r.nom && wlNoms.has(r.nom.toLowerCase())) { skipWlNom++; continue; }
-        if (r.siren && ecSirens.has(r.siren)) { skipEcSiren++; continue; }
-        if (r.nom && ecNoms.has(r.nom.toLowerCase())) { skipEcNom++; continue; }
+        if ((r.siren && wlSirens.has(r.siren)) || (r.nom && wlNoms.has(r.nom.toLowerCase()))) { skipWl++; continue; }
+        if ((r.siren && ecSirens.has(r.siren)) || (r.nom && ecNoms.has(r.nom.toLowerCase()))) { skipEc++; continue; }
+        if ((r.siren && sugSirens.has(r.siren)) || (r.nom && sugNoms.has(r.nom.toLowerCase()))) { skipSug++; continue; }
         if (r.siren && candidates.some(c => c.siren === r.siren)) { skipDupe++; continue; }
         candidates.push(r);
         added++;
       }
-      console.log('[SignalEngine] Dedup ' + passLabel + ': ' + results.length + ' in → ' + added + ' added' +
+      console.log('[SignalEngine] Dedup: ' + results.length + ' in → ' + added + ' added' +
         (skipNoId ? ', ' + skipNoId + ' no-id' : '') +
-        (skipWlSiren ? ', ' + skipWlSiren + ' wl-siren' : '') +
-        (skipWlNom ? ', ' + skipWlNom + ' wl-nom' : '') +
-        (skipEcSiren ? ', ' + skipEcSiren + ' ec-siren' : '') +
-        (skipEcNom ? ', ' + skipEcNom + ' ec-nom' : '') +
+        (skipWl ? ', ' + skipWl + ' watchlist' : '') +
+        (skipEc ? ', ' + skipEc + ' ecartees' : '') +
+        (skipSug ? ', ' + skipSug + ' suggestions' : '') +
         (skipDupe ? ', ' + skipDupe + ' dupe' : ''));
     }
 
     // ---------------------------------------------------------------
-    // PASSE 1: Entreprises avec CA connu >= seuil (server-side filter)
+    // PASSE UNIQUE: pas de chiffre_affaires_min (economie 50% credits)
+    // Le filtrage CA se fait cote client dans _searchPappersByRegion
     // ---------------------------------------------------------------
-    console.log('[SignalEngine] --- PASS 1: CA >= ' + (discoveryCaMin / 1000000).toFixed(1) + 'M (server-side filter) ---');
-    _updateAutoScanBanner(0, 2, 'Passe 1: entreprises a CA connu...');
+    console.log('[SignalEngine] --- Single pass: no server CA filter, client-side filtering ---');
+    _updateAutoScanBanner(0, 1, 'Recherche Pappers...');
     try {
       const t0 = Date.now();
-      const results1 = await _searchPappersByRegion(activeRegion, {
+      const results = await _searchPappersByRegion(activeRegion, {
         code_naf: nafBatch,
         par_page: '25',
-        chiffre_affaires_min: discoveryCaMin,
-      });
-      console.log('[SignalEngine] Pass 1 returned ' + results1.length + ' results in ' + (Date.now() - t0) + 'ms');
-      _dedupAndPush(results1, 'pass1');
-    } catch (e) {
-      console.error('[SignalEngine] Pass 1 EXCEPTION:', e.message || e);
-    }
-
-    // ---------------------------------------------------------------
-    // PASSE 2: Entreprises sans CA publie (comptes confidentiels)
-    //          Filtrees par effectif OU anciennete client-side
-    // ---------------------------------------------------------------
-    console.log('[SignalEngine] --- PASS 2: No CA filter (catches confidential accounts) ---');
-    _updateAutoScanBanner(1, 2, 'Passe 2: entreprises a comptes confidentiels...');
-    try {
-      const t0 = Date.now();
-      const results2 = await _searchPappersByRegion(activeRegion, {
-        code_naf: nafBatch,
-        par_page: '25',
-        // PAS de chiffre_affaires_min — attrape les comptes confidentiels
         clientCaMin: discoveryCaMin,
       });
-      console.log('[SignalEngine] Pass 2 returned ' + results2.length + ' results in ' + (Date.now() - t0) + 'ms');
-      _dedupAndPush(results2, 'pass2');
+      console.log('[SignalEngine] Search returned ' + results.length + ' results in ' + (Date.now() - t0) + 'ms');
+      _dedupAndPush(results);
     } catch (e) {
-      console.error('[SignalEngine] Pass 2 EXCEPTION:', e.message || e);
+      console.error('[SignalEngine] Search EXCEPTION:', e.message || e);
     }
 
     if (!candidates.length) {
-      console.error('[SignalEngine] AUTO-DISCOVERY: 0 candidates after both passes. Check Pappers API logs above for errors.');
+      console.error('[SignalEngine] AUTO-DISCOVERY: 0 candidates. Check Pappers API logs above.');
       console.log('[SignalEngine] ========== AUTO-DISCOVERY END (no results) ==========');
       return [];
     }
@@ -3009,45 +3133,59 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     }
 
     const MAX_DISCOVERED = options.maxDiscovered || 10;
-    const toCheck = candidates.slice(0, MAX_DISCOVERED + 5); // Check a few extras in case some are dupes
+    const toCheck = candidates.slice(0, MAX_DISCOVERED);
     const discovered = [];
 
     for (let i = 0; i < toCheck.length; i++) {
-      if (discovered.length >= MAX_DISCOVERED) break;
       const c = toCheck[i];
       _updateAutoScanBanner(i, toCheck.length, 'Decouverte: ' + c.nom);
 
       // OSINT pre-check: enrichissement non-bloquant
-      let osintResult = null;
+      let osintScore = null;
+      let osintSignals = [];
       try {
-        osintResult = await _lightOsintCheck(c);
-        console.log('[SignalEngine] OSINT pre-check "' + c.nom + '": score=' + osintResult.score + (osintResult.signals.length ? ' [' + osintResult.signals.join(', ') + ']' : ' (no signals)'));
+        const osintResult = await _lightOsintCheck(c);
+        osintScore = osintResult.score;
+        osintSignals = osintResult.signals || [];
+        console.log('[SignalEngine] OSINT "' + c.nom + '": score=' + osintScore + (osintSignals.length ? ' [' + osintSignals.join(', ') + ']' : ''));
       } catch (e) {
-        console.warn('[SignalEngine] OSINT check error for ' + c.nom + ':', e.message || e);
+        console.warn('[SignalEngine] OSINT error for ' + c.nom + ':', e.message || e);
       }
 
-      // Ajouter l'entreprise — l'OSINT enrichit mais ne bloque plus
+      // Creer une suggestion (PAS ajout watchlist)
       const linkedinUrl = _generateLinkedInUrl(c.nom);
-      const added = await addToWatchlist({
-        siren: c.siren, nom: c.nom, ville: c.ville,
-        code_postal: c.code_postal, departement: c.departement,
-        region: c.region, secteur_naf: c.secteur_naf,
+      const suggestion = {
+        id: 'sug_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+        siren: c.siren,
+        nom: c.nom,
+        ville: c.ville,
+        code_postal: c.code_postal,
+        departement: c.departement,
+        region: c.region,
+        secteur_naf: c.secteur_naf,
         libelle_naf: c.libelle_naf || '',
-        site_web: '', source: 'auto_discovery',
+        effectif: c.effectif,
+        ca: c.ca,
+        forme_juridique: c.forme_juridique || '',
+        date_creation: c.date_creation || '',
         linkedin_url: linkedinUrl,
-      }, { silent: true });
-      if (added) {
-        discovered.push({ ...c, osint: osintResult, linkedin_url: linkedinUrl });
-        console.log('[SignalEngine] + ADDED: ' + c.nom + ' (CA=' + ((c.ca || 0) / 1000000).toFixed(1) + 'M, eff=' + (c.effectif || '?') + ', OSINT=' + (osintResult ? osintResult.score : 'n/a') + ')');
-      } else {
-        console.log('[SignalEngine] - REJECTED by addToWatchlist: ' + c.nom + ' (siren=' + c.siren + ') — likely already in watchlist');
-      }
+        source: 'auto_discovery',
+        discovery_date: new Date().toISOString().split('T')[0],
+        osint_score: osintScore,
+        osint_signals: osintSignals,
+      };
+      _suggestions.push(suggestion);
+      discovered.push(suggestion);
+      console.log('[SignalEngine] + SUGGESTION: ' + c.nom + ' (CA=' + ((c.ca || 0) / 1000000).toFixed(1) + 'M, eff=' + (c.effectif || '?') + ', OSINT=' + (osintScore || 'n/a') + ')');
 
       // Rate limit between OSINT checks
       await new Promise(r => setTimeout(r, 400));
     }
 
-    console.log('[SignalEngine] ========== AUTO-DISCOVERY END: ' + discovered.length + ' new companies added (max=' + MAX_DISCOVERED + ', checked=' + toCheck.length + ', candidates=' + candidates.length + ') ==========');
+    // Persister les suggestions
+    await _saveSuggestions();
+
+    console.log('[SignalEngine] ========== AUTO-DISCOVERY END: ' + discovered.length + ' suggestions created (max=' + MAX_DISCOVERED + ', candidates=' + candidates.length + ') ==========');
     return discovered;
   }
 
@@ -3105,37 +3243,12 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     await _saveSignaux();
     await _saveWatchlist();
 
-    // Phase 2: Auto-discovery — find new companies with business signals
+    // Phase 2: Auto-discovery — find new companies (saved as suggestions)
     let discoveredCount = 0;
     if (_getPappersKey() && activeRegion) {
       try {
         const discovered = await _runAutoDiscovery(activeRegion, containerId);
         discoveredCount = discovered.length;
-
-        // Scan newly discovered companies immediately
-        if (discovered.length > 0) {
-          _watchlist = null;
-          await _loadWatchlist();
-          await _loadSignaux();
-
-          for (let i = 0; i < discovered.length; i++) {
-            const d = discovered[i];
-            const wl = _watchlist.find(w => w.siren === d.siren);
-            if (!wl) continue;
-
-            _updateAutoScanBanner(i, discovered.length, 'Scan: ' + d.nom);
-            try {
-              const result = await analyseEntreprise(wl);
-              _upsertSignal(result, wl);
-              wl.derniere_analyse = new Date().toISOString().split('T')[0];
-            } catch (e) {
-              console.error('[SignalEngine] Auto-scan error for discovered ' + d.nom + ':', e);
-            }
-          }
-
-          await _saveSignaux();
-          await _saveWatchlist();
-        }
       } catch (e) {
         console.error('[SignalEngine] Auto-discovery error:', e);
       }
