@@ -72,7 +72,7 @@ async function callOpenAI(apiKey, systemPrompt, userPrompt) {
       { role: 'user', content: userPrompt }
     ],
     temperature: 0.2,
-    max_tokens: 2000,
+    max_tokens: 3000,
   });
 
   let response;
@@ -91,8 +91,23 @@ async function callOpenAI(apiKey, systemPrompt, userPrompt) {
   return result.choices?.[0]?.message?.content || '';
 }
 
-const SIGNAL_DETECTION_PROMPT = `Tu es un analyste business. Detecte les signaux declencheurs de besoins DSI pour une entreprise industrielle.
-Types: investissement, expansion, erp_mes, croissance, rachat_lbo, internationalisation, recrutement_it.
+const SIGNAL_DETECTION_PROMPT = `Tu es un analyste business specialise dans la detection de signaux d'affaires revelateurs d'opportunites commerciales et de besoins potentiels en systemes d'information (DSI) pour tout type d'entreprise.
+
+Analyse TOUTES les donnees fournies (site web, articles de presse) et detecte le maximum de signaux pertinents parmi :
+- investissement : Investissement significatif, levee de fonds, nouveau projet, demenagement, nouveaux locaux, construction de nouveaux batiments, nouveaux entrepots, agrandissement de site, modernisation d'equipements, travaux d'extension, nouvelle usine, nouvelle ligne de production
+- expansion : Extension multi-sites, ouverture de filiales, nouveaux bureaux, croissance geographique, ouverture de nouveaux sites
+- erp_mes : Projet ERP, SAP, MES, CRM, transformation digitale, migration SI, cybersecurite, cloud
+- croissance : Croissance du CA, augmentation des effectifs, nouveaux clients, nouveaux contrats importants, diversification d'activite, hausse de volume
+- rachat_lbo : Rachat, acquisition, LBO, fusion, cession, changement d'actionnariat
+- internationalisation : Expansion internationale, export, nouveaux marches etrangers
+- recrutement_it : Recrutement IT, DSI, CTO, developpeurs, postes tech ouverts
+- nomination : Nomination d'un nouveau PDG, DG, DAF, DSI, directeur, changement de gouvernance, nouvelle equipe de direction
+
+REGLES :
+- Sois EXHAUSTIF : detecte tout signal meme faible ou indirect.
+- Un article mentionnant des TRAVAUX, CONSTRUCTION, AGRANDISSEMENT, MODERNISATION ou NOUVEAU SITE est TOUJOURS un signal "investissement".
+- En cas de doute, INCLUS le signal avec une confiance basse (0.3-0.5) plutot que de l'ignorer.
+
 Reponds en JSON: {"signaux":[{"type":"...","label":"...","confiance":0.8,"extrait":"..."}],"score_besoin_dsi":75,"score_urgence":60,"score_complexite_si":70,"justification":"..."}
 Si rien: {"signaux":[],"score_besoin_dsi":10,"score_urgence":5,"score_complexite_si":5,"justification":"Aucun signal."}`;
 
@@ -149,9 +164,20 @@ export default async function handler(req) {
         // Scrape Google News
         const articles = await scrapeGoogleNews(wl.nom, wl.region);
 
+        // Enrich articles with full content (best effort, first 3)
+        for (const article of articles.slice(0, 3)) {
+          try {
+            if (!article.url) continue;
+            const fullText = await fetchPageText(article.url);
+            if (fullText && fullText.length > (article.extrait || '').length) {
+              article.extrait = fullText.substring(0, 2500);
+            }
+          } catch { /* best effort */ }
+        }
+
         // Detect signals via OpenAI
-        const articlesSummary = articles.map(a => `[${a.date}] ${a.titre}`).join('\n');
-        const userPrompt = `ENTREPRISE: ${wl.nom}\nSITE WEB:\n${siteText || 'Non disponible'}\nARTICLES:\n${articlesSummary || 'Aucun'}`;
+        const articlesSummary = articles.map(a => `[${a.date}] ${a.titre}\n${a.extrait || ''}`).join('\n\n');
+        const userPrompt = `ENTREPRISE: ${wl.nom}\nSITE WEB:\n${siteText || 'Non disponible'}\nARTICLES DE PRESSE RECENTS:\n${articlesSummary || 'Aucun'}`;
         const raw = await callOpenAI(openaiKey, SIGNAL_DETECTION_PROMPT, userPrompt);
 
         let aiResult;
