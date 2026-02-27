@@ -764,6 +764,14 @@ const SignalEngine = (() => {
         console.log('[SignalEngine] << OK dep=' + dep + ': ' + results.length + ' results (total=' + (data.total || '?') + ', ' + elapsed + 'ms)');
 
         for (const r of results) {
+          // Exclure les societes cessees, en sommeil, radiees ou inactives
+          if (r.entreprise_cessee) { clientFilteredCount++; continue; }
+          const statut = (r.statut_rcs || '').toLowerCase();
+          if (statut && (statut.includes('radi') || statut.includes('sommeil') || statut.includes('liquid') || statut.includes('dissol'))) {
+            clientFilteredCount++;
+            continue;
+          }
+
           // Client-side NAF filter: if NAF codes were specified, check prefix
           if (nafFilter) {
             const nafPrefix = (r.code_naf || '').substring(0, 2);
@@ -1469,6 +1477,76 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     const sug = (_suggestions || []).find(s => s.id === suggestionId);
     if (!sug) return;
 
+    // Creer la fiche entreprise dans la DB avec les infos minimum
+    let entrepriseId = null;
+    try {
+      const entreprises = Store.get('entreprises') || [];
+      const existingEnt = entreprises.find(e =>
+        (sug.siren && e._pappers_siren === sug.siren) ||
+        (sug.nom && (e.nom || '').toLowerCase().trim() === sug.nom.toLowerCase().trim())
+      );
+
+      if (existingEnt) {
+        entrepriseId = existingEnt.id;
+      } else {
+        // Convertir CA numerique en tranche
+        let caRange = '';
+        if (sug.ca) {
+          const caM = sug.ca / 1000000;
+          if (caM < 5) caRange = '< 5 M\u20ac';
+          else if (caM < 20) caRange = '5-20 M\u20ac';
+          else if (caM < 50) caRange = '20-50 M\u20ac';
+          else if (caM < 100) caRange = '50-100 M\u20ac';
+          else if (caM < 250) caRange = '100-250 M\u20ac';
+          else caRange = '250 M\u20ac+';
+        }
+
+        // Convertir effectif numerique en tranche
+        let tailleRange = '';
+        if (sug.effectif) {
+          const eff = sug.effectif;
+          if (eff <= 10) tailleRange = '1-10';
+          else if (eff <= 50) tailleRange = '11-50';
+          else if (eff <= 200) tailleRange = '51-200';
+          else if (eff <= 500) tailleRange = '201-500';
+          else if (eff <= 1000) tailleRange = '501-1000';
+          else tailleRange = '1000+';
+        }
+
+        const newEnt = {
+          id: API.generateId('ent'),
+          nom: sug.nom,
+          secteur: '',
+          taille: tailleRange,
+          ca: caRange,
+          localisation: sug.ville || '',
+          siege_adresse: '',
+          siege_code_postal: sug.code_postal || '',
+          siege_ville: sug.ville || '',
+          telephone: '',
+          site_web: '',
+          linkedin: sug.linkedin_url || '',
+          source: 'Decouverte auto',
+          statut: 'A cibler',
+          priorite: '',
+          angle_approche: '',
+          notes: '',
+          _pappers_siren: sug.siren || '',
+          _pappers_naf: (sug.secteur_naf ? sug.secteur_naf + ' - ' : '') + (sug.libelle_naf || ''),
+          _pappers_forme: sug.forme_juridique || '',
+          autres_sites: [],
+          dernier_contact: null,
+          prochaine_relance: null,
+          created_at: new Date().toISOString(),
+        };
+        await Store.add('entreprises', newEnt);
+        entrepriseId = newEnt.id;
+        console.log('[SignalEngine] Created entreprise record: ' + newEnt.nom + ' (id=' + newEnt.id + ')');
+      }
+    } catch (e) {
+      console.warn('[SignalEngine] Could not create entreprise record:', e.message || e);
+    }
+
     const added = await addToWatchlist({
       siren: sug.siren,
       nom: sug.nom,
@@ -1480,6 +1558,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       libelle_naf: sug.libelle_naf || '',
       linkedin_url: sug.linkedin_url || '',
       source: 'decouverte_acceptee',
+      entreprise_id: entrepriseId,
     }, { silent: true });
 
     // Retirer de suggestions dans tous les cas
@@ -1487,7 +1566,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     await _saveSuggestions();
 
     if (added) {
-      console.log('[SignalEngine] Suggestion accepted: "' + sug.nom + '" → watchlist');
+      console.log('[SignalEngine] Suggestion accepted: "' + sug.nom + '" → watchlist (ent_id=' + entrepriseId + ')');
       UI.toast('"' + sug.nom + '" ajoutee a la watchlist');
     } else {
       console.log('[SignalEngine] Suggestion "' + sug.nom + '" already in watchlist');
@@ -1928,9 +2007,12 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         const linkedinLink = w.linkedin_url
           ? '<a href="' + UI.escHtml(w.linkedin_url) + '" target="_blank" style="color:#0077b5;" title="Rechercher sur LinkedIn">LinkedIn</a>'
           : '—';
+        const nomHtml = w.entreprise_id
+          ? '<a href="entreprise.html?id=' + w.entreprise_id + '" style="color:#1e293b;text-decoration:none;border-bottom:1px dashed #94a3b8;" title="Ouvrir la fiche entreprise">' + UI.escHtml(w.nom) + '</a>'
+          : UI.escHtml(w.nom);
         return `
         <tr>
-          <td style="font-weight:500;">${UI.escHtml(w.nom)}${sourceBadge}</td>
+          <td style="font-weight:500;">${nomHtml}${sourceBadge}</td>
           <td>${UI.escHtml(w.ville || '')} (${w.departement || ''})</td>
           <td style="font-size:0.8125rem;">${UI.escHtml(w.siren || '—')}</td>
           <td style="font-size:0.8125rem;">${w.site_web ? '<a href="' + UI.escHtml(w.site_web) + '" target="_blank" style="color:#3b82f6;">Site</a>' : '—'}</td>
