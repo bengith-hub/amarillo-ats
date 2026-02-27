@@ -674,42 +674,56 @@ const SignalEngine = (() => {
 
     const config = await _loadConfig();
     const allResults = [];
+    const serverFilteredByCA = !!options.chiffre_affaires_min;
 
-    for (const dep of deps) {
-      try {
-        const params = new URLSearchParams({
-          api_token: apiKey,
-          departement: dep,
-          par_page: options.par_page || '20',
-        });
-        if (options.code_naf) params.set('code_naf', options.code_naf);
-        if (options.chiffre_affaires_min) params.set('chiffre_affaires_min', String(options.chiffre_affaires_min));
+    // Use comma-separated departments in a single API call instead of looping
+    try {
+      const params = new URLSearchParams({
+        api_token: apiKey,
+        departement: deps.join(','),
+        par_page: options.par_page || '25',
+        entreprise_cessee: 'false',
+      });
+      // Support comma-separated NAF codes (array or single string)
+      if (options.code_naf) {
+        const nafValue = Array.isArray(options.code_naf) ? options.code_naf.join(',') : options.code_naf;
+        params.set('code_naf', nafValue);
+      }
+      if (options.chiffre_affaires_min) params.set('chiffre_affaires_min', String(options.chiffre_affaires_min));
 
-        const response = await fetch('https://api.pappers.fr/v2/recherche?' + params.toString());
-        if (!response.ok) {
-          if (response.status === 429) {
-            UI.toast('Quota Pappers atteint', 'error');
-            break;
-          }
-          continue;
+      console.log('[SignalEngine] Pappers API call: departement=' + deps.join(',') +
+        (options.code_naf ? ' code_naf=' + (Array.isArray(options.code_naf) ? options.code_naf.join(',') : options.code_naf) : '') +
+        (options.chiffre_affaires_min ? ' ca_min=' + options.chiffre_affaires_min : '') +
+        ' par_page=' + (options.par_page || '25'));
+
+      const response = await fetch('https://api.pappers.fr/v2/recherche?' + params.toString());
+      if (!response.ok) {
+        if (response.status === 429) {
+          UI.toast('Quota Pappers atteint', 'error');
+        } else {
+          console.warn('[SignalEngine] Pappers API error: HTTP ' + response.status);
         }
-        const data = await response.json();
-        const results = data.resultats || [];
+        return [];
+      }
+      const data = await response.json();
+      const results = data.resultats || [];
+      console.log('[SignalEngine] Pappers returned ' + results.length + ' results (total=' + (data.total || '?') + ')');
 
-        for (const r of results) {
-          const effectif = _parseEffectif(r.tranche_effectif);
-          const ca = r.chiffre_affaires || 0;
+      for (const r of results) {
+        const effectif = _parseEffectif(r.tranche_effectif);
+        const ca = r.chiffre_affaires || 0;
+
+        // If the server already filtered by CA, trust the results — no client-side re-filtering
+        if (!serverFilteredByCA) {
           const effectifMin = config.effectif_min_decouverte || 50;
-          const caMin = config.ca_min_decouverte || 2000000;
+          const caMin = options.clientCaMin || config.ca_min_decouverte || 2000000;
 
           if (ca > 0) {
-            // CA disponible : critere principal
             if (ca < caMin) continue;
           } else if (effectif > 0) {
-            // Pas de CA mais effectif disponible : critere de repli
             if (effectif < effectifMin) continue;
           } else {
-            // Aucune donnee financiere (confidentiel) : garder si NAF cible + anciennete >= 5 ans
+            // No financial data: keep if targeted NAF + 5yr seniority
             const nafCodes = config.codes_naf_cibles || CODES_NAF_EXTENDED;
             const nafPrefix = (r.code_naf || '').substring(0, 2);
             const isTargetedNaf = nafCodes.includes(nafPrefix);
@@ -719,29 +733,31 @@ const SignalEngine = (() => {
             const hasSeniority = dateCreation && dateCreation <= fiveYearsAgo;
             if (!isTargetedNaf || !hasSeniority) continue;
           }
-
-          allResults.push({
-            siren: r.siren || '',
-            nom: r.denomination || r.nom_entreprise || '',
-            ville: r.siege?.ville || '',
-            code_postal: r.siege?.code_postal || '',
-            departement: dep,
-            region: regionName,
-            secteur_naf: r.code_naf || '',
-            libelle_naf: r.libelle_code_naf || '',
-            effectif: effectif,
-            ca: ca,
-            forme_juridique: r.forme_juridique || '',
-          });
         }
 
-        // Rate limit: 300ms between Pappers calls
-        await new Promise(r => setTimeout(r, 300));
-      } catch (e) {
-        console.warn('Pappers search error for dep ' + dep + ':', e);
+        // Determine department from the result or fallback
+        const resDep = r.siege?.code_postal ? (r.siege.code_postal.substring(0, 2)) : (deps[0] || '');
+
+        allResults.push({
+          siren: r.siren || '',
+          nom: r.denomination || r.nom_entreprise || '',
+          ville: r.siege?.ville || '',
+          code_postal: r.siege?.code_postal || '',
+          departement: resDep,
+          region: regionName,
+          secteur_naf: r.code_naf || '',
+          libelle_naf: r.libelle_code_naf || '',
+          effectif: effectif,
+          ca: ca,
+          forme_juridique: r.forme_juridique || '',
+          date_creation: r.date_creation || '',
+        });
       }
+    } catch (e) {
+      console.warn('[SignalEngine] Pappers search error:', e);
     }
 
+    console.log('[SignalEngine] After client-side filter: ' + allResults.length + ' results' + (serverFilteredByCA ? ' (server filtered by CA)' : ''));
     return allResults;
   }
 
@@ -2815,151 +2831,137 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     if (!apiKey) return [];
 
     const config = await _loadConfig();
-    const nafCodes = options.nafCodes || config.codes_naf_cibles || CODES_NAF_EXTENDED;
+    const allNafCodes = options.nafCodes || config.codes_naf_cibles || CODES_NAF_EXTENDED;
 
-    // Rotate through NAF codes in batches of 6
-    const cursor = config.discovery_cursor || 0;
-    const BATCH_SIZE = 6;
-    const nafBatch = nafCodes.slice(cursor, cursor + BATCH_SIZE);
-    config.discovery_cursor = (cursor + BATCH_SIZE) >= nafCodes.length ? 0 : cursor + BATCH_SIZE;
-    await _saveConfig();
+    // Manual discovery (from modal): use ALL selected NAF codes at once
+    // Automatic discovery (weekly scan): rotate through NAF codes in batches of 6
+    let nafBatch;
+    if (options.nafCodes) {
+      // Manual: use all selected codes, no cursor
+      nafBatch = allNafCodes;
+    } else {
+      // Automatic: batch of 6 with cursor rotation
+      const cursor = config.discovery_cursor || 0;
+      const BATCH_SIZE = 6;
+      nafBatch = allNafCodes.slice(cursor, cursor + BATCH_SIZE);
+      config.discovery_cursor = (cursor + BATCH_SIZE) >= allNafCodes.length ? 0 : cursor + BATCH_SIZE;
+      await _saveConfig();
+    }
 
     if (!nafBatch.length) return [];
 
-    console.log('[SignalEngine] Auto-discovery: NAF codes ' + nafBatch.join(', ') + ' in ' + activeRegion);
+    console.log('[SignalEngine] Auto-discovery: ' + nafBatch.length + ' NAF codes in ' + activeRegion + (options.nafCodes ? ' (manual, all codes)' : ' (auto batch)'));
     _updateAutoScanBanner(0, 0, 'Recherche de nouvelles entreprises...');
 
-    // Collect candidates from Pappers with lower thresholds
+    // Build exclusion sets: watchlist + ecartees
     await _loadWatchlist();
     await _loadEcartees();
     const wlSirens = new Set(_watchlist.map(w => w.siren).filter(Boolean));
     const wlNoms = new Set(_watchlist.map(w => w.nom?.toLowerCase()));
-    // Exclure aussi les entreprises ecartees pour ne pas les re-decouvrir
     const ecSirens = new Set((_ecartees || []).map(e => e.siren).filter(Boolean));
     const ecNoms = new Set((_ecartees || []).map(e => e.nom?.toLowerCase()));
-    const candidates = [];
+
     const discoveryCaMin = options.caMin || config.ca_min_decouverte || 2000000;
-    const MAX_CANDIDATES = 30;
-    for (const naf of nafBatch) {
-      try {
-        const results = await _searchPappersByRegion(activeRegion, {
-          code_naf: naf,
-          par_page: options.parPage || '20',
-          chiffre_affaires_min: discoveryCaMin,
-        });
-        console.log('[SignalEngine] Discovery NAF ' + naf + ': ' + results.length + ' results from Pappers');
-        for (const r of results) {
-          if (wlSirens.has(r.siren)) continue;
-          if (wlNoms.has(r.nom.toLowerCase())) continue;
-          if (ecSirens.has(r.siren)) continue;
-          if (ecNoms.has(r.nom.toLowerCase())) continue;
-          if (candidates.some(c => c.siren === r.siren)) continue;
-          candidates.push(r);
-        }
-      } catch (e) {
-        console.warn('[SignalEngine] Discovery Pappers error for NAF ' + naf + ':', e);
+    const candidates = [];
+
+    function _dedupAndPush(results) {
+      for (const r of results) {
+        if (!r.siren && !r.nom) continue;
+        if (r.siren && wlSirens.has(r.siren)) continue;
+        if (r.nom && wlNoms.has(r.nom.toLowerCase())) continue;
+        if (r.siren && ecSirens.has(r.siren)) continue;
+        if (r.nom && ecNoms.has(r.nom.toLowerCase())) continue;
+        if (r.siren && candidates.some(c => c.siren === r.siren)) continue;
+        candidates.push(r);
       }
-      if (candidates.length >= MAX_CANDIDATES) break;
+    }
+
+    // ---------------------------------------------------------------
+    // PASSE 1: Entreprises avec CA connu >= seuil (server-side filter)
+    // ---------------------------------------------------------------
+    _updateAutoScanBanner(0, 2, 'Passe 1: entreprises a CA connu...');
+    try {
+      const results1 = await _searchPappersByRegion(activeRegion, {
+        code_naf: nafBatch,
+        par_page: '25',
+        chiffre_affaires_min: discoveryCaMin,
+      });
+      console.log('[SignalEngine] Discovery pass 1 (CA>=' + (discoveryCaMin / 1000000).toFixed(0) + 'M): ' + results1.length + ' results');
+      _dedupAndPush(results1);
+    } catch (e) {
+      console.warn('[SignalEngine] Discovery pass 1 error:', e);
+    }
+
+    // ---------------------------------------------------------------
+    // PASSE 2: Entreprises sans CA publie (comptes confidentiels)
+    //          Filtrees par effectif OU anciennete client-side
+    // ---------------------------------------------------------------
+    _updateAutoScanBanner(1, 2, 'Passe 2: entreprises a comptes confidentiels...');
+    try {
+      const results2 = await _searchPappersByRegion(activeRegion, {
+        code_naf: nafBatch,
+        par_page: '25',
+        // PAS de chiffre_affaires_min — attrape les comptes confidentiels
+        clientCaMin: discoveryCaMin,
+      });
+      console.log('[SignalEngine] Discovery pass 2 (no CA filter): ' + results2.length + ' results');
+      _dedupAndPush(results2);
+    } catch (e) {
+      console.warn('[SignalEngine] Discovery pass 2 error:', e);
     }
 
     if (!candidates.length) {
-      console.log('[SignalEngine] Auto-discovery: no new candidates from Pappers');
+      console.log('[SignalEngine] Auto-discovery: no new candidates from Pappers (both passes)');
       return [];
     }
 
-    console.log('[SignalEngine] Auto-discovery: ' + candidates.length + ' candidates from Pappers');
+    console.log('[SignalEngine] Auto-discovery: ' + candidates.length + ' total candidates after dedup');
 
-    // Sort candidates by relevance: high CA and high effectif first
+    // Sort candidates by relevance: high CA first, then high effectif
     candidates.sort((a, b) => {
       const scoreA = (a.ca || 0) / 1000000 + (a.effectif || 0) / 10;
       const scoreB = (b.ca || 0) / 1000000 + (b.effectif || 0) / 10;
       return scoreB - scoreA;
     });
 
-    const MAX_CHECKS = 10;
     const MAX_DISCOVERED = options.maxDiscovered || 10;
-    const toCheck = candidates.slice(0, MAX_CHECKS);
+    const toCheck = candidates.slice(0, MAX_DISCOVERED + 5); // Check a few extras in case some are dupes
     const discovered = [];
-    const caMin = discoveryCaMin;
 
     for (let i = 0; i < toCheck.length; i++) {
       if (discovered.length >= MAX_DISCOVERED) break;
       const c = toCheck[i];
       _updateAutoScanBanner(i, toCheck.length, 'Decouverte: ' + c.nom);
 
-      // Critere 1 (Pappers) : CA suffisant → ajout direct
-      // Le CA est le critere principal car Pappers ne renseigne pas toujours l'effectif
-      const hasPappersSignal = (c.ca >= caMin);
-
-      if (hasPappersSignal) {
-        // Pre-check OSINT leger pour les entreprises dont le CA n'est pas exceptionnel
-        let osintResult = null;
-        if (c.ca < caMin * 2) {
-          try {
-            osintResult = await _lightOsintCheck(c);
-            if (osintResult.score < 20) {
-              console.log('[SignalEngine] Discovery skip (low OSINT score): ' + c.nom + ' (score=' + osintResult.score + ')');
-              continue;
-            }
-          } catch (e) {
-            console.warn('[SignalEngine] OSINT check error for ' + c.nom + ':', e);
-            // Si le check echoue, on ajoute quand meme (CA suffisant)
-          }
-        }
-
-        const linkedinUrl = _generateLinkedInUrl(c.nom);
-        const added = await addToWatchlist({
-          siren: c.siren, nom: c.nom, ville: c.ville,
-          code_postal: c.code_postal, departement: c.departement,
-          region: c.region, secteur_naf: c.secteur_naf,
-          libelle_naf: c.libelle_naf || '',
-          site_web: '', source: 'auto_discovery',
-          linkedin_url: linkedinUrl,
-        }, { silent: true });
-        if (added) {
-          discovered.push({ ...c, osint: osintResult, linkedin_url: linkedinUrl });
-          console.log('[SignalEngine] Discovered (Pappers): ' + c.nom + ' (CA=' + ((c.ca || 0) / 1000000).toFixed(0) + 'M, ' + c.effectif + ' sal.' + (osintResult ? ', OSINT=' + osintResult.score : '') + ')');
-        }
-        continue;
-      }
-
-      // Critere 2 (Google News) : verifier si l'entreprise a des signaux business dans l'actualite
+      // OSINT pre-check: enrichissement non-bloquant
+      let osintResult = null;
       try {
-        const query = `"${c.nom}" ${c.ville ? '"' + c.ville + '"' : ''} entreprise OR société OR groupe`;
-        const articles = await _fetchGoogleNewsRSS(query, 3);
-
-        if (articles.length > 0) {
-          const relevant = articles.filter(a => {
-            const text = ((a.titre || '') + ' ' + (a.extrait || '')).toLowerCase();
-            const mentionsCompany = text.includes(c.nom.toLowerCase());
-            const hasBusiness = /investissement|recrutement|croissance|acquisition|nomination|projet|extension|ouverture|embauche/i.test(text);
-            return mentionsCompany && hasBusiness;
-          });
-
-          if (relevant.length > 0) {
-            const linkedinUrl = _generateLinkedInUrl(c.nom);
-            const added = await addToWatchlist({
-              siren: c.siren, nom: c.nom, ville: c.ville,
-              code_postal: c.code_postal, departement: c.departement,
-              region: c.region, secteur_naf: c.secteur_naf,
-              libelle_naf: c.libelle_naf || '',
-              site_web: '', source: 'auto_discovery',
-              linkedin_url: linkedinUrl,
-            }, { silent: true });
-            if (added) {
-              discovered.push({ ...c, linkedin_url: linkedinUrl });
-              console.log('[SignalEngine] Discovered (News): ' + c.nom + ' (' + relevant.length + ' articles)');
-            }
-          }
-        }
-
-        await new Promise(r => setTimeout(r, 500));
+        osintResult = await _lightOsintCheck(c);
+        console.log('[SignalEngine] OSINT pre-check "' + c.nom + '": score=' + osintResult.score + (osintResult.signals.length ? ' [' + osintResult.signals.join(', ') + ']' : ''));
       } catch (e) {
-        console.warn('[SignalEngine] Discovery news check error for ' + c.nom + ':', e);
+        console.warn('[SignalEngine] OSINT check error for ' + c.nom + ':', e);
       }
+
+      // Ajouter l'entreprise — l'OSINT enrichit mais ne bloque plus
+      const linkedinUrl = _generateLinkedInUrl(c.nom);
+      const added = await addToWatchlist({
+        siren: c.siren, nom: c.nom, ville: c.ville,
+        code_postal: c.code_postal, departement: c.departement,
+        region: c.region, secteur_naf: c.secteur_naf,
+        libelle_naf: c.libelle_naf || '',
+        site_web: '', source: 'auto_discovery',
+        linkedin_url: linkedinUrl,
+      }, { silent: true });
+      if (added) {
+        discovered.push({ ...c, osint: osintResult, linkedin_url: linkedinUrl });
+        console.log('[SignalEngine] Discovered: ' + c.nom + ' (CA=' + ((c.ca || 0) / 1000000).toFixed(1) + 'M, eff=' + (c.effectif || '?') + ', OSINT=' + (osintResult ? osintResult.score : 'n/a') + ')');
+      }
+
+      // Rate limit between OSINT checks
+      await new Promise(r => setTimeout(r, 400));
     }
 
-    console.log('[SignalEngine] Auto-discovery done: ' + discovered.length + '/' + toCheck.length + ' new companies added (max ' + MAX_DISCOVERED + ')');
+    console.log('[SignalEngine] Auto-discovery done: ' + discovered.length + ' new companies added (max=' + MAX_DISCOVERED + ', checked=' + toCheck.length + ')');
     return discovered;
   }
 
