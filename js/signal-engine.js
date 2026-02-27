@@ -1047,11 +1047,25 @@ const SignalEngine = (() => {
 
   async function _detectSignaux(entrepriseNom, siteTexte, articles, pappers, extra) {
     const { nomOfficiel, ville, libelleNaf } = extra || {};
-    const identityClause = [
+
+    // Generate acronym from company name (e.g. "SOCIETE INDUSTRIELLE RAISON FRERES" → "SIRF")
+    const STOP_WORDS = /^(de|des|du|la|le|les|et|en|a|au|aux|l|d|sa|sas|sarl|srl|eurl|sci)$/i;
+    function _makeAcronym(name) {
+      if (!name) return '';
+      const words = name.split(/[\s'-]+/).filter(w => w.length > 1 && !STOP_WORDS.test(w));
+      if (words.length < 2) return '';
+      const acr = words.map(w => w[0].toUpperCase()).join('');
+      return acr.length >= 2 && acr.length <= 6 ? acr : '';
+    }
+    const acronym = _makeAcronym(nomOfficiel || entrepriseNom);
+
+    const identityParts = [
       nomOfficiel ? `Nom officiel: "${nomOfficiel}"` : '',
+      acronym ? `Acronyme probable: "${acronym}"` : '',
       ville ? `Ville: ${ville}` : '',
       libelleNaf ? `Secteur: ${libelleNaf}` : '',
-    ].filter(Boolean).join(', ');
+    ].filter(Boolean);
+    const identityClause = identityParts.join(', ');
 
     const system = `Tu es un analyste business specialise dans la detection de signaux d'affaires revelateurs d'opportunites commerciales et de besoins potentiels en systemes d'information (DSI) pour tout type d'entreprise.
 
@@ -1073,7 +1087,8 @@ REGLES DE DETECTION :
 - Un article mentionnant des TRAVAUX, CONSTRUCTION, AGRANDISSEMENT, MODERNISATION, INAUGURATION ou NOUVEAU SITE est TOUJOURS un signal de type "investissement", meme sans mention explicite d'informatique.
 - Un nouvel entrepot, une nouvelle ligne de production, un nouveau batiment, une extension de site = signal "investissement".
 - En cas de doute, INCLUS le signal avec une confiance basse plutot que de l'ignorer. Il vaut mieux detecter un signal faible que d'en rater un important.
-- ATTENTION HOMONYMES : Le nom "${entrepriseNom}" peut etre un terme courant (geographique, generique). IGNORE tout article qui parle d'un lieu, d'une region, ou d'une autre entite portant ce nom. Ne retiens QUE les articles qui parlent clairement de L'ENTREPRISE ciblee (${identityClause || entrepriseNom}).
+- IDENTIFICATION DE L'ENTREPRISE : L'entreprise ciblee est "${entrepriseNom}"${acronym ? ' (souvent designee par son acronyme "' + acronym + '")' : ''}. Les articles de presse peuvent utiliser des variantes du nom : acronyme, nom commercial, nom abrege, nom du groupe parent, ou toute combinaison de mots du nom officiel. Considere qu'un article parle de l'entreprise si le nom, l'acronyme, ou une partie significative du nom apparait dans le contexte du bon secteur d'activite et de la bonne localisation geographique.
+- ATTENTION HOMONYMES : IGNORE tout article qui parle clairement d'un lieu, d'une region, ou d'une entite sans rapport. Mais ne rejette PAS un article simplement parce qu'il utilise un nom abrege ou un acronyme de l'entreprise.
 
 Reponds UNIQUEMENT en JSON valide avec cette structure :
 {
@@ -1095,7 +1110,7 @@ Si vraiment AUCUNE information exploitable n'est disponible, retourne {"signaux"
 
     const articlesSummary = (articles || []).map(a => `[${a.date}] ${a.titre}\n${a.extrait}`).join('\n\n');
 
-    const user = `ENTREPRISE: ${entrepriseNom}${nomOfficiel && nomOfficiel !== entrepriseNom ? ' (nom officiel: ' + nomOfficiel + ')' : ''}
+    const user = `ENTREPRISE: ${entrepriseNom}${nomOfficiel && nomOfficiel !== entrepriseNom ? ' (nom officiel: ' + nomOfficiel + ')' : ''}${acronym ? '\nACRONYME: ' + acronym : ''}
 ${ville ? 'VILLE: ' + ville : ''}
 
 DONNEES PAPPERS:
