@@ -718,15 +718,13 @@ const SignalEngine = (() => {
       ? (Array.isArray(options.code_naf) ? options.code_naf : [options.code_naf])
       : null;
 
-    // When multiple NAF codes are specified, send each individually to the API
-    // instead of getting random results and filtering client-side
-    const nafCodesForApi = nafFilter && nafFilter.length > 1 ? nafFilter : [null];
-    const useServerNaf = nafFilter && nafFilter.length > 1;
-    const perPage = useServerNaf ? '10' : (options.par_page || '25');
-    const MAX_API_CALLS = 60;
+    // Pappers API does not support 2-digit NAF prefix filtering (e.g. "18"),
+    // it requires full codes like "18.11Z". So we always use client-side NAF filtering
+    // with a higher par_page to get diverse results.
+    const perPage = options.par_page || '100';
 
     console.log('[SignalEngine] Search: region=' + regionName + ' deps=[' + deps.join(',') + ']' +
-      (nafFilter ? ' nafCodes=' + nafFilter.length + (useServerNaf ? ' (server-side)' : ' (client-side)') : ' nafFilter=none') +
+      (nafFilter ? ' nafCodes=' + nafFilter.length + ' (client-side)' : ' nafFilter=none') +
       (options.chiffre_affaires_min ? ' ca_min=' + options.chiffre_affaires_min : '') +
       ' par_page=' + perPage);
 
@@ -736,161 +734,142 @@ const SignalEngine = (() => {
     let nafFilteredCount = 0;
     let clientFilteredCount = 0;
     const seenSirens = new Set();
-    let hitCallLimit = false;
 
-    // Outer loop: NAF codes (or single null for no server filter)
-    // Inner loop: departments
-    for (const naf of nafCodesForApi) {
-      if (hitCallLimit) break;
-      for (const dep of deps) {
-        if (apiCallCount >= MAX_API_CALLS) {
-          hitCallLimit = true;
-          console.warn('[SignalEngine] API call limit reached (' + MAX_API_CALLS + '), stopping search');
-          break;
+    for (const dep of deps) {
+      try {
+        const queryParts = [
+          'api_token=' + encodeURIComponent(apiKey),
+          'departement=' + dep,
+          'par_page=' + perPage,
+        ];
+        if (options.chiffre_affaires_min) {
+          queryParts.push('chiffre_affaires_min=' + options.chiffre_affaires_min);
         }
-        try {
-          const queryParts = [
-            'api_token=' + encodeURIComponent(apiKey),
-            'departement=' + dep,
-            'par_page=' + perPage,
-          ];
-          // Send NAF code to API for server-side filtering
-          if (naf) {
-            queryParts.push('code_naf=' + naf);
-          } else if (options.code_naf && typeof options.code_naf === 'string') {
-            queryParts.push('code_naf=' + options.code_naf);
+        const apiUrl = 'https://api.pappers.fr/v2/recherche?' + queryParts.join('&');
+
+        const t0 = Date.now();
+        console.log('[SignalEngine] >> GET dep=' + dep + ' ' + apiUrl.replace(/api_token=[^&]+/, 'api_token=***'));
+        apiCallCount++;
+
+        const response = await fetch(apiUrl);
+        const elapsed = Date.now() - t0;
+
+        if (!response.ok) {
+          apiErrorCount++;
+          let errorBody = '';
+          try { errorBody = await response.text(); } catch (_) {}
+          console.error('[SignalEngine] << ERROR dep=' + dep + ' HTTP ' + response.status + ' (' + elapsed + 'ms) body=' + errorBody.substring(0, 500));
+          if (response.status === 429) {
+            UI.toast('Quota Pappers atteint', 'error');
+            break;
           }
-          if (options.chiffre_affaires_min) {
-            queryParts.push('chiffre_affaires_min=' + options.chiffre_affaires_min);
-          }
-          const apiUrl = 'https://api.pappers.fr/v2/recherche?' + queryParts.join('&');
+          continue;
+        }
 
-          const t0 = Date.now();
-          console.log('[SignalEngine] >> GET dep=' + dep + (naf ? ' naf=' + naf : '') + ' ' + apiUrl.replace(/api_token=[^&]+/, 'api_token=***'));
-          apiCallCount++;
+        const data = await response.json();
+        const results = data.resultats || [];
+        rawResultCount += results.length;
+        console.log('[SignalEngine] << OK dep=' + dep + ': ' + results.length + ' results (total=' + (data.total || '?') + ', ' + elapsed + 'ms)');
 
-          const response = await fetch(apiUrl);
-          const elapsed = Date.now() - t0;
+        for (const r of results) {
+          // Dedup by siren across API calls
+          if (r.siren && seenSirens.has(r.siren)) continue;
+          if (r.siren) seenSirens.add(r.siren);
 
-          if (!response.ok) {
-            apiErrorCount++;
-            let errorBody = '';
-            try { errorBody = await response.text(); } catch (_) {}
-            console.error('[SignalEngine] << ERROR dep=' + dep + ' HTTP ' + response.status + ' (' + elapsed + 'ms) body=' + errorBody.substring(0, 500));
-            if (response.status === 429) {
-              UI.toast('Quota Pappers atteint', 'error');
-              hitCallLimit = true;
-              break;
-            }
+          // Exclure les societes cessees, en sommeil, radiees ou inactives
+          if (r.entreprise_cessee) { clientFilteredCount++; continue; }
+          const statut = (r.statut_rcs || '').toLowerCase();
+          if (statut && (statut.includes('radi') || statut.includes('sommeil') || statut.includes('liquid') || statut.includes('dissol'))) {
+            clientFilteredCount++;
             continue;
           }
 
-          const data = await response.json();
-          const results = data.resultats || [];
-          rawResultCount += results.length;
-          console.log('[SignalEngine] << OK dep=' + dep + (naf ? ' naf=' + naf : '') + ': ' + results.length + ' results (total=' + (data.total || '?') + ', ' + elapsed + 'ms)');
-
-          for (const r of results) {
-            // Dedup by siren across API calls
-            if (r.siren && seenSirens.has(r.siren)) continue;
-            if (r.siren) seenSirens.add(r.siren);
-
-            // Exclure les societes cessees, en sommeil, radiees ou inactives
-            if (r.entreprise_cessee) { clientFilteredCount++; continue; }
-            const statut = (r.statut_rcs || '').toLowerCase();
-            if (statut && (statut.includes('radi') || statut.includes('sommeil') || statut.includes('liquid') || statut.includes('dissol'))) {
-              clientFilteredCount++;
-              continue;
-            }
-
-            // Exclure les formes juridiques non pertinentes (entreprises individuelles, auto-entrepreneurs)
-            const formeJur = (r.forme_juridique || '').toLowerCase();
-            if (formeJur.includes('entrepreneur individuel') ||
-                formeJur.includes('commerçant') ||
-                formeJur.includes('artisan') ||
-                formeJur.includes('auto-entrepreneur') ||
-                formeJur.includes('micro-entrepreneur') ||
-                formeJur.includes('profession lib') ||
-                formeJur.includes('exploitation agricole')) {
-              clientFilteredCount++;
-              continue;
-            }
-
-            // Client-side NAF filter (only when NOT using server-side NAF filtering)
-            if (!useServerNaf && nafFilter) {
-              const nafPrefix = (r.code_naf || '').substring(0, 2);
-              if (!nafFilter.includes(nafPrefix)) {
-                nafFilteredCount++;
-                continue;
-              }
-            }
-
-            const effectif = _parseEffectif(r.tranche_effectif);
-            const ca = r.chiffre_affaires || 0;
-
-            // If the server already filtered by CA, trust the results — no client-side re-filtering
-            if (!serverFilteredByCA) {
-              const effectifMin = config.effectif_min_decouverte || 50;
-              const caMin = options.clientCaMin || config.ca_min_decouverte || 2000000;
-
-              if (ca > 0) {
-                if (ca < caMin) { clientFilteredCount++; continue; }
-              } else if (effectif > 0) {
-                if (effectif < effectifMin) { clientFilteredCount++; continue; }
-              } else {
-                // No financial data: keep if targeted NAF + 5yr seniority
-                // (forme_juridique filter above already excludes individual businesses)
-                const targetNafCodes = config.codes_naf_cibles || CODES_NAF_EXTENDED;
-                const nafPrefix = (r.code_naf || '').substring(0, 2);
-                const isTargetedNaf = targetNafCodes.includes(nafPrefix);
-                const dateCreation = r.date_creation ? new Date(r.date_creation) : null;
-                const fiveYearsAgo = new Date();
-                fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
-                const hasSeniority = dateCreation && dateCreation <= fiveYearsAgo;
-                if (!isTargetedNaf || !hasSeniority) { clientFilteredCount++; continue; }
-              }
-            }
-
-            // Departement reel du siege (extrait du code postal), pas celui de la requete
-            const siegeCP = r.siege?.code_postal || '';
-            const siegeDep = siegeCP.length >= 2 ? siegeCP.substring(0, 2) : dep;
-
-            // Exclure les entreprises dont le siege est hors de la region recherchee
-            // (Pappers renvoie des entreprises ayant un etablissement dans le dept, pas forcement le siege)
-            if (!depsSet.has(siegeDep)) {
-              clientFilteredCount++;
-              continue;
-            }
-
-            allResults.push({
-              siren: r.siren || '',
-              nom: r.denomination || r.nom_entreprise || '',
-              ville: r.siege?.ville || '',
-              code_postal: siegeCP,
-              departement: siegeDep,
-              region: regionName,
-              secteur_naf: r.code_naf || '',
-              libelle_naf: r.libelle_code_naf || '',
-              effectif: effectif,
-              ca: ca,
-              forme_juridique: r.forme_juridique || '',
-              date_creation: r.date_creation || '',
-            });
+          // Exclure les formes juridiques non pertinentes (entreprises individuelles, auto-entrepreneurs)
+          const formeJur = (r.forme_juridique || '').toLowerCase();
+          if (formeJur.includes('entrepreneur individuel') ||
+              formeJur.includes('commerçant') ||
+              formeJur.includes('artisan') ||
+              formeJur.includes('auto-entrepreneur') ||
+              formeJur.includes('micro-entrepreneur') ||
+              formeJur.includes('profession lib') ||
+              formeJur.includes('exploitation agricole')) {
+            clientFilteredCount++;
+            continue;
           }
 
-          // Rate limit: 300ms between Pappers calls
-          await new Promise(resolve => setTimeout(resolve, 300));
-        } catch (e) {
-          apiErrorCount++;
-          console.error('[SignalEngine] !! EXCEPTION dep=' + dep + ':', e.message || e);
+          // Client-side NAF filter (2-digit prefix matching)
+          if (nafFilter) {
+            const nafPrefix = (r.code_naf || '').substring(0, 2);
+            if (!nafFilter.includes(nafPrefix)) {
+              nafFilteredCount++;
+              continue;
+            }
+          }
+
+          const effectif = _parseEffectif(r.tranche_effectif);
+          const ca = r.chiffre_affaires || 0;
+
+          // If the server already filtered by CA, trust the results — no client-side re-filtering
+          if (!serverFilteredByCA) {
+            const effectifMin = config.effectif_min_decouverte || 50;
+            const caMin = options.clientCaMin || config.ca_min_decouverte || 2000000;
+
+            if (ca > 0) {
+              if (ca < caMin) { clientFilteredCount++; continue; }
+            } else if (effectif > 0) {
+              if (effectif < effectifMin) { clientFilteredCount++; continue; }
+            } else {
+              // No financial data: keep if targeted NAF + 5yr seniority
+              // (forme_juridique filter above already excludes individual businesses)
+              const targetNafCodes = config.codes_naf_cibles || CODES_NAF_EXTENDED;
+              const nafPrefix = (r.code_naf || '').substring(0, 2);
+              const isTargetedNaf = targetNafCodes.includes(nafPrefix);
+              const dateCreation = r.date_creation ? new Date(r.date_creation) : null;
+              const fiveYearsAgo = new Date();
+              fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
+              const hasSeniority = dateCreation && dateCreation <= fiveYearsAgo;
+              if (!isTargetedNaf || !hasSeniority) { clientFilteredCount++; continue; }
+            }
+          }
+
+          // Departement reel du siege (extrait du code postal), pas celui de la requete
+          const siegeCP = r.siege?.code_postal || '';
+          const siegeDep = siegeCP.length >= 2 ? siegeCP.substring(0, 2) : dep;
+
+          // Exclure les entreprises dont le siege est hors de la region recherchee
+          // (Pappers renvoie des entreprises ayant un etablissement dans le dept, pas forcement le siege)
+          if (!depsSet.has(siegeDep)) {
+            clientFilteredCount++;
+            continue;
+          }
+
+          allResults.push({
+            siren: r.siren || '',
+            nom: r.denomination || r.nom_entreprise || '',
+            ville: r.siege?.ville || '',
+            code_postal: siegeCP,
+            departement: siegeDep,
+            region: regionName,
+            secteur_naf: r.code_naf || '',
+            libelle_naf: r.libelle_code_naf || '',
+            effectif: effectif,
+            ca: ca,
+            forme_juridique: r.forme_juridique || '',
+            date_creation: r.date_creation || '',
+          });
         }
+
+        // Rate limit: 300ms between Pappers calls
+        await new Promise(resolve => setTimeout(resolve, 300));
+      } catch (e) {
+        apiErrorCount++;
+        console.error('[SignalEngine] !! EXCEPTION dep=' + dep + ':', e.message || e);
       }
     }
 
     console.log('[SignalEngine] Search done: ' + apiCallCount + ' API calls, ' + apiErrorCount + ' errors, ' +
       rawResultCount + ' raw results, ' + nafFilteredCount + ' NAF-filtered, ' + clientFilteredCount + ' client-filtered → ' +
-      allResults.length + ' kept' + (serverFilteredByCA ? ' (server CA filter active)' : '') +
-      (hitCallLimit ? ' (CALL LIMIT REACHED)' : ''));
+      allResults.length + ' kept' + (serverFilteredByCA ? ' (server CA filter active)' : ''));
     return allResults;
   }
 
@@ -2323,13 +2302,15 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         _config.codes_naf_cibles = selectedNaf;
         await _saveConfig();
 
-        // Lancer la decouverte avec les parametres choisis
-        await _executeDiscovery(containerId, {
-          region,
-          caMin: caMinM * 1000000,
-          nafCodes: selectedNaf,
-          maxDiscovered: maxDisc,
-        });
+        // Lancer la decouverte APRES la fermeture de la modal (pas de await)
+        setTimeout(() => {
+          _executeDiscovery(containerId, {
+            region,
+            caMin: caMinM * 1000000,
+            nafCodes: selectedNaf,
+            maxDiscovered: maxDisc,
+          });
+        }, 50);
       },
     });
 
