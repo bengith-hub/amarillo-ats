@@ -553,13 +553,13 @@ const SignalEngine = (() => {
 
   // Fetch full article content for richer AI analysis (best effort, parallel)
   async function _enrichArticlesContent(articles) {
-    const enrichPromises = articles.slice(0, 3).map(async (article, i) => {
+    const enrichPromises = articles.slice(0, 5).map(async (article, i) => {
       try {
         if (!article.url) return;
         const fullText = await _fetchPageText(article.url);
-        if (fullText && fullText.length > article.extrait.length) {
+        if (fullText && fullText.length > (article.extrait || '').length) {
           // Keep enriched content (truncated to reasonable length for AI)
-          article.extrait = fullText.substring(0, 1500);
+          article.extrait = fullText.substring(0, 2500);
           article.enriched = true;
         }
       } catch { /* best effort — keep RSS description */ }
@@ -1053,23 +1053,26 @@ const SignalEngine = (() => {
       libelleNaf ? `Secteur: ${libelleNaf}` : '',
     ].filter(Boolean).join(', ');
 
-    const system = `Tu es un analyste business specialise dans la detection de signaux declencheurs de besoins en DSI (Directeur des Systemes d'Information) pour tout type d'entreprise.
+    const system = `Tu es un analyste business specialise dans la detection de signaux d'affaires revelateurs d'opportunites commerciales et de besoins potentiels en systemes d'information (DSI) pour tout type d'entreprise.
 
 Analyse TOUTES les donnees fournies (site web, articles de presse, donnees Pappers) et detecte le maximum de signaux pertinents parmi :
-- investissement : Investissement significatif, levee de fonds, nouveau projet, demenagement, nouveaux locaux
-- expansion : Extension multi-sites, ouverture de filiales, nouveaux bureaux, croissance geographique
+- investissement : Investissement significatif, levee de fonds, nouveau projet, demenagement, nouveaux locaux, construction de nouveaux batiments, nouveaux entrepots, agrandissement de site, modernisation d'equipements, travaux d'extension, nouvelle usine, nouvelle ligne de production
+- expansion : Extension multi-sites, ouverture de filiales, nouveaux bureaux, croissance geographique, ouverture de nouveaux sites
 - erp_mes : Projet ERP, SAP, MES, CRM, transformation digitale, migration SI, cybersecurite, cloud
-- croissance : Croissance du CA, augmentation des effectifs, nouveaux clients, nouveaux contrats importants
+- croissance : Croissance du CA, augmentation des effectifs, nouveaux clients, nouveaux contrats importants, nouveaux contrats logistiques, diversification d'activite, hausse de volume, nouveau marche remporte
 - rachat_lbo : Rachat, acquisition, LBO, fusion, cession, changement d'actionnariat
 - internationalisation : Expansion internationale, export, nouveaux marches etrangers
 - recrutement_it : Recrutement IT, DSI, CTO, developpeurs, postes tech ouverts
 - nomination : Nomination d'un nouveau PDG, DG, DAF, DSI, directeur, changement de gouvernance, nouvelle equipe de direction
 
-IMPORTANT :
+REGLES DE DETECTION :
 - Sois EXHAUSTIF : detecte tout signal meme faible ou indirect. Un recrutement, un demenagement, un nouveau client important sont des signaux.
 - Analyse CHAQUE article de presse individuellement — chacun peut contenir un signal different.
 - Si le site web mentionne des projets, actualites ou recrutements, ce sont des signaux.
-- Meme des indices faibles (nouvelle certification, nouveau partenariat, prix recu) meritent d'etre mentionnes avec une confiance basse.
+- Meme des indices faibles (nouvelle certification, nouveau partenariat, prix recu, visite officielle d'un site) meritent d'etre mentionnes avec une confiance basse (0.3-0.5).
+- Un article mentionnant des TRAVAUX, CONSTRUCTION, AGRANDISSEMENT, MODERNISATION, INAUGURATION ou NOUVEAU SITE est TOUJOURS un signal de type "investissement", meme sans mention explicite d'informatique.
+- Un nouvel entrepot, une nouvelle ligne de production, un nouveau batiment, une extension de site = signal "investissement".
+- En cas de doute, INCLUS le signal avec une confiance basse plutot que de l'ignorer. Il vaut mieux detecter un signal faible que d'en rater un important.
 - ATTENTION HOMONYMES : Le nom "${entrepriseNom}" peut etre un terme courant (geographique, generique). IGNORE tout article qui parle d'un lieu, d'une region, ou d'une autre entite portant ce nom. Ne retiens QUE les articles qui parlent clairement de L'ENTREPRISE ciblee (${identityClause || entrepriseNom}).
 
 Reponds UNIQUEMENT en JSON valide avec cette structure :
@@ -2737,12 +2740,12 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       </div>
 
       <h4 style="margin:12px 0 6px;">Signaux detectes</h4>
-      ${sigList || '<p style="color:#94a3b8;">Aucun signal</p>'}
+      ${sigList || `<p style="color:#94a3b8;">Aucun signal fort detecte</p>${s.notes ? '<p style="font-size:0.8125rem;color:#64748b;font-style:italic;margin-top:4px;">' + UI.escHtml(s.notes) + '</p>' : ''}`}
 
       <h4 style="margin:12px 0 6px;">Articles de presse</h4>
       ${articles}
 
-      <p style="font-size:0.8125rem;color:#64748b;margin-top:8px;"><em>${UI.escHtml(s.notes || '')}</em></p>
+      ${sigList ? '<p style="font-size:0.8125rem;color:#64748b;margin-top:8px;"><em>' + UI.escHtml(s.notes || '') + '</em></p>' : ''}
 
       ${genHtml}
 
