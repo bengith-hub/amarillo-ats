@@ -340,9 +340,10 @@ export default async function handler(req) {
     console.warn('Could not read backup bin:', e.message);
   }
 
+  const store = getStore("ats-data");
+
   try {
     // 3. Download all entity data from Netlify Blobs
-    const store = getStore("ats-data");
     const data = {};
     const counts = {};
 
@@ -448,6 +449,13 @@ export default async function handler(req) {
       throw new Error(`Failed to save backup status: ${saveRes.status}`);
     }
 
+    // 9. Also persist status to Netlify Blobs for frontend monitoring
+    try {
+      await store.setJSON("_backup_status", meta.status);
+    } catch (e) {
+      console.warn('Could not persist backup status to Blobs:', e.message);
+    }
+
     console.log(`Backup complete: ${totalRecords} records, Drive upload: ${driveUploadOk ? 'OK' : 'skipped'}, snapshots: ${meta.snapshots.length}`);
 
     return new Response(JSON.stringify({
@@ -479,6 +487,11 @@ export default async function handler(req) {
     } catch (_) {
       console.error('Could not save error status');
     }
+
+    // Persist error status to Netlify Blobs for frontend monitoring
+    try {
+      await store.setJSON("_backup_status", meta.status);
+    } catch (_) {}
 
     await Promise.all([sendAlertWebhook(error.message), sendAlertEmail(error.message)]);
 
