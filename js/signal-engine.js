@@ -206,6 +206,14 @@ const SignalEngine = (() => {
     } catch {
       _suggestions = [];
     }
+    // Dedup by siren (keep first occurrence)
+    const seen = new Set();
+    _suggestions = _suggestions.filter(s => {
+      const key = s.siren || s.nom;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
     return _suggestions;
   }
 
@@ -1471,7 +1479,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       secteur_naf: sug.secteur_naf,
       libelle_naf: sug.libelle_naf || '',
       linkedin_url: sug.linkedin_url || '',
-      source: 'auto_discovery',
+      source: 'decouverte_acceptee',
     }, { silent: true });
 
     // Retirer de suggestions dans tous les cas
@@ -1591,51 +1599,35 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     const regionDepsArr = SignalRegions.getDepartements(activeRegion);
     const regionDepsSet = new Set(regionDepsArr);
 
-    // Migration: move unscanned auto_discovery entries from watchlist to suggestions
-    let needSave = false;
-    const autoUnscanned = _watchlist.filter(w => w.source === 'auto_discovery' && !w.derniere_analyse);
-    if (autoUnscanned.length > 0) {
-      console.log('[SignalEngine] Migrating ' + autoUnscanned.length + ' unscanned auto-discoveries from watchlist to suggestions');
-      for (const w of autoUnscanned) {
-        const cp = w.code_postal || '';
-        const realDep = cp.length >= 2 ? cp.substring(0, 2) : w.departement;
-        _suggestions.push({
-          id: 'sug_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
-          siren: w.siren, nom: w.nom, ville: w.ville,
-          code_postal: cp, departement: realDep,
-          region: w.region, secteur_naf: w.secteur_naf,
-          libelle_naf: w.libelle_naf || '', effectif: w.effectif || 0,
-          ca: w.ca || 0, linkedin_url: w.linkedin_url || '',
-          source: 'auto_discovery',
-          discovery_date: w.date_ajout || new Date().toISOString().split('T')[0],
-          osint_score: null, osint_signals: [],
-        });
+    // One-time migration (v1→v2): move auto_discovery entries from watchlist to suggestions
+    if (!config._migration_suggestions_done) {
+      const autoUnscanned = _watchlist.filter(w => w.source === 'auto_discovery' && !w.derniere_analyse);
+      if (autoUnscanned.length > 0) {
+        console.log('[SignalEngine] One-time migration: ' + autoUnscanned.length + ' auto-discoveries → suggestions');
+        for (const w of autoUnscanned) {
+          const cp = w.code_postal || '';
+          const realDep = cp.length >= 2 ? cp.substring(0, 2) : w.departement;
+          // Only migrate if siege is in active region
+          if (regionDepsSet.has(realDep)) {
+            _suggestions.push({
+              id: 'sug_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+              siren: w.siren, nom: w.nom, ville: w.ville,
+              code_postal: cp, departement: realDep,
+              region: w.region, secteur_naf: w.secteur_naf,
+              libelle_naf: w.libelle_naf || '', effectif: w.effectif || 0,
+              ca: w.ca || 0, linkedin_url: w.linkedin_url || '',
+              source: 'auto_discovery',
+              discovery_date: w.date_ajout || new Date().toISOString().split('T')[0],
+              osint_score: null, osint_signals: [],
+            });
+          }
+        }
+        _watchlist = _watchlist.filter(w => !(w.source === 'auto_discovery' && !w.derniere_analyse));
+        const migratedSirens = new Set(autoUnscanned.map(w => w.siren).filter(Boolean));
+        _signaux = _signaux.filter(s => !migratedSirens.has(s.entreprise_siren));
       }
-      _watchlist = _watchlist.filter(w => !(w.source === 'auto_discovery' && !w.derniere_analyse));
-      const migratedSirens = new Set(autoUnscanned.map(w => w.siren).filter(Boolean));
-      _signaux = _signaux.filter(s => !migratedSirens.has(s.entreprise_siren));
-      needSave = true;
-    }
-
-    // Fix existing suggestions: recalculate departement from code_postal and remove hors-region
-    const prevSugLen = (_suggestions || []).length;
-    for (const s of _suggestions) {
-      if (s.code_postal && s.code_postal.length >= 2) {
-        s.departement = s.code_postal.substring(0, 2);
-      }
-    }
-    // Remove suggestions whose real siege is outside the active region
-    _suggestions = (_suggestions || []).filter(s => {
-      if (!s.departement) return true;
-      return regionDepsSet.has(s.departement);
-    });
-    if (_suggestions.length !== prevSugLen) {
-      console.log('[SignalEngine] Cleaned suggestions: ' + prevSugLen + ' → ' + _suggestions.length + ' (removed hors-region)');
-      needSave = true;
-    }
-
-    if (needSave) {
-      await Promise.all([_saveSuggestions(), _saveWatchlist(), _saveSignaux()]);
+      config._migration_suggestions_done = true;
+      await Promise.all([_saveSuggestions(), _saveWatchlist(), _saveSignaux(), _saveConfig()]);
     }
 
     // Filter signaux by active region
@@ -1694,7 +1686,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Auto-decouvertes</div>
-          <div class="kpi-value" style="color:#7c3aed;">${regionWatchlist.filter(w => w.source === 'auto_discovery').length}</div>
+          <div class="kpi-value" style="color:#7c3aed;">${regionWatchlist.filter(w => w.source === 'auto_discovery' || w.source === 'decouverte_acceptee').length}</div>
         </div>
       </div>
 
@@ -1930,7 +1922,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     let tableHtml = '';
     if (watchlist.length) {
       const rows = watchlist.map(w => {
-        const sourceBadge = w.source === 'auto_discovery'
+        const sourceBadge = (w.source === 'auto_discovery' || w.source === 'decouverte_acceptee')
           ? ' <span style="font-size:0.6rem;background:#ede9fe;color:#7c3aed;padding:1px 5px;border-radius:3px;vertical-align:middle;">auto</span>'
           : '';
         const linkedinLink = w.linkedin_url
@@ -2024,6 +2016,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
           _watchlist = null;
           _signaux = null;
           _ecartees = null;
+          _suggestions = null;
           await renderPage('signaux-content');
         } catch (e) {
           console.error('[SignalEngine] Dismiss failed:', e);
@@ -2041,6 +2034,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
           await removeFromWatchlist(btn.dataset.id);
           _watchlist = null;
           _signaux = null;
+          _ecartees = null;
+          _suggestions = null;
           await renderPage('signaux-content');
         } catch (e) {
           console.error('[SignalEngine] Remove failed:', e);
@@ -2441,6 +2436,7 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
           await restoreFromEcartees(btn.dataset.id);
           _watchlist = null;
           _ecartees = null;
+          _suggestions = null;
           await renderPage('signaux-content');
         } catch (e) {
           console.error('[SignalEngine] Restore failed:', e);
@@ -2872,6 +2868,8 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
 
       _signaux = null;
       _watchlist = null;
+      _ecartees = null;
+      _suggestions = null;
       await renderPage('signaux-content');
     } catch (e) {
       UI.toast('Erreur: ' + e.message, 'error');
