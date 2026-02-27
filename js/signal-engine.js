@@ -819,7 +819,10 @@ const SignalEngine = (() => {
             } else if (effectif > 0) {
               if (effectif < effectifMin) { clientFilteredCount++; continue; }
             } else {
-              // No financial data: keep if targeted NAF + 5yr seniority
+              // No financial data (CA=0 AND effectif=0).
+              // If CA threshold is high (>= 10M), reject — no data does not mean high revenue.
+              if (caMin >= 10000000) { clientFilteredCount++; continue; }
+              // For lower thresholds, keep if targeted NAF + 5yr seniority
               // (forme_juridique filter above already excludes individual businesses)
               const targetNafCodes = config.codes_naf_cibles || CODES_NAF_EXTENDED;
               const nafPrefix = (r.code_naf || '').substring(0, 2);
@@ -3320,17 +3323,19 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
     }
 
     // ---------------------------------------------------------------
-    // PASSE UNIQUE: pas de chiffre_affaires_min (economie 50% credits)
-    // Le filtrage CA se fait cote client dans _searchPappersByRegion
+    // Server-side CA filter via Pappers chiffre_affaires_min parameter.
+    // This uses more API credits than unfiltered queries, but client-side
+    // filtering on 25 random results per department was ineffective
+    // (0.005% sample of ~500K companies per department).
     // ---------------------------------------------------------------
-    console.log('[SignalEngine] --- Single pass: no server CA filter, client-side filtering ---');
+    console.log('[SignalEngine] --- Single pass: server CA filter (' + (discoveryCaMin / 1000000).toFixed(1) + 'M), par_page=100 ---');
     _updateAutoScanBanner(0, 1, 'Recherche Pappers...');
     try {
       const t0 = Date.now();
       const results = await _searchPappersByRegion(activeRegion, {
         code_naf: nafBatch,
-        par_page: '25',
-        clientCaMin: discoveryCaMin,
+        par_page: '100',
+        chiffre_affaires_min: discoveryCaMin,
       });
       console.log('[SignalEngine] Search returned ' + results.length + ' results in ' + (Date.now() - t0) + 'ms');
       _dedupAndPush(results);
