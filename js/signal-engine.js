@@ -789,12 +789,16 @@ const SignalEngine = (() => {
             }
           }
 
+          // Departement reel du siege (extrait du code postal), pas celui de la requete
+          const siegeCP = r.siege?.code_postal || '';
+          const siegeDep = siegeCP.length >= 2 ? siegeCP.substring(0, 2) : dep;
+
           allResults.push({
             siren: r.siren || '',
             nom: r.denomination || r.nom_entreprise || '',
             ville: r.siege?.ville || '',
-            code_postal: r.siege?.code_postal || '',
-            departement: dep,
+            code_postal: siegeCP,
+            departement: siegeDep,
             region: regionName,
             secteur_naf: r.code_naf || '',
             libelle_naf: r.libelle_code_naf || '',
@@ -1574,6 +1578,31 @@ SCORE BESOIN DSI: ${signal.score_global}/100`;
       _loadEcartees(),
       _loadSuggestions(),
     ]);
+
+    // Migration: move unscanned auto_discovery entries from watchlist to suggestions
+    const autoUnscanned = _watchlist.filter(w => w.source === 'auto_discovery' && !w.derniere_analyse);
+    if (autoUnscanned.length > 0) {
+      console.log('[SignalEngine] Migrating ' + autoUnscanned.length + ' unscanned auto-discoveries from watchlist to suggestions');
+      for (const w of autoUnscanned) {
+        _suggestions.push({
+          id: 'sug_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+          siren: w.siren, nom: w.nom, ville: w.ville,
+          code_postal: w.code_postal, departement: w.departement,
+          region: w.region, secteur_naf: w.secteur_naf,
+          libelle_naf: w.libelle_naf || '', effectif: w.effectif || 0,
+          ca: w.ca || 0, linkedin_url: w.linkedin_url || '',
+          source: 'auto_discovery',
+          discovery_date: w.date_ajout || new Date().toISOString().split('T')[0],
+          osint_score: null, osint_signals: [],
+        });
+      }
+      _watchlist = _watchlist.filter(w => !(w.source === 'auto_discovery' && !w.derniere_analyse));
+      // Remove associated signals
+      const migratedSirens = new Set(autoUnscanned.map(w => w.siren).filter(Boolean));
+      const prevSigLen = _signaux.length;
+      _signaux = _signaux.filter(s => !migratedSirens.has(s.entreprise_siren));
+      await Promise.all([_saveSuggestions(), _saveWatchlist(), ...((_signaux.length < prevSigLen) ? [_saveSignaux()] : [])]);
+    }
 
     const activeRegion = config.regions_actives?.[0] || 'Pays de la Loire';
 
