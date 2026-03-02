@@ -707,6 +707,13 @@
           let detail = 'Dernier succ\u00e8s : ' + lastDate;
           if (status.error) detail += ' \u2014 Erreur : ' + status.error;
           detailEl.textContent = detail;
+        } else if (status.result === 'partial' || status.drive_error) {
+          iconEl.innerHTML = '&#9888;&#65039;';
+          textEl.textContent = 'Backup partiel \u2014 Google Drive indisponible';
+          textEl.style.color = '#d97706';
+          cardInner.style.borderLeftColor = '#f59e0b';
+          let detail = 'Dernier backup : ' + lastDate + ' \u2014 Drive : ' + (status.drive_error || 'erreur inconnue');
+          detailEl.textContent = detail;
         } else {
           const hasDrive = status.drive_backup === true;
           iconEl.innerHTML = '&#9989;';

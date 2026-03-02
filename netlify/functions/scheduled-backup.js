@@ -360,11 +360,12 @@ export default async function handler(req) {
     let driveFileId = null;
     let driveFileName = null;
     let driveUploadOk = false;
+    let driveError = null;
 
-    const accessToken = await getGoogleAccessToken();
+    try {
+      const accessToken = await getGoogleAccessToken();
 
-    if (accessToken) {
-      try {
+      if (accessToken) {
         const folderId = await getOrCreateBackupFolder(accessToken);
 
         const snapshotId = 'snap_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
@@ -415,12 +416,13 @@ export default async function handler(req) {
             }
           }
         }
-      } catch (e) {
-        console.error('Google Drive upload failed:', e.message);
-        // Continue — still record status as health-check-only success
+      } else {
+        console.log('Google Drive not configured (missing GOOGLE_REFRESH_TOKEN/CLIENT_ID/CLIENT_SECRET) — skipping Drive upload, health check only.');
       }
-    } else {
-      console.log('Google Drive not configured (missing GOOGLE_REFRESH_TOKEN/CLIENT_ID/CLIENT_SECRET) — skipping Drive upload, health check only.');
+    } catch (e) {
+      driveError = e.message;
+      console.error('Google Drive backup failed:', e.message);
+      // Continue — still record status and health-check data
     }
 
     // 7. Update status metadata
@@ -428,11 +430,12 @@ export default async function handler(req) {
     meta.status = {
       last_success: now,
       last_run: now,
-      result: 'ok',
+      result: driveError ? 'partial' : 'ok',
       error: null,
       counts,
       drive_backup: driveUploadOk,
-      drive_file: driveFileName
+      drive_file: driveFileName,
+      drive_error: driveError || null
     };
 
     // 8. Save metadata to JSONBin

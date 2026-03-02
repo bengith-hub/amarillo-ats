@@ -64,8 +64,13 @@ const GoogleAuth = (function() {
           _tokenExpiry = Date.now() + (response.expires_in * 1000) - 60000; // 1 min margin
           resolve(_accessToken);
         };
-        client.error_callback = () => {
-          reject(new Error('Authentification Google annulée ou échouée.'));
+        client.error_callback = (err) => {
+          const msg = err?.type === 'popup_closed'
+            ? 'Popup ferm\u00e9 avant authentification. Veuillez r\u00e9essayer.'
+            : err?.type === 'popup_failed_to_open'
+            ? 'Popup bloqu\u00e9 par le navigateur. Autorisez les popups pour ce site.'
+            : 'Authentification Google annul\u00e9e ou \u00e9chou\u00e9e.';
+          reject(new Error(msg));
         };
         client.requestAccessToken();
       } catch (e) {
