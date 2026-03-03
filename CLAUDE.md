@@ -55,7 +55,8 @@ amarillo-ats/
 │   ├── signal-regions.js     # Régions pour signaux
 │   ├── cv-parser.js          # Extraction CV via OpenAI
 │   ├── interview-analyzer.js # Analyse entretiens via IA
-│   ├── skills-engine.js      # **[NOUVEAU]** Moteur Skills IA configurables
+│   ├── skills-engine.js      # Moteur Skills IA v2 (contexte auto, éditeur simplifié, runner conversationnel)
+│   ├── command-palette.js    # Palette de commandes / — lancer skills depuis n'importe quelle page
 │   ├── dsi-scoring.js        # Scoring DSI candidats
 │   ├── google-auth.js        # OAuth2 unifié Google
 │   ├── gmail.js              # Intégration Gmail API
@@ -336,45 +337,50 @@ BACKUP_ALERT_EMAIL         — Email alertes (défaut: benjamin.fetu@amarillosea
 
 ## Features récentes
 
-### Skills IA — Moteur de prompts configurables (NOUVEAU)
+### Skills IA v2 — Palette `/` + Contexte automatique
 
-Moteur de workflows IA intégré remplaçant la dépendance à DIA (assistant navigateur externe). Permet de créer, éditer et exécuter des prompts IA multi-étapes directement sur les entités de l'ATS.
+Moteur de Skills IA simplifié remplaçant DIA (assistant navigateur externe). Les skills sont des prompts en langage naturel exécutés sur les entités avec injection automatique du contexte. Accessible depuis n'importe quelle page via la palette `/`.
 
-- **Module** : `js/skills-engine.js` — IIFE `SkillsEngine`
-- **Page** : `skills.html` — Bibliothèque avec grille de cards, création/édition via modale
-- **Stockage** : Entité `skills` dans Netlify Blobs (ajoutée à `store.js` et `store.mjs`)
-- **Modèle IA** : gpt-4o-mini (fixe), température 0.2, max_tokens 3000
-- **Clé API** : Via `CVParser.getOpenAIKey()` (même clé que l'analyse d'entretien)
+**Modules :**
+- `js/skills-engine.js` — IIFE `SkillsEngine` : CRUD, exécution avec contexte auto, éditeur simplifié, runner conversationnel
+- `js/command-palette.js` — IIFE `CommandPalette` : palette `/` globale avec recherche, navigation clavier, sélection d'entité
+- `skills.html` — Bibliothèque (grille de cards, création/édition/suppression)
 
-**Architecture du module :**
+**Principe — Contexte automatique :**
+- Plus de variables `{{...}}` dans les prompts. L'utilisateur écrit en langage naturel.
+- À l'exécution, `_buildContextText()` injecte automatiquement TOUTES les données non-vides de la fiche dans le system prompt.
+- Scraping web optionnel (LinkedIn, site) injecté dans le contexte.
+- Le prompt du skill est stocké dans `steps[0].user_prompt`.
+
+**Palette `/` :**
+- Touche `/` (hors input/textarea) ouvre la palette sur n'importe quelle page
+- Sur une fiche entité : affiche les skills filtrés par type, clic lance immédiatement
+- Hors fiche : sélection d'entité dans la palette avant lancement
+- Navigation clavier : flèches, Entrée, Escape, filtrage texte temps réel
+
+**Éditeur simplifié :**
+- Mode simple par défaut : **Nom (auto-IA) + Applicable à + Prompt + Scrape web**
+- Options avancées dépliables : prompt système custom, description, couleur, statut
+- Auto-génération du nom via GPT-4o-mini au blur du prompt
+- Support multi-étapes préservé pour les skills existants
+
+**Runner conversationnel :**
+- `showRunner(skill, entityType, entityId)` — lance immédiatement, affiche loader puis résultat
+- Bouton copie (📋) avec feedback visuel
+- Champ "Affiner" pour dialoguer avec l'IA : l'historique de conversation est maintenu
+- `refineResult(conversationMessages, refinement)` — continue la conversation
+- `_callOpenAI(messages)` accepte un tableau de messages complet
+
+**Architecture :**
 - **CRUD** : `getSkills()`, `getSkill(id)`, `saveSkill(skill)`, `deleteSkill(id)`, `duplicateSkill(id)`
-- **Exécution** : `runSkill(skillId, entityType, entityId, userInputs, onProgress)` — exécute les étapes séquentiellement, résout les variables, scrape les URLs si configuré
-- **Variables** : `getAvailableVariables(entityType)`, résolution via `{{candidat.nom}}`, `{{previous_step_result}}`, `{{scraped_content}}`, `{{input.*}}`
-- **Scraping** : `_scrapeEntityUrls(entity, entityType)` — via CORS proxy existant (`cors-proxy.js`), scrape LinkedIn et sites web des entités
-- **UI Éditeur** : `showEditor(existingSkill)` — modale 800px avec étapes, prompts, variables cliquables
-- **UI Runner** : `showRunner(skill, entityType, entityId)` — modale d'exécution avec progress bar et résultat copiable
-- **Carte entité** : `renderEntitySkillsCard(containerId, entityType, entityId)` — affiche les skills applicables sous forme de boutons
-
-**Intégration sur les pages entité :**
-- `candidat.html` / `candidat-detail.js` — Section Skills IA dans l'onglet Entretien (avant la carte Analyse IA)
-- `entreprise.html` — Section Skills IA en haut du détail
-- `decideur.html` — Section Skills IA en haut du détail
-
-**Variables de template `{{...}}` disponibles :**
-- `{{candidat.*}}` — tous les champs candidat + `notes_entretien`, `entreprise_actuelle`
-- `{{entreprise.*}}` — tous les champs entreprise
-- `{{decideur.*}}` — tous les champs décideur + `entreprise`
-- `{{previous_step_result}}` — sortie de l'étape précédente
-- `{{step_N_result}}` — sortie de l'étape N
-- `{{input.*}}` — valeurs saisies par l'utilisateur
-- `{{scraped_content}}` — texte extrait des URLs de l'entité
+- **Exécution** : `runSkill(skillId, entityType, entityId, onProgress)` → `{ result, messages }`
+- **Contexte** : `_buildContextText(entityType, entityId)` — dump texte formaté de l'entité
+- **Scraping** : `_scrapeEntityUrls(entity, entityType)` — via CORS proxy
 
 **Skills exemples pré-chargés (3) :**
 1. **Lecture Recruteur** (2 étapes, candidats) — Extraction factuelle → Analyse FIT poste/culture/risques/marché
 2. **Prospection Décideur** (2 étapes, décideurs) — Qualification contexte → Recommandation approche
-3. **Accroche LinkedIn** (1 étape, décideurs) — Génération messages d'accroche personnalisés (3 variantes)
-
-**Migration future (Phase 2) :** Les 4 prompts d'entretien existants (`interview-analyzer.js` : synthese_30s, parcours_cible, motivation_drivers, lecture_recruteur) pourront être migrés vers le système de Skills pour devenir éditables.
+3. **Accroche LinkedIn** (1 étape, décideurs) — 3 variantes de messages d'accroche personnalisés
 
 ### Simulateur coût total employeur (fiche candidat)
 

@@ -1,6 +1,5 @@
-// Amarillo ATS — Skills Engine
-// Moteur de Skills IA configurables : CRUD, resolution variables, execution multi-etapes,
-// scraping URLs entite, editeur modal, runner modal.
+// Amarillo ATS — Skills Engine v2
+// Moteur de Skills IA simplifie : contexte auto, editeur minimal, runner conversationnel.
 // Depend de : api.js, store.js, components.js, cv-parser.js (pour getOpenAIKey)
 
 const SkillsEngine = (() => {
@@ -26,11 +25,38 @@ const SkillsEngine = (() => {
     '#06b6d4', '#f97316', '#ec4899', '#14b8a6', '#6366f1'
   ];
 
+  const DEFAULT_SYSTEM_PROMPT = 'Tu es un assistant expert en recrutement executive search, specialise dans les profils DSI/CTO/CDO.';
+
+  const FIELD_LABELS = {
+    // Candidats
+    prenom: 'Prenom', nom: 'Nom', poste_actuel: 'Poste actuel', poste_cible: 'Poste cible',
+    entreprise_actuelle: 'Entreprise actuelle', localisation: 'Localisation', niveau: 'Niveau',
+    diplome: 'Diplome', email: 'Email', telephone: 'Telephone', linkedin: 'LinkedIn',
+    statut: 'Statut', open_to_work: 'Open to work', date_disponibilite: 'Disponibilite',
+    preavis: 'Preavis', ambassadeur: 'Ambassadeur', salaire_fixe_actuel: 'Salaire fixe actuel',
+    variable_actuel: 'Variable actuel', package_souhaite_min: 'Package min souhaite',
+    package_souhaite: 'Package souhaite', origine: 'Origine', profile_code: 'Code profiling',
+    notes: 'Notes', synthese_30s: 'Synthese 30s', parcours_cible: 'Parcours cible',
+    motivation_drivers: 'Motivation & drivers', lecture_recruteur: 'Lecture recruteur',
+    notes_entretien: 'Notes d\'entretien',
+    // Entreprises
+    secteur: 'Secteur', taille: 'Taille', ca: 'CA', priorite: 'Priorite',
+    siege_adresse: 'Adresse siege', siege_code_postal: 'Code postal siege',
+    siege_ville: 'Ville siege', site_web: 'Site web', groupe: 'Groupe',
+    source: 'Source', angle_approche: 'Angle d\'approche', description: 'Description',
+    // Decideurs
+    fonction: 'Fonction', fonction_macro: 'Fonction macro',
+    niveau_hierarchique: 'Niveau hierarchique', role_decision: 'Role decision',
+    niveau_relation: 'Niveau relation', priorite_prospection: 'Priorite prospection',
+    perimetre: 'Perimetre', telephone_mobile: 'Tel mobile',
+    notes_relation: 'Notes relation', entreprise: 'Entreprise'
+  };
+
   // ============================================================
   // APPEL OPENAI
   // ============================================================
 
-  async function _callOpenAI(systemPrompt, userPrompt) {
+  async function _callOpenAI(messages) {
     const apiKey = CVParser.getOpenAIKey();
     if (!apiKey) throw new Error('Cle API OpenAI non configuree.');
 
@@ -45,10 +71,7 @@ const SkillsEngine = (() => {
         },
         body: JSON.stringify({
           model: 'gpt-4o-mini',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
+          messages,
           temperature: 0.2,
           max_tokens: 3000
         })
@@ -98,214 +121,158 @@ const SkillsEngine = (() => {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
     doc.querySelectorAll('script, style, svg, noscript, iframe, link, meta').forEach(el => el.remove());
-    let text = doc.body?.textContent || '';
-    text = text.replace(/[\t\r]+/g, ' ').replace(/\n\s*\n+/g, '\n').replace(/ {2,}/g, ' ').trim();
-    return text.length > 5000 ? text.substring(0, 5000) + '...' : text;
+    let text = (doc.body || doc.documentElement).textContent || '';
+    text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    return text.substring(0, 8000);
   }
 
   async function _scrapeEntityUrls(entity, entityType) {
     const urls = [];
-    if (entityType === 'candidats' && entity.linkedin) urls.push(entity.linkedin);
-    if (entityType === 'entreprises') {
-      if (entity.site_web) urls.push(entity.site_web);
-      if (entity.linkedin) urls.push(entity.linkedin);
-    }
-    if (entityType === 'decideurs' && entity.linkedin) urls.push(entity.linkedin);
-
+    if (entity.linkedin) urls.push(entity.linkedin);
+    if (entityType === 'entreprises' && entity.site_web) urls.push(entity.site_web);
     if (urls.length === 0) return '';
 
-    const results = await Promise.allSettled(
-      urls.map(async (url) => {
-        let u = url.trim();
-        if (!u.startsWith('http')) u = 'https://' + u;
-        const html = await _fetchViaProxy(u, 10000);
-        return _htmlToText(html);
-      })
-    );
-
-    return results
-      .filter(r => r.status === 'fulfilled' && r.value)
-      .map(r => r.value)
-      .join('\n\n---\n\n');
+    const results = [];
+    for (const url of urls) {
+      const html = await _fetchViaProxy(url, 10000);
+      const text = _htmlToText(html);
+      if (text) results.push('--- ' + url + ' ---\n' + text);
+    }
+    return results.join('\n\n').substring(0, 12000);
   }
 
   // ============================================================
-  // VARIABLES DE TEMPLATE
+  // CONTEXTE AUTOMATIQUE
   // ============================================================
 
-  function getAvailableVariables(entityType) {
-    const vars = [];
-
-    if (entityType === 'candidats' || !entityType) {
-      vars.push(
-        { key: 'candidat.nom', label: 'Nom' },
-        { key: 'candidat.prenom', label: 'Prenom' },
-        { key: 'candidat.poste_actuel', label: 'Poste actuel' },
-        { key: 'candidat.poste_cible', label: 'Poste cible' },
-        { key: 'candidat.localisation', label: 'Localisation' },
-        { key: 'candidat.email', label: 'Email' },
-        { key: 'candidat.linkedin', label: 'LinkedIn' },
-        { key: 'candidat.niveau', label: 'Niveau' },
-        { key: 'candidat.notes', label: 'Notes' },
-        { key: 'candidat.synthese_30s', label: 'Synthese 30s' },
-        { key: 'candidat.parcours_cible', label: 'Parcours cible' },
-        { key: 'candidat.motivation_drivers', label: 'Motivation' },
-        { key: 'candidat.lecture_recruteur', label: 'Lecture recruteur' },
-        { key: 'candidat.notes_entretien', label: 'Notes entretien' },
-        { key: 'candidat.entreprise_actuelle', label: 'Entreprise actuelle' }
-      );
-    }
-
-    if (entityType === 'entreprises' || !entityType) {
-      vars.push(
-        { key: 'entreprise.nom', label: 'Nom' },
-        { key: 'entreprise.secteur', label: 'Secteur' },
-        { key: 'entreprise.localisation', label: 'Localisation' },
-        { key: 'entreprise.taille', label: 'Taille' },
-        { key: 'entreprise.ca', label: 'CA' },
-        { key: 'entreprise.description', label: 'Description' },
-        { key: 'entreprise.notes', label: 'Notes' }
-      );
-    }
-
-    if (entityType === 'decideurs' || !entityType) {
-      vars.push(
-        { key: 'decideur.nom', label: 'Nom' },
-        { key: 'decideur.prenom', label: 'Prenom' },
-        { key: 'decideur.fonction', label: 'Fonction' },
-        { key: 'decideur.linkedin', label: 'LinkedIn' },
-        { key: 'decideur.email', label: 'Email' },
-        { key: 'decideur.notes', label: 'Notes' },
-        { key: 'decideur.entreprise', label: 'Entreprise' }
-      );
-    }
-
-    // Variables speciales (toujours disponibles)
-    vars.push(
-      { key: 'previous_step_result', label: 'Resultat etape precedente' },
-      { key: 'scraped_content', label: 'Contenu scrape (URLs)' }
-    );
-
-    return vars;
-  }
-
-  async function _buildContext(entityType, entityId) {
-    const ctx = {};
+  async function _buildContextText(entityType, entityId) {
+    const SKIP_FIELDS = ['id', 'created_at', 'updated_at', 'presentations', 'entreprises_cibles',
+      '_pappers_siren', '_pappers_naf', 'google_drive_url', 'entreprise_actuelle_id',
+      'entreprise_id', 'manager_direct_id', 'missions_ids', 'profil_candidat_id',
+      'candidats_ids', 'decideurs_ids', 'candidat_place_id', 'factures_ids',
+      'recommande_par', 'candidat_id', 'decideur_id', 'mission_id'];
+    let lines = [];
 
     if (entityType === 'candidats' && entityId) {
       const c = Store.findById('candidats', entityId);
-      if (c) {
-        ctx.candidat = { ...c };
-        // Resolve entreprise actuelle
-        if (c.entreprise_actuelle_id) {
-          const ent = Store.findById('entreprises', c.entreprise_actuelle_id);
-          ctx.candidat.entreprise_actuelle = ent ? ent.nom : '';
-        }
-        // Build interview notes
-        const actions = Store.filter('actions', a =>
-          a.candidat_id === entityId && a.notes && a.notes.trim()
-        );
-        ctx.candidat.notes_entretien = actions
-          .map(a => '[' + (a.type || '') + ' - ' + (a.canal || '') + ' - ' + (a.date || '') + ']\n' + a.notes)
+      if (!c) return '';
+
+      // Resolve entreprise actuelle
+      let entNom = c.entreprise_nom || '';
+      if (c.entreprise_actuelle_id) {
+        const ent = Store.findById('entreprises', c.entreprise_actuelle_id);
+        if (ent) entNom = ent.nom;
+      }
+      if (entNom) lines.push('- Entreprise actuelle : ' + entNom);
+
+      // All non-empty fields
+      for (const [key, val] of Object.entries(c)) {
+        if (SKIP_FIELDS.includes(key) || key.startsWith('_')) continue;
+        if (val === null || val === undefined || val === '' || (Array.isArray(val) && val.length === 0)) continue;
+        const label = FIELD_LABELS[key] || key;
+        lines.push('- ' + label + ' : ' + (typeof val === 'object' ? JSON.stringify(val) : val));
+      }
+
+      // Build interview notes from actions
+      const actions = Store.filter('actions', a =>
+        a.candidat_id === entityId && ((a.message_notes && a.message_notes.trim()) || (a.notes && a.notes.trim()))
+      );
+      if (actions.length > 0) {
+        const notesText = actions
+          .map(a => '[' + (a.type_action || '') + ' - ' + (a.canal || '') + ' - ' + (a.date_action || '') + ']\n' + (a.message_notes || a.notes || ''))
           .join('\n\n')
           .substring(0, 10000);
-        ctx._entity = c;
+        lines.push('- Notes d\'entretien :\n' + notesText);
       }
+
+      return 'Fiche Candidat :\n' + lines.join('\n');
     }
 
     if (entityType === 'entreprises' && entityId) {
       const e = Store.findById('entreprises', entityId);
-      if (e) {
-        ctx.entreprise = { ...e };
-        ctx._entity = e;
+      if (!e) return '';
+      for (const [key, val] of Object.entries(e)) {
+        if (SKIP_FIELDS.includes(key) || key.startsWith('_')) continue;
+        if (val === null || val === undefined || val === '' || (Array.isArray(val) && val.length === 0)) continue;
+        const label = FIELD_LABELS[key] || key;
+        lines.push('- ' + label + ' : ' + (typeof val === 'object' ? JSON.stringify(val) : val));
       }
+      return 'Fiche Entreprise :\n' + lines.join('\n');
     }
 
     if (entityType === 'decideurs' && entityId) {
       const d = Store.findById('decideurs', entityId);
-      if (d) {
-        ctx.decideur = { ...d };
-        if (d.entreprise_id) {
-          const ent = Store.findById('entreprises', d.entreprise_id);
-          ctx.decideur.entreprise = ent ? ent.nom : '';
-        }
-        ctx._entity = d;
+      if (!d) return '';
+
+      // Resolve entreprise
+      if (d.entreprise_id) {
+        const ent = Store.findById('entreprises', d.entreprise_id);
+        if (ent) lines.push('- Entreprise : ' + ent.nom);
       }
+
+      for (const [key, val] of Object.entries(d)) {
+        if (SKIP_FIELDS.includes(key) || key.startsWith('_')) continue;
+        if (val === null || val === undefined || val === '' || (Array.isArray(val) && val.length === 0)) continue;
+        const label = FIELD_LABELS[key] || key;
+        lines.push('- ' + label + ' : ' + (typeof val === 'object' ? JSON.stringify(val) : val));
+      }
+      return 'Fiche Decideur :\n' + lines.join('\n');
     }
 
-    return ctx;
-  }
-
-  function _resolveTemplate(template, ctx, stepResults) {
-    if (!template) return '';
-    return template.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
-      const k = key.trim();
-
-      // Step results
-      if (k === 'previous_step_result') return stepResults.length > 0 ? stepResults[stepResults.length - 1] : '';
-      if (/^step_\d+_result$/.test(k)) {
-        const idx = parseInt(k.split('_')[1]) - 1;
-        return stepResults[idx] || '';
-      }
-      if (k === 'scraped_content') return ctx._scraped_content || '';
-
-      // Input variables
-      if (k.startsWith('input.')) {
-        const inputKey = k.substring(6);
-        return ctx._inputs?.[inputKey] || '';
-      }
-
-      // Entity variables (candidat.nom, entreprise.secteur, etc.)
-      const parts = k.split('.');
-      if (parts.length === 2) {
-        const obj = ctx[parts[0]];
-        if (obj) return obj[parts[1]] || '';
-      }
-
-      return match; // Leave unresolved
-    });
+    return '';
   }
 
   // ============================================================
   // EXECUTION
   // ============================================================
 
-  async function runSkill(skillId, entityType, entityId, userInputs, onProgress) {
+  async function runSkill(skillId, entityType, entityId, onProgress) {
     const skill = Store.findById('skills', skillId);
     if (!skill) throw new Error('Skill introuvable : ' + skillId);
     if (!skill.steps || skill.steps.length === 0) throw new Error('Ce skill n\'a aucune etape.');
 
-    // Build context
-    const ctx = await _buildContext(entityType, entityId);
-    ctx._inputs = userInputs || {};
+    // Build context text
+    const contextText = await _buildContextText(entityType, entityId);
+
+    // Scrape if any step requests it
+    let scrapedContent = '';
+    const needsScraping = skill.steps.some(s => s.scrape_entity_urls);
+    if (needsScraping && entityId) {
+      const entity = Store.findById(entityType, entityId);
+      if (entity) {
+        if (onProgress) onProgress(-1, 'Scraping web...', 'scraping');
+        scrapedContent = await _scrapeEntityUrls(entity, entityType);
+      }
+    }
+
+    // Build system prompt with auto context
+    let systemContent = skill.steps[0].system_prompt || DEFAULT_SYSTEM_PROMPT;
+    systemContent += '\n\n' + contextText;
+    if (scrapedContent) {
+      systemContent += '\n\nContenu web extrait (LinkedIn, site) :\n' + scrapedContent;
+    }
 
     const stepResults = [];
+    const messages = [{ role: 'system', content: systemContent }];
 
     for (let i = 0; i < skill.steps.length; i++) {
       const step = skill.steps[i];
-      if (onProgress) onProgress(i, step.nom, 'running');
+      if (onProgress) onProgress(i, step.nom || 'Etape ' + (i + 1), 'running');
 
-      // Scrape if needed (only on first step that requests it, cache for rest)
-      if (step.scrape_entity_urls && !ctx._scraped_content && ctx._entity) {
-        if (onProgress) onProgress(i, step.nom, 'scraping');
-        ctx._scraped_content = await _scrapeEntityUrls(ctx._entity, entityType);
+      let userPrompt = step.user_prompt || '';
+
+      // For multi-step: inject previous results into context
+      if (i > 0 && stepResults.length > 0) {
+        userPrompt = 'Resultat de l\'etape precedente :\n\n' + stepResults[stepResults.length - 1] + '\n\n' + userPrompt;
       }
 
-      const systemPrompt = _resolveTemplate(step.system_prompt, ctx, stepResults);
-      const userPrompt = _resolveTemplate(step.user_prompt, ctx, stepResults);
+      messages.push({ role: 'user', content: userPrompt });
 
-      if (!systemPrompt && !userPrompt) {
-        stepResults.push('');
-        continue;
-      }
-
-      const result = await _callOpenAI(
-        systemPrompt || 'Tu es un assistant expert en recrutement executive search.',
-        userPrompt
-      );
+      const result = await _callOpenAI(messages);
       stepResults.push(result);
+      messages.push({ role: 'assistant', content: result });
 
-      if (onProgress) onProgress(i, step.nom, 'done');
+      if (onProgress) onProgress(i, step.nom || 'Etape ' + (i + 1), 'done');
     }
 
     // Update usage stats
@@ -314,7 +281,19 @@ const SkillsEngine = (() => {
       last_run_at: new Date().toISOString()
     });
 
-    return stepResults[stepResults.length - 1] || '';
+    // Return final result and messages for conversation
+    return {
+      result: stepResults[stepResults.length - 1] || '',
+      messages
+    };
+  }
+
+  // Continue a conversation (affiner)
+  async function refineResult(conversationMessages, refinement) {
+    conversationMessages.push({ role: 'user', content: refinement });
+    const result = await _callOpenAI(conversationMessages);
+    conversationMessages.push({ role: 'assistant', content: result });
+    return result;
   }
 
   // ============================================================
@@ -349,7 +328,6 @@ const SkillsEngine = (() => {
       skill.updated_at = skill.created_at;
       skill.usage_count = 0;
       skill.last_run_at = null;
-      if (!skill.statut) skill.statut = 'actif';
       await Store.add('skills', skill);
     }
     return skill;
@@ -360,110 +338,78 @@ const SkillsEngine = (() => {
   }
 
   async function duplicateSkill(id) {
-    const original = getSkill(id);
-    if (!original) return null;
+    const original = Store.findById('skills', id);
+    if (!original) return;
     const copy = JSON.parse(JSON.stringify(original));
     delete copy.id;
-    copy.nom = original.nom + ' (copie)';
+    copy.nom = (copy.nom || 'Skill') + ' (copie)';
     copy.usage_count = 0;
     copy.last_run_at = null;
-    // Regenerate step IDs
-    if (copy.steps) {
-      copy.steps.forEach((s, i) => { s.id = 'step_' + (i + 1); });
-    }
-    return saveSkill(copy);
+    return await saveSkill(copy);
   }
 
   // ============================================================
-  // EDITEUR UI (modale)
+  // AUTO-NOM VIA IA
   // ============================================================
 
-  function _buildStepHtml(step, index, entityTypes) {
-    const allVars = [];
-    (entityTypes || []).forEach(et => {
-      getAvailableVariables(et).forEach(v => {
-        if (!allVars.find(x => x.key === v.key)) allVars.push(v);
-      });
-    });
-    // Always add special vars
-    if (!allVars.find(x => x.key === 'previous_step_result')) {
-      allVars.push({ key: 'previous_step_result', label: 'Resultat etape prec.' });
+  let _autoNameTimer = null;
+
+  async function _generateSkillName(promptText) {
+    if (!promptText || promptText.length < 20) return '';
+    try {
+      const result = await _callOpenAI([
+        { role: 'system', content: 'Tu donnes un nom court (2-4 mots, en francais) pour un skill de recrutement. Reponds uniquement le nom, sans ponctuation.' },
+        { role: 'user', content: promptText.substring(0, 500) }
+      ]);
+      return result.replace(/[."']/g, '').trim().substring(0, 40);
+    } catch {
+      return '';
     }
-    if (!allVars.find(x => x.key === 'scraped_content')) {
-      allVars.push({ key: 'scraped_content', label: 'Contenu scrape' });
-    }
-
-    return `
-      <div class="skill-step-block" data-step-index="${index}" style="border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:12px;background:#f8fafc;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <strong style="color:#1e293b;">Etape ${index + 1}</strong>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <input type="text" class="step-nom" value="${UI.escHtml(step.nom || 'Etape ' + (index + 1))}"
-              style="border:1px solid #cbd5e1;border-radius:4px;padding:4px 8px;font-size:0.8rem;width:180px;" placeholder="Nom de l'etape" />
-            <button type="button" class="btn-remove-step" data-step="${index}" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:1.1rem;" title="Supprimer cette etape">&times;</button>
-          </div>
-        </div>
-
-        <div style="margin-bottom:8px;">
-          <label style="font-size:0.75rem;font-weight:600;color:#64748b;display:block;margin-bottom:4px;">Prompt systeme</label>
-          <textarea class="step-system-prompt" rows="4" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px;font-size:0.8rem;font-family:monospace;resize:vertical;">${UI.escHtml(step.system_prompt || '')}</textarea>
-        </div>
-
-        <div style="margin-bottom:8px;">
-          <label style="font-size:0.75rem;font-weight:600;color:#64748b;display:block;margin-bottom:4px;">Prompt utilisateur</label>
-          <textarea class="step-user-prompt" rows="4" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px;font-size:0.8rem;font-family:monospace;resize:vertical;">${UI.escHtml(step.user_prompt || '')}</textarea>
-        </div>
-
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
-          <label style="font-size:0.75rem;display:flex;align-items:center;gap:4px;cursor:pointer;">
-            <input type="checkbox" class="step-scrape" ${step.scrape_entity_urls ? 'checked' : ''} />
-            Scraper les URLs de l'entite (LinkedIn, site web)
-          </label>
-        </div>
-
-        <div style="margin-top:8px;">
-          <label style="font-size:0.7rem;font-weight:600;color:#94a3b8;display:block;margin-bottom:4px;">Variables disponibles (cliquez pour inserer)</label>
-          <div class="step-vars-bar" style="display:flex;flex-wrap:wrap;gap:4px;">
-            ${allVars.map(v => `<button type="button" class="var-btn" data-var="${v.key}" style="background:#e2e8f0;border:none;border-radius:4px;padding:2px 8px;font-size:0.7rem;cursor:pointer;color:#475569;white-space:nowrap;" title="${v.key}">{{${v.key}}}</button>`).join('')}
-          </div>
-        </div>
-      </div>
-    `;
   }
+
+  // ============================================================
+  // DETECTION SKILL SIMPLE / AVANCE
+  // ============================================================
+
+  function _isSimpleSkill(skill) {
+    if (!skill) return true;
+    if (skill.steps && skill.steps.length > 1) return false;
+    if (skill.inputs && skill.inputs.length > 0) return false;
+    const sp = (skill.steps && skill.steps[0] && skill.steps[0].system_prompt) || '';
+    if (sp && sp !== DEFAULT_SYSTEM_PROMPT && sp !== '') return false;
+    return true;
+  }
+
+  // ============================================================
+  // EDITEUR UI (modale simplifiee)
+  // ============================================================
 
   function showEditor(existingSkill) {
     const isEdit = !!existingSkill;
     const s = existingSkill || {
-      nom: '', description: '', icon: 'sparkles', color: SKILL_COLORS[0],
-      entity_types: [], steps: [{ id: 'step_1', nom: 'Etape 1', system_prompt: '', user_prompt: '', scrape_entity_urls: false }],
+      nom: '', description: '', color: SKILL_COLORS[0],
+      entity_types: [], steps: [{ id: 'step_1', nom: '', system_prompt: '', user_prompt: '', scrape_entity_urls: false }],
       inputs: [], statut: 'actif'
     };
 
+    const isSimple = _isSimpleSkill(s);
+    let _nameManuallySet = isEdit && !!s.nom;
+
     const bodyHtml = `
       <div style="max-height:70vh;overflow-y:auto;padding-right:8px;">
-        <!-- En-tete -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-          <div class="form-group">
-            <label>Nom du skill</label>
-            <input type="text" id="ski-nom" value="${UI.escHtml(s.nom)}" placeholder="Ex: Analyse Strategique" />
-          </div>
-          <div class="form-group">
-            <label>Couleur</label>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:4px;">
-              ${SKILL_COLORS.map(c => `<button type="button" class="color-btn" data-color="${c}" style="width:24px;height:24px;border-radius:50%;border:2px solid ${s.color === c ? '#1e293b' : 'transparent'};background:${c};cursor:pointer;"></button>`).join('')}
-            </div>
-          </div>
+        <!-- Nom editable (titre) -->
+        <div id="ski-name-display" style="margin-bottom:16px;cursor:pointer;${_nameManuallySet || !isEdit ? '' : 'display:none;'}" title="Cliquer pour modifier le nom">
+          <span id="ski-name-text" style="font-size:1.1rem;font-weight:600;color:#1e293b;">${UI.escHtml(s.nom || 'Nouveau skill')}</span>
+          <span style="font-size:0.7rem;color:#94a3b8;margin-left:6px;">&#9998;</span>
         </div>
-
-        <div class="form-group" style="margin-bottom:16px;">
-          <label>Description</label>
-          <input type="text" id="ski-description" value="${UI.escHtml(s.description || '')}" placeholder="Description courte du skill" />
+        <div id="ski-name-input-wrap" style="margin-bottom:16px;${_nameManuallySet && isEdit ? 'display:none;' : isEdit ? 'display:none;' : ''}">
+          <input type="text" id="ski-nom" value="${UI.escHtml(s.nom)}" placeholder="Nom du skill (auto-genere si vide)" style="width:100%;font-size:1rem;padding:8px;border:1px solid #cbd5e1;border-radius:6px;" />
         </div>
 
         <!-- Applicable a -->
         <div class="form-group" style="margin-bottom:16px;">
-          <label>Applicable a</label>
-          <div style="display:flex;gap:16px;">
+          <label style="font-weight:600;font-size:0.85rem;">Applicable a</label>
+          <div style="display:flex;gap:16px;margin-top:4px;">
             ${Object.entries(ENTITY_LABELS).map(([key, label]) => `
               <label style="font-size:0.85rem;display:flex;align-items:center;gap:4px;cursor:pointer;">
                 <input type="checkbox" class="entity-type-cb" value="${key}" ${(s.entity_types || []).includes(key) ? 'checked' : ''} />
@@ -473,45 +419,63 @@ const SkillsEngine = (() => {
           </div>
         </div>
 
-        <!-- Statut -->
-        <div class="form-group" style="margin-bottom:16px;">
-          <label>Statut</label>
-          <select id="ski-statut">
-            <option value="actif" ${s.statut === 'actif' ? 'selected' : ''}>Actif</option>
-            <option value="brouillon" ${s.statut === 'brouillon' ? 'selected' : ''}>Brouillon</option>
-            <option value="archive" ${s.statut === 'archive' ? 'selected' : ''}>Archive</option>
-          </select>
+        <!-- Prompt principal -->
+        <div class="form-group" style="margin-bottom:12px;">
+          <label style="font-weight:600;font-size:0.85rem;">Prompt</label>
+          <textarea id="ski-prompt" rows="10" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:10px;font-size:0.85rem;resize:vertical;line-height:1.5;" placeholder="Ecrivez votre prompt en langage naturel. Les donnees de la fiche sont automatiquement injectees.">${UI.escHtml((s.steps && s.steps[0] && s.steps[0].user_prompt) || '')}</textarea>
         </div>
 
-        <!-- Etapes -->
+        <!-- Chercher sur le web -->
         <div style="margin-bottom:16px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <label style="font-weight:600;">Etapes</label>
-            <button type="button" id="btn-add-step" class="btn btn-secondary" style="font-size:0.75rem;padding:4px 12px;">+ Ajouter une etape</button>
-          </div>
-          <div id="steps-container">
-            ${(s.steps || []).map((step, i) => _buildStepHtml(step, i, s.entity_types)).join('')}
-          </div>
+          <label style="font-size:0.85rem;display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="ski-scrape" ${(s.steps && s.steps[0] && s.steps[0].scrape_entity_urls) ? 'checked' : ''} />
+            Chercher sur le web (LinkedIn, site web de l'entite)
+          </label>
         </div>
 
-        <!-- Inputs utilisateur -->
+        <!-- Options avancees (toggle) -->
         <div style="margin-bottom:16px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <label style="font-weight:600;">Inputs pre-execution (optionnel)</label>
-            <button type="button" id="btn-add-input" class="btn btn-secondary" style="font-size:0.75rem;padding:4px 12px;">+ Ajouter un input</button>
-          </div>
-          <div id="inputs-container">
-            ${(s.inputs || []).map((inp, i) => `
-              <div class="skill-input-row" style="display:flex;gap:8px;margin-bottom:6px;align-items:center;">
-                <input type="text" class="input-key" value="${UI.escHtml(inp.key || '')}" placeholder="Cle (ex: notes_extra)" style="flex:1;" />
-                <input type="text" class="input-label" value="${UI.escHtml(inp.label || '')}" placeholder="Label affiche" style="flex:1;" />
-                <select class="input-type" style="width:100px;">
-                  <option value="text" ${inp.type === 'text' ? 'selected' : ''}>Texte</option>
-                  <option value="textarea" ${inp.type === 'textarea' ? 'selected' : ''}>Zone texte</option>
-                </select>
-                <button type="button" class="btn-remove-input" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:1.1rem;">&times;</button>
+          <a href="#" id="ski-advanced-toggle" style="font-size:0.8rem;color:#64748b;text-decoration:none;display:flex;align-items:center;gap:4px;">
+            <span id="ski-advanced-arrow">${isSimple ? '&#9656;' : '&#9662;'}</span> Options avancees
+          </a>
+          <div id="ski-advanced-section" style="display:${isSimple ? 'none' : 'block'};margin-top:12px;padding:16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+
+            <!-- Description -->
+            <div class="form-group" style="margin-bottom:12px;">
+              <label style="font-size:0.8rem;color:#64748b;">Description</label>
+              <input type="text" id="ski-description" value="${UI.escHtml(s.description || '')}" placeholder="Description courte (affichee dans la bibliotheque)" style="font-size:0.85rem;" />
+            </div>
+
+            <!-- Prompt systeme -->
+            <div class="form-group" style="margin-bottom:12px;">
+              <label style="font-size:0.8rem;color:#64748b;">Personnalite IA (prompt systeme)</label>
+              <textarea id="ski-system-prompt" rows="3" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px;font-size:0.8rem;font-family:monospace;resize:vertical;" placeholder="${DEFAULT_SYSTEM_PROMPT}">${UI.escHtml((s.steps && s.steps[0] && s.steps[0].system_prompt) || '')}</textarea>
+            </div>
+
+            <!-- Couleur -->
+            <div class="form-group" style="margin-bottom:12px;">
+              <label style="font-size:0.8rem;color:#64748b;">Couleur</label>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:4px;">
+                ${SKILL_COLORS.map(c => `<button type="button" class="color-btn" data-color="${c}" style="width:24px;height:24px;border-radius:50%;border:2px solid ${s.color === c ? '#1e293b' : 'transparent'};background:${c};cursor:pointer;"></button>`).join('')}
               </div>
-            `).join('')}
+            </div>
+
+            <!-- Statut -->
+            <div class="form-group" style="margin-bottom:12px;">
+              <label style="font-size:0.8rem;color:#64748b;">Statut</label>
+              <select id="ski-statut" style="font-size:0.85rem;">
+                <option value="actif" ${s.statut === 'actif' ? 'selected' : ''}>Actif</option>
+                <option value="brouillon" ${s.statut === 'brouillon' ? 'selected' : ''}>Brouillon</option>
+                <option value="archive" ${s.statut === 'archive' ? 'selected' : ''}>Archive</option>
+              </select>
+            </div>
+
+            <!-- Multi-etapes (future) -->
+            ${(s.steps && s.steps.length > 1) ? _buildMultiStepSection(s) : `
+            <div style="padding:8px 0;font-size:0.8rem;color:#94a3b8;">
+              Ce skill est mono-etape. Le support multi-etapes est disponible pour les skills avances existants.
+            </div>
+            `}
           </div>
         </div>
       </div>
@@ -520,43 +484,57 @@ const SkillsEngine = (() => {
     let currentColor = s.color || SKILL_COLORS[0];
 
     UI.modal(isEdit ? 'Modifier le skill' : 'Nouveau skill', bodyHtml, {
-      width: 800,
+      width: 650,
       saveLabel: 'Enregistrer',
-      draftKey: 'skill_editor',
+      draftKey: 'skill_editor_v2',
       onSave: async (overlay) => {
+        const nomInput = overlay.querySelector('#ski-nom');
+        const promptArea = overlay.querySelector('#ski-prompt');
+        const promptText = promptArea.value.trim();
+
+        if (!promptText) { UI.toast('Le prompt est obligatoire', 'error'); return; }
+
+        const entityTypes = [...overlay.querySelectorAll('.entity-type-cb:checked')].map(cb => cb.value);
+        if (entityTypes.length === 0) { UI.toast('Selectionnez au moins un type d\'entite', 'error'); return; }
+
+        // Auto-generate name if empty
+        let nom = nomInput.value.trim();
+        if (!nom) {
+          nom = await _generateSkillName(promptText);
+          if (!nom) nom = 'Skill ' + new Date().toLocaleDateString('fr-FR');
+        }
+
+        const systemPrompt = (overlay.querySelector('#ski-system-prompt')?.value?.trim()) || '';
+        const scrape = overlay.querySelector('#ski-scrape')?.checked || false;
+
         const data = {
-          nom: overlay.querySelector('#ski-nom').value.trim(),
-          description: overlay.querySelector('#ski-description').value.trim(),
+          nom,
+          description: overlay.querySelector('#ski-description')?.value?.trim() || '',
           color: currentColor,
-          statut: overlay.querySelector('#ski-statut').value,
-          entity_types: [...overlay.querySelectorAll('.entity-type-cb:checked')].map(cb => cb.value),
+          statut: overlay.querySelector('#ski-statut')?.value || 'actif',
+          entity_types: entityTypes,
           steps: [],
           inputs: []
         };
 
-        if (!data.nom) { UI.toast('Le nom est obligatoire', 'error'); return; }
-        if (data.entity_types.length === 0) { UI.toast('Selectionnez au moins un type d\'entite', 'error'); return; }
-
-        // Collect steps
-        overlay.querySelectorAll('.skill-step-block').forEach((block, i) => {
-          data.steps.push({
-            id: 'step_' + (i + 1),
-            nom: block.querySelector('.step-nom').value.trim() || 'Etape ' + (i + 1),
-            system_prompt: block.querySelector('.step-system-prompt').value.trim(),
-            user_prompt: block.querySelector('.step-user-prompt').value.trim(),
-            scrape_entity_urls: block.querySelector('.step-scrape').checked
-          });
-        });
-
-        if (data.steps.length === 0) { UI.toast('Ajoutez au moins une etape', 'error'); return; }
-
-        // Collect inputs
-        overlay.querySelectorAll('.skill-input-row').forEach(row => {
-          const key = row.querySelector('.input-key').value.trim();
-          const label = row.querySelector('.input-label').value.trim();
-          const type = row.querySelector('.input-type').value;
-          if (key && label) data.inputs.push({ key, label, type });
-        });
+        // Handle multi-step skills
+        if (isEdit && s.steps && s.steps.length > 1) {
+          // Preserve multi-step structure, update first step prompt
+          data.steps = s.steps.map((step, i) => ({
+            ...step,
+            user_prompt: i === 0 ? promptText : step.user_prompt,
+            system_prompt: i === 0 ? systemPrompt : step.system_prompt,
+            scrape_entity_urls: i === 0 ? scrape : step.scrape_entity_urls
+          }));
+        } else {
+          data.steps = [{
+            id: 'step_1',
+            nom: nom,
+            system_prompt: systemPrompt,
+            user_prompt: promptText,
+            scrape_entity_urls: scrape
+          }];
+        }
 
         if (isEdit) data.id = s.id;
         await saveSkill(data);
@@ -566,317 +544,255 @@ const SkillsEngine = (() => {
       }
     });
 
-    // Wire up color buttons
+    // Wire up UI events
     const overlay = document.querySelector('.modal-overlay');
-    if (overlay) {
-      overlay.querySelectorAll('.color-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          overlay.querySelectorAll('.color-btn').forEach(b => b.style.borderColor = 'transparent');
-          btn.style.borderColor = '#1e293b';
-          currentColor = btn.dataset.color;
-        });
+    if (!overlay) return;
+
+    // Name click to edit
+    const nameDisplay = overlay.querySelector('#ski-name-display');
+    const nameInputWrap = overlay.querySelector('#ski-name-input-wrap');
+    const nameInput = overlay.querySelector('#ski-nom');
+
+    if (nameDisplay) {
+      nameDisplay.addEventListener('click', () => {
+        nameDisplay.style.display = 'none';
+        nameInputWrap.style.display = 'block';
+        nameInput.focus();
+        _nameManuallySet = true;
       });
+    }
 
-      // Add step button
-      const addStepBtn = overlay.querySelector('#btn-add-step');
-      if (addStepBtn) {
-        addStepBtn.addEventListener('click', () => {
-          const container = overlay.querySelector('#steps-container');
-          const idx = container.querySelectorAll('.skill-step-block').length;
-          const entityTypes = [...overlay.querySelectorAll('.entity-type-cb:checked')].map(cb => cb.value);
-          const newStep = { id: 'step_' + (idx + 1), nom: 'Etape ' + (idx + 1), system_prompt: '', user_prompt: '', scrape_entity_urls: false };
-          container.insertAdjacentHTML('beforeend', _buildStepHtml(newStep, idx, entityTypes));
-          _wireStepEvents(overlay);
-        });
-      }
+    // Auto-name on prompt blur
+    const promptArea = overlay.querySelector('#ski-prompt');
+    if (promptArea) {
+      promptArea.addEventListener('blur', async () => {
+        if (_nameManuallySet) return;
+        const text = promptArea.value.trim();
+        if (text.length < 20) return;
 
-      // Add input button
-      const addInputBtn = overlay.querySelector('#btn-add-input');
-      if (addInputBtn) {
-        addInputBtn.addEventListener('click', () => {
-          const container = overlay.querySelector('#inputs-container');
-          container.insertAdjacentHTML('beforeend', `
-            <div class="skill-input-row" style="display:flex;gap:8px;margin-bottom:6px;align-items:center;">
-              <input type="text" class="input-key" placeholder="Cle (ex: notes_extra)" style="flex:1;" />
-              <input type="text" class="input-label" placeholder="Label affiche" style="flex:1;" />
-              <select class="input-type" style="width:100px;">
-                <option value="text">Texte</option>
-                <option value="textarea">Zone texte</option>
-              </select>
-              <button type="button" class="btn-remove-input" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:1.1rem;">&times;</button>
-            </div>
-          `);
-          _wireInputEvents(overlay);
-        });
-      }
+        const nameText = overlay.querySelector('#ski-name-text');
+        if (nameText) nameText.textContent = 'Generation du nom...';
+        if (nameDisplay) nameDisplay.style.display = 'block';
 
-      _wireStepEvents(overlay);
-      _wireInputEvents(overlay);
+        const generatedName = await _generateSkillName(text);
+        if (generatedName && !_nameManuallySet) {
+          nameInput.value = generatedName;
+          if (nameText) nameText.textContent = generatedName;
+        } else {
+          if (nameText) nameText.textContent = nameInput.value || 'Nouveau skill';
+        }
+      });
+    }
+
+    // Name input change → update display
+    if (nameInput) {
+      nameInput.addEventListener('input', () => {
+        _nameManuallySet = true;
+        const nameText = overlay.querySelector('#ski-name-text');
+        if (nameText) nameText.textContent = nameInput.value || 'Nouveau skill';
+      });
+    }
+
+    // Color buttons
+    overlay.querySelectorAll('.color-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        overlay.querySelectorAll('.color-btn').forEach(b => b.style.borderColor = 'transparent');
+        btn.style.borderColor = '#1e293b';
+        currentColor = btn.dataset.color;
+      });
+    });
+
+    // Advanced toggle
+    const toggle = overlay.querySelector('#ski-advanced-toggle');
+    const section = overlay.querySelector('#ski-advanced-section');
+    const arrow = overlay.querySelector('#ski-advanced-arrow');
+    if (toggle && section) {
+      toggle.addEventListener('click', (e) => {
+        e.preventDefault();
+        const visible = section.style.display !== 'none';
+        section.style.display = visible ? 'none' : 'block';
+        if (arrow) arrow.innerHTML = visible ? '&#9656;' : '&#9662;';
+      });
     }
   }
 
-  function _wireStepEvents(overlay) {
-    // Remove step buttons
-    overlay.querySelectorAll('.btn-remove-step').forEach(btn => {
-      btn.onclick = () => {
-        const blocks = overlay.querySelectorAll('.skill-step-block');
-        if (blocks.length <= 1) { UI.toast('Il faut au moins une etape', 'error'); return; }
-        btn.closest('.skill-step-block').remove();
-        // Re-number
-        overlay.querySelectorAll('.skill-step-block').forEach((block, i) => {
-          block.querySelector('strong').textContent = 'Etape ' + (i + 1);
-          block.dataset.stepIndex = i;
-        });
-      };
-    });
-
-    // Variable insertion buttons
-    overlay.querySelectorAll('.var-btn').forEach(btn => {
-      btn.onclick = () => {
-        const stepBlock = btn.closest('.skill-step-block');
-        const textarea = stepBlock.querySelector('.step-user-prompt');
-        const varText = '{{' + btn.dataset.var + '}}';
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        textarea.value = textarea.value.substring(0, start) + varText + textarea.value.substring(end);
-        textarea.focus();
-        textarea.selectionStart = textarea.selectionEnd = start + varText.length;
-      };
-    });
-  }
-
-  function _wireInputEvents(overlay) {
-    overlay.querySelectorAll('.btn-remove-input').forEach(btn => {
-      btn.onclick = () => btn.closest('.skill-input-row').remove();
-    });
+  function _buildMultiStepSection(skill) {
+    return `
+      <div style="margin-top:8px;">
+        <label style="font-size:0.8rem;color:#64748b;font-weight:600;">Etapes (${skill.steps.length})</label>
+        ${skill.steps.map((step, i) => `
+          <div style="margin-top:8px;padding:8px;background:white;border:1px solid #e2e8f0;border-radius:6px;">
+            <div style="font-size:0.8rem;font-weight:600;color:#1e293b;margin-bottom:4px;">Etape ${i + 1} : ${UI.escHtml(step.nom || '')}</div>
+            <div style="font-size:0.75rem;color:#94a3b8;">${step.user_prompt ? step.user_prompt.substring(0, 100) + '...' : '(vide)'}</div>
+          </div>
+        `).join('')}
+        <div style="font-size:0.75rem;color:#94a3b8;margin-top:8px;">Le prompt principal edite la premiere etape. Les etapes suivantes sont preservees.</div>
+      </div>
+    `;
   }
 
   // ============================================================
-  // RUNNER UI (modale d'execution)
+  // RUNNER UI (modale d'execution conversationnelle)
   // ============================================================
 
   function showRunner(skill, entityType, entityId) {
-    const hasInputs = skill.inputs && skill.inputs.length > 0;
-    const stepsCount = skill.steps ? skill.steps.length : 0;
+    let _conversationMessages = [];
+    let _currentResult = '';
 
-    let bodyHtml = `
+    const bodyHtml = `
       <div style="max-height:70vh;overflow-y:auto;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
-          <span style="background:${skill.color || '#f59e0b'};width:8px;height:8px;border-radius:50%;display:inline-block;"></span>
-          <span style="font-size:0.85rem;color:#64748b;">${stepsCount} etape${stepsCount > 1 ? 's' : ''} &bull; gpt-4o-mini</span>
+        <!-- Loader -->
+        <div id="skill-loader" style="text-align:center;padding:40px 0;">
+          <div style="display:inline-block;width:32px;height:32px;border:3px solid #e2e8f0;border-top-color:${skill.color || '#f59e0b'};border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+          <div id="skill-loader-text" style="margin-top:12px;font-size:0.85rem;color:#64748b;">Execution en cours...</div>
         </div>
+
+        <!-- Result -->
+        <div id="skill-result" style="display:none;">
+          <div id="skill-result-content" style="white-space:pre-wrap;font-size:0.85rem;line-height:1.6;color:#1e293b;padding:16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;max-height:50vh;overflow-y:auto;user-select:text;"></div>
+
+          <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+            <button type="button" id="btn-copy-result" style="display:flex;align-items:center;gap:4px;padding:6px 12px;border:1px solid #e2e8f0;border-radius:6px;background:white;cursor:pointer;font-size:0.8rem;color:#64748b;" title="Copier dans le presse-papier">
+              <svg id="copy-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width:14px;height:14px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+              <span id="copy-label">Copier</span>
+            </button>
+          </div>
+
+          <!-- Affiner -->
+          <div style="margin-top:12px;display:flex;gap:8px;">
+            <input type="text" id="skill-refine-input" placeholder="Affiner : ex. 'Sois plus concis', 'Ajoute les risques'..." style="flex:1;padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.85rem;" />
+            <button type="button" id="btn-refine" style="padding:8px 16px;background:${skill.color || '#f59e0b'};color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.85rem;white-space:nowrap;">Envoyer</button>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <div id="skill-error" style="display:none;color:#ef4444;font-size:0.85rem;padding:12px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;"></div>
+      </div>
     `;
 
-    // Input fields
-    if (hasInputs) {
-      bodyHtml += '<div style="margin-bottom:16px;border:1px solid #e2e8f0;border-radius:8px;padding:12px;background:#f8fafc;">';
-      skill.inputs.forEach(inp => {
-        if (inp.type === 'textarea') {
-          bodyHtml += `<div class="form-group" style="margin-bottom:8px;"><label>${UI.escHtml(inp.label)}</label><textarea id="inp-${inp.key}" rows="3" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px;font-size:0.85rem;"></textarea></div>`;
-        } else {
-          bodyHtml += `<div class="form-group" style="margin-bottom:8px;"><label>${UI.escHtml(inp.label)}</label><input type="text" id="inp-${inp.key}" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px;font-size:0.85rem;" /></div>`;
-        }
-      });
-      bodyHtml += '</div>';
+    UI.modal(skill.nom || 'Skill', bodyHtml, { width: 700 });
+
+    const overlay = document.querySelector('.modal-overlay');
+    if (!overlay) return;
+
+    // Add spin animation if not present
+    if (!document.getElementById('skill-spin-style')) {
+      const style = document.createElement('style');
+      style.id = 'skill-spin-style';
+      style.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+      document.head.appendChild(style);
     }
 
-    // Progress section
-    bodyHtml += `
-      <div id="skill-progress" style="display:none;margin-bottom:16px;">
-        ${(skill.steps || []).map((step, i) => `
-          <div class="progress-step" data-step="${i}" style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:0.85rem;color:#94a3b8;">
-            <span class="progress-icon" style="width:20px;text-align:center;">&#9679;</span>
-            <span>${UI.escHtml(step.nom || 'Etape ' + (i + 1))}</span>
-          </div>
-        `).join('')}
-      </div>
+    // Execute immediately
+    const loaderDiv = overlay.querySelector('#skill-loader');
+    const loaderText = overlay.querySelector('#skill-loader-text');
+    const resultDiv = overlay.querySelector('#skill-result');
+    const resultContent = overlay.querySelector('#skill-result-content');
+    const errorDiv = overlay.querySelector('#skill-error');
 
-      <!-- Result section -->
-      <div id="skill-result" style="display:none;">
-        <label style="font-weight:600;display:block;margin-bottom:4px;">Resultat</label>
-        <textarea id="skill-result-text" rows="12" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:12px;font-size:0.85rem;font-family:-apple-system,sans-serif;resize:vertical;line-height:1.5;"></textarea>
-        <div style="margin-top:8px;display:flex;gap:8px;">
-          <button type="button" id="btn-copy-result" class="btn btn-secondary" style="font-size:0.8rem;">Copier dans le presse-papier</button>
-        </div>
-      </div>
-
-      <!-- Error section -->
-      <div id="skill-error" style="display:none;color:#ef4444;font-size:0.85rem;padding:12px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;"></div>
-    </div>
-    `;
-
-    UI.modal('Executer : ' + (skill.nom || 'Skill'), bodyHtml, {
-      width: 700,
-      saveLabel: 'Lancer',
-      onSave: async (overlay) => {
-        const saveBtn = overlay.querySelector('.modal-save-btn') || overlay.querySelector('.btn-primary');
-        const origLabel = saveBtn ? saveBtn.textContent : 'Lancer';
-
-        // Collect inputs
-        const inputs = {};
-        if (skill.inputs) {
-          skill.inputs.forEach(inp => {
-            const el = overlay.querySelector('#inp-' + inp.key);
-            if (el) inputs[inp.key] = el.value.trim();
-          });
-        }
-
-        // Show progress, hide error
-        const progressDiv = overlay.querySelector('#skill-progress');
-        const resultDiv = overlay.querySelector('#skill-result');
-        const errorDiv = overlay.querySelector('#skill-error');
-        progressDiv.style.display = 'block';
-        resultDiv.style.display = 'none';
-        errorDiv.style.display = 'none';
-
-        if (saveBtn) {
-          saveBtn.disabled = true;
-          saveBtn.textContent = 'Execution en cours...';
-        }
-
-        try {
-          const result = await runSkill(skill.id, entityType, entityId, inputs, (stepIdx, stepName, status) => {
-            const steps = progressDiv.querySelectorAll('.progress-step');
-            steps.forEach((el, i) => {
-              const icon = el.querySelector('.progress-icon');
-              if (i < stepIdx) {
-                el.style.color = '#10b981';
-                icon.innerHTML = '&#10003;';
-              } else if (i === stepIdx) {
-                el.style.color = '#f59e0b';
-                icon.innerHTML = status === 'scraping' ? '&#8635;' : '&#9654;';
-              }
-            });
-          });
-
-          // Mark all steps done
-          progressDiv.querySelectorAll('.progress-step').forEach(el => {
-            el.style.color = '#10b981';
-            el.querySelector('.progress-icon').innerHTML = '&#10003;';
-          });
-
-          // Show result
-          resultDiv.style.display = 'block';
-          overlay.querySelector('#skill-result-text').value = result;
-
-          // Copy button
-          overlay.querySelector('#btn-copy-result').onclick = async () => {
-            try {
-              await navigator.clipboard.writeText(result);
-              UI.toast('Copie dans le presse-papier', 'success');
-            } catch {
-              // Fallback
-              const ta = overlay.querySelector('#skill-result-text');
-              ta.select();
-              document.execCommand('copy');
-              UI.toast('Copie', 'success');
-            }
-          };
-
-          if (saveBtn) {
-            saveBtn.textContent = 'Relancer';
-            saveBtn.disabled = false;
+    (async () => {
+      try {
+        const { result, messages } = await runSkill(skill.id, entityType, entityId, (stepIdx, stepName, status) => {
+          if (loaderText) {
+            if (status === 'scraping') loaderText.textContent = 'Recherche web en cours...';
+            else loaderText.textContent = stepName ? 'Etape : ' + stepName + '...' : 'Execution en cours...';
           }
-        } catch (err) {
-          errorDiv.style.display = 'block';
-          errorDiv.textContent = err.message || 'Erreur inconnue';
-          if (saveBtn) {
-            saveBtn.textContent = origLabel;
-            saveBtn.disabled = false;
-          }
-        }
+        });
+
+        _conversationMessages = messages;
+        _currentResult = result;
+
+        // Show result
+        loaderDiv.style.display = 'none';
+        resultDiv.style.display = 'block';
+        resultContent.textContent = result;
+
+      } catch (err) {
+        loaderDiv.style.display = 'none';
+        errorDiv.style.display = 'block';
+        errorDiv.textContent = err.message || 'Erreur inconnue';
       }
-    });
-  }
+    })();
 
-  // ============================================================
-  // CARTE SKILLS SUR LES PAGES ENTITE
-  // ============================================================
-
-  function renderEntitySkillsCard(containerId, entityType, entityId) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    const skills = getSkillsForEntity(entityType);
-    if (skills.length === 0) {
-      container.innerHTML = `
-        <div class="card" style="border-left:3px solid #f59e0b;">
-          <div class="card-header" style="padding:12px 16px;">
-            <h3 style="font-size:0.9rem;margin:0;display:flex;align-items:center;gap:8px;">
-              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width:16px;height:16px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-              Skills IA
-            </h3>
-            <span style="font-size:0.7rem;color:#94a3b8;background:#f1f5f9;padding:2px 6px;border-radius:4px;">gpt-4o-mini</span>
-          </div>
-          <div style="padding:12px 16px;font-size:0.85rem;color:#94a3b8;">
-            Aucun skill configure pour ce type d'entite.
-            <a href="skills.html" style="color:#3b82f6;">Creer un skill</a>
-          </div>
-        </div>
-      `;
-      return;
+    // Copy button
+    const copyBtn = overlay.querySelector('#btn-copy-result');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(_currentResult);
+        } catch {
+          const range = document.createRange();
+          range.selectNodeContents(resultContent);
+          window.getSelection().removeAllRanges();
+          window.getSelection().addRange(range);
+          document.execCommand('copy');
+          window.getSelection().removeAllRanges();
+        }
+        const label = overlay.querySelector('#copy-label');
+        if (label) {
+          label.textContent = 'Copie !';
+          setTimeout(() => { label.textContent = 'Copier'; }, 2000);
+        }
+      });
     }
 
-    let html = `
-      <div class="card" style="border-left:3px solid #f59e0b;">
-        <div class="card-header" style="padding:12px 16px;">
-          <h3 style="font-size:0.9rem;margin:0;display:flex;align-items:center;gap:8px;">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width:16px;height:16px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-            Skills IA
-          </h3>
-          <span style="font-size:0.7rem;color:#94a3b8;background:#f1f5f9;padding:2px 6px;border-radius:4px;">gpt-4o-mini</span>
-        </div>
-        <div style="padding:12px 16px;display:flex;flex-wrap:wrap;gap:8px;">
-    `;
+    // Refine button
+    const refineInput = overlay.querySelector('#skill-refine-input');
+    const refineBtn = overlay.querySelector('#btn-refine');
 
-    skills.forEach(skill => {
-      html += `
-        <button type="button" class="skill-run-btn" data-skill-id="${skill.id}"
-          style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #e2e8f0;border-radius:8px;background:white;cursor:pointer;font-size:0.8rem;color:#1e293b;transition:all 0.15s;"
-          onmouseover="this.style.borderColor='${skill.color || '#f59e0b'}';this.style.background='#fefce8'"
-          onmouseout="this.style.borderColor='#e2e8f0';this.style.background='white'">
-          <span style="width:8px;height:8px;border-radius:50%;background:${skill.color || '#f59e0b'};display:inline-block;"></span>
-          ${UI.escHtml(skill.nom)}
-          ${skill.steps && skill.steps.length > 1 ? '<span style="font-size:0.65rem;color:#94a3b8;">(' + skill.steps.length + ' etapes)</span>' : ''}
-        </button>
-      `;
-    });
+    async function doRefine() {
+      const text = refineInput.value.trim();
+      if (!text || _conversationMessages.length === 0) return;
 
-    html += '</div></div>';
-    container.innerHTML = html;
+      refineInput.value = '';
+      refineBtn.disabled = true;
+      refineBtn.textContent = '...';
+      resultContent.style.opacity = '0.5';
 
-    // Wire events
-    container.querySelectorAll('.skill-run-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const sk = getSkill(btn.dataset.skillId);
-        if (sk) showRunner(sk, entityType, entityId);
-      });
+      try {
+        const refined = await refineResult(_conversationMessages, text);
+        _currentResult = refined;
+        resultContent.textContent = refined;
+        resultContent.style.opacity = '1';
+      } catch (err) {
+        UI.toast('Erreur : ' + err.message, 'error');
+        resultContent.style.opacity = '1';
+      }
+
+      refineBtn.disabled = false;
+      refineBtn.textContent = 'Envoyer';
+      refineInput.focus();
+    }
+
+    if (refineBtn) refineBtn.addEventListener('click', doRefine);
+    if (refineInput) refineInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); doRefine(); }
     });
   }
 
   // ============================================================
-  // SKILLS EXEMPLES (pre-chargement)
+  // SKILLS EXEMPLES (pre-chargement v2 — prompts langage naturel)
   // ============================================================
 
   const DEFAULT_SKILLS = [
     {
       nom: 'Lecture Recruteur',
-      description: 'Extraction factuelle puis analyse recruteur structuree (Fit poste, culture, risques, positionnement)',
+      description: 'Analyse complete du profil candidat : fit poste, fit culture, risques, positionnement marche',
       color: '#8b5cf6',
       entity_types: ['candidats'],
       steps: [
         {
           id: 'step_1',
           nom: 'Extraction factuelle',
-          system_prompt: 'Tu es consultant en executive search specialise DSI/DT.\n\nRegles de fiabilite :\n- Utilise UNIQUEMENT les informations des sources fournies\n- Ne jamais inventer, extrapoler ou ajouter d\'informations externes\n- En cas de contradiction entre sources : formulation neutre mentionnant les deux versions\n- Traitement autorise : reformuler, synthetiser, regrouper, hierarchiser, croiser les sources\n\nRedaction : bullet points, 1 idee par ligne, max 14 mots, factuel et decisionnel.',
-          user_prompt: 'Sources disponibles :\n\nFICHE ATS :\nNom : {{candidat.prenom}} {{candidat.nom}}\nPoste actuel : {{candidat.poste_actuel}}\nPoste cible : {{candidat.poste_cible}}\nEntreprise actuelle : {{candidat.entreprise_actuelle}}\nLocalisation : {{candidat.localisation}}\nNiveau : {{candidat.niveau}}\n\nSYNTHESE EXISTANTE :\n{{candidat.synthese_30s}}\n\nPARCOURS CIBLE :\n{{candidat.parcours_cible}}\n\nMOTIVATION & DRIVERS :\n{{candidat.motivation_drivers}}\n\nNOTES D\'ENTRETIEN :\n{{candidat.notes_entretien}}\n\nCONTENU WEB (LinkedIn/site) :\n{{scraped_content}}\n\nExtrais toutes les informations factuelles pertinentes pour un recruteur, organisees par theme.',
+          system_prompt: 'Tu es consultant en executive search specialise DSI/DT.\n\nRegles de fiabilite :\n- Utilise UNIQUEMENT les informations des sources fournies (fiche ATS + contenu web)\n- Ne jamais inventer, extrapoler ou ajouter d\'informations externes\n- En cas de contradiction entre sources : formulation neutre mentionnant les deux versions\n- Traitement autorise : reformuler, synthetiser, regrouper, hierarchiser, croiser les sources\n\nRedaction : bullet points, 1 idee par ligne, max 14 mots, factuel et decisionnel.',
+          user_prompt: 'A partir de toutes les informations disponibles sur ce candidat (fiche ATS et contenu web), extrais toutes les informations factuelles pertinentes pour un recruteur, organisees par theme.',
           scrape_entity_urls: true
         },
         {
           id: 'step_2',
           nom: 'Analyse recruteur',
           system_prompt: 'Tu es consultant en executive search specialise DSI/DT. Tu produis une analyse recruteur structuree, factuelle et sans projection psychologique.',
-          user_prompt: 'A partir de l\'extraction factuelle suivante :\n\n{{previous_step_result}}\n\nProduis une analyse recruteur basee UNIQUEMENT sur les faits.\nAutorise : mise en coherence, identification de risques factuels, comparaison marche.\nInterdit : projection psychologique, hypothese non fondee sur les faits.\n\nFormat de sortie :\n\n## FIT POSTE\n(Adequation competences/experience vs poste cible)\n\n## FIT CULTURE\n(Indices sur l\'environnement de travail prefere)\n\n## RISQUES\n(Points d\'attention factuels)\n\n## POSITIONNEMENT MARCHE\n(Attractivite profil, rarete, fourchette remuneration estimee si elements disponibles)',
+          user_prompt: 'A partir de l\'extraction factuelle, produis une analyse recruteur basee UNIQUEMENT sur les faits.\nAutorise : mise en coherence, identification de risques factuels, comparaison marche.\nInterdit : projection psychologique, hypothese non fondee sur les faits.\n\nFormat de sortie :\n\n## FIT POSTE\n(Adequation competences/experience vs poste cible)\n\n## FIT CULTURE\n(Indices sur l\'environnement de travail prefere)\n\n## RISQUES\n(Points d\'attention factuels)\n\n## POSITIONNEMENT MARCHE\n(Attractivite profil, rarete, fourchette remuneration estimee si elements disponibles)',
           scrape_entity_urls: false
         }
       ],
@@ -893,14 +809,14 @@ const SkillsEngine = (() => {
           id: 'step_1',
           nom: 'Qualification du contexte',
           system_prompt: 'Tu es consultant en executive search specialise DSI/DT. Tu analyses le contexte d\'un decideur pour preparer une approche de prospection.\n\nRegles : factuel uniquement, pas de speculation.',
-          user_prompt: 'Decideur :\nNom : {{decideur.prenom}} {{decideur.nom}}\nFonction : {{decideur.fonction}}\nEntreprise : {{decideur.entreprise}}\n\nNotes existantes :\n{{decideur.notes}}\n\nContenu web (LinkedIn/site) :\n{{scraped_content}}\n\nExtrais :\n- Parcours professionnel cle\n- Responsabilites actuelles identifiees\n- Enjeux potentiels lies a son poste\n- Signaux d\'ouverture ou de changement',
+          user_prompt: 'A partir des informations disponibles sur ce decideur (fiche ATS et contenu web), extrais :\n- Parcours professionnel cle\n- Responsabilites actuelles identifiees\n- Enjeux potentiels lies a son poste\n- Signaux d\'ouverture ou de changement',
           scrape_entity_urls: true
         },
         {
           id: 'step_2',
           nom: 'Recommandation d\'approche',
           system_prompt: 'Tu es consultant en executive search. Tu recommandes une strategie d\'approche pour un decideur.',
-          user_prompt: 'A partir de la qualification suivante :\n\n{{previous_step_result}}\n\nRecommande :\n\n## ANGLE D\'APPROCHE\n(Le meilleur angle pour engager la conversation)\n\n## PROPOSITION DE VALEUR\n(Ce que nous pouvons lui apporter : talents, benchmark, veille)\n\n## CANAL RECOMMANDE\n(LinkedIn, email, telephone, evenement...)\n\n## MESSAGE D\'ACCROCHE\n(3-4 lignes max, personnalise)',
+          user_prompt: 'A partir de la qualification, recommande :\n\n## ANGLE D\'APPROCHE\n(Le meilleur angle pour engager la conversation)\n\n## PROPOSITION DE VALEUR\n(Ce que nous pouvons lui apporter : talents, benchmark, veille)\n\n## CANAL RECOMMANDE\n(LinkedIn, email, telephone, evenement...)\n\n## MESSAGE D\'ACCROCHE\n(3-4 lignes max, personnalise)',
           scrape_entity_urls: false
         }
       ],
@@ -909,7 +825,7 @@ const SkillsEngine = (() => {
     },
     {
       nom: 'Accroche LinkedIn',
-      description: 'Generation d\'un message d\'accroche LinkedIn personnalise pour un decideur DSI/DT',
+      description: 'Generation de 3 variantes de messages d\'accroche LinkedIn personnalises',
       color: '#06b6d4',
       entity_types: ['decideurs'],
       steps: [
@@ -917,13 +833,11 @@ const SkillsEngine = (() => {
           id: 'step_1',
           nom: 'Diagnostic et accroche',
           system_prompt: 'Tu es consultant en executive search specialise DSI/DT. Tu rediges des messages d\'accroche LinkedIn courts, percutants et personnalises.\n\nRegles :\n- Max 300 caracteres (limite LinkedIn InMail)\n- Ton professionnel mais humain\n- Personnalise avec des elements du profil\n- Pas de formule generique\n- Une question ouverte en fin de message',
-          user_prompt: 'Profil du decideur :\nNom : {{decideur.prenom}} {{decideur.nom}}\nFonction : {{decideur.fonction}}\nEntreprise : {{decideur.entreprise}}\n\nNotes :\n{{decideur.notes}}\n\nContenu web (LinkedIn) :\n{{scraped_content}}\n\n{{input.contexte_mission}}\n\nGenere 3 variantes de messages d\'accroche LinkedIn :\n\n## VARIANTE 1 — Approche directe\n(Mention d\'un enjeu specifique identifie)\n\n## VARIANTE 2 — Approche valeur\n(Partage d\'insight ou benchmark)\n\n## VARIANTE 3 — Approche reseau\n(Mise en relation, recommandation)',
+          user_prompt: 'A partir des informations disponibles sur ce decideur, genere 3 variantes de messages d\'accroche LinkedIn :\n\n## VARIANTE 1 — Approche directe\n(Mention d\'un enjeu specifique identifie)\n\n## VARIANTE 2 — Approche valeur\n(Partage d\'insight ou benchmark)\n\n## VARIANTE 3 — Approche reseau\n(Mise en relation, recommandation)',
           scrape_entity_urls: true
         }
       ],
-      inputs: [
-        { key: 'contexte_mission', label: 'Contexte mission (optionnel — ex: "Recherche DSI pour ETI industrielle Lyon")', type: 'textarea' }
-      ],
+      inputs: [],
       statut: 'actif'
     }
   ];
@@ -960,10 +874,9 @@ const SkillsEngine = (() => {
     deleteSkill,
     duplicateSkill,
     runSkill,
+    refineResult,
     showEditor,
     showRunner,
-    renderEntitySkillsCard,
-    getAvailableVariables,
     setOnRefresh,
     ensureDefaultSkills: _ensureDefaultSkills,
     ENTITY_LABELS,

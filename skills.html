@@ -37,7 +37,7 @@
     <div class="page-content">
       <div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;">
         <p style="font-size:0.875rem;color:#64748b;">
-          Workflows IA configurables. Creez, modifiez et executez des prompts multi-etapes sur vos candidats, entreprises et decideurs.
+          Bibliotheque de skills IA. Tapez <kbd style="background:#f1f5f9;padding:1px 6px;border-radius:4px;font-size:0.8rem;border:1px solid #e2e8f0;">/</kbd> depuis n'importe quelle fiche pour lancer un skill.
         </p>
         <button id="btn-new-skill" class="btn btn-primary" style="white-space:nowrap;">+ Nouveau Skill</button>
       </div>
@@ -73,6 +73,7 @@
   <script src="js/cv-parser.js"></script>
   <script src="js/interview-analyzer.js"></script>
   <script src="js/skills-engine.js"></script>
+  <script src="js/command-palette.js"></script>
   <script>
   (async function() {
     if (!API.isConfigured()) { UI.showConfigModal(); return; }

@@ -46,6 +46,7 @@
   <script src="js/cv-parser.js"></script>
   <script src="js/interview-analyzer.js"></script>
   <script src="js/skills-engine.js"></script>
+  <script src="js/command-palette.js"></script>
   <script>
   (async function() {
     if (!API.isConfigured()) { UI.showConfigModal(); return; }
@@ -60,10 +61,6 @@
     document.title = `${d.prenom||''} ${d.nom||''} — Amarillo ATS`;
 
     renderPage();
-
-    if (typeof SkillsEngine !== 'undefined') {
-      SkillsEngine.renderEntitySkillsCard('skills-ia-section', 'decideurs', id);
-    }
 
     function renderPage() {
       d = Store.findById('decideurs', id);
@@ -119,8 +116,6 @@
 
         <div class="detail-grid">
           <div class="detail-main">
-            <div id="skills-ia-section" style="margin-bottom:16px;"></div>
-
             <div class="card" data-accent="purple">
               <div class="card-header">
                 <h2>Informations</h2>
