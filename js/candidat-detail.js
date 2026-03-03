@@ -66,11 +66,6 @@ async function fetchCoutEmployeur(salaireBrutAnnuelKE) {
   renderEntreprisesCibles();
   renderDSIProfile();
 
-  // Skills IA card
-  if (typeof SkillsEngine !== 'undefined') {
-    SkillsEngine.renderEntitySkillsCard('skills-ia-section', 'candidats', candidat.id);
-  }
-
   // Background check for teaser email replies (non-blocking)
   checkTeaserReplies();
 
@@ -759,8 +754,6 @@ async function fetchCoutEmployeur(salaireBrutAnnuelKE) {
           Notes d'actions (${notesCount})
         </button>
       </div>
-
-      <div id="skills-ia-section" style="margin-bottom:16px;"></div>
 
       <div class="card" data-accent="orange" id="ia-analysis-section" style="margin-bottom:16px;">
         <div class="card-header" style="cursor:pointer;" id="ia-toggle-header">

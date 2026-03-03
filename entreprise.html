@@ -52,6 +52,7 @@
   <script src="js/signal-engine.js"></script>
   <script src="js/interview-analyzer.js"></script>
   <script src="js/skills-engine.js"></script>
+  <script src="js/command-palette.js"></script>
   <script>
   let currentEntreprise = null;
   const entId = new URLSearchParams(window.location.search).get('id');
@@ -135,8 +136,6 @@
 
       <div class="detail-grid">
         <div class="detail-main">
-          <div id="skills-ia-section" style="margin-bottom:16px;"></div>
-
           <div class="card" data-accent="blue" id="ent-autofill-section">
             <div class="card-header">
               <h2>Compléter les infos via IA</h2>
@@ -992,9 +991,6 @@
     await Store.loadAll();
     UI.initGlobalSearch();
     renderEntreprisePage();
-    if (typeof SkillsEngine !== 'undefined') {
-      SkillsEngine.renderEntitySkillsCard('skills-ia-section', 'entreprises', entId);
-    }
     if (typeof SignalEngine !== 'undefined') {
       SignalEngine.renderEntrepriseWidget('ent-signal-widget', entId);
     }
