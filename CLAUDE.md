@@ -45,8 +45,8 @@ amarillo-ats/
 │   ├── entreprises.js        # Gestion entreprises + auto-découverte
 │   ├── decideurs.js          # Base décideurs
 │   ├── missions.js           # Gestion missions
-│   ├── actions.js            # CRM — liste actions + filtres
-│   ├── dashboard.js          # Dashboard KPIs, actions urgentes
+│   ├── actions.js            # CRM — liste actions + filtres + chronomètre
+│   ├── dashboard.js          # Dashboard KPIs (dont temps passé), actions urgentes
 │   ├── carte.js              # Carte géographique entreprises
 │   ├── pdf-engine.js         # Génération PDF "Talent à Impact"
 │   ├── company-autofill.js   # Auto-complétion Pappers
@@ -76,7 +76,8 @@ amarillo-ats/
 ├── archive-notion/            # Exports Notion archivés
 ├── PLAN-OFFLINE-MODE.md       # Plan feature offline
 ├── PLAN-TEASER-PROFILES.md    # Plan feature teasers
-└── amarillo-template-spec-final.md  # Spec template PDF
+├── amarillo-template-spec-final.md  # Spec template PDF
+└── CLAUDE.md                  # Ce fichier — guide pour Claude Code
 ```
 
 ---
@@ -228,6 +229,7 @@ Toutes les entités ont : `id`, `created_at`, `updated_at`
 | `message_notes` | string | Notes détaillées |
 | `reponse` | boolean | Réponse reçue |
 | `next_step` | string | Prochaine étape |
+| `duree_minutes` | number | Durée mesurée par le chronomètre (en minutes) |
 
 #### Présentations (nested dans candidats.presentations[])
 | Champ | Type | Description |
@@ -305,6 +307,38 @@ BACKUP_ALERT_EMAIL         — Email alertes (défaut: benjamin.fetu@amarillosea
 ```
 
 ---
+
+## Features récentes
+
+### Simulateur coût total employeur (fiche candidat)
+
+Dans la carte "Package & Rémunération" de la fiche candidat, le coût total employeur est calculé automatiquement via l'**API URSSAF** (`mon-entreprise.urssaf.fr/api/v1/evaluate`). L'appel utilise l'expression publicodes `salarié . coût total employeur` avec le salaire brut annuel du candidat. Le résultat est affiché dans un encart bleu sous les totaux de package.
+
+- **Fichier** : `js/candidat-detail.js` — fonction `fetchCoutEmployeur()` (hors IIFE)
+- **API** : `POST https://mon-entreprise.urssaf.fr/api/v1/evaluate` — service public maintenu par l'URSSAF/beta.gouv
+- **Cache** : En mémoire (`_urssafCache`) par montant mensuel
+- **Déclenchement** : Au chargement de la fiche + après modification du salaire (`onAfterSave` du `UI.inlineEdit`)
+
+### Chronomètre d'action
+
+Chaque action dispose d'un chronomètre (Démarrer/Pause/Reset) intégré dans la modale de création/édition. Le temps mesuré est sauvegardé en `duree_minutes` sur l'enregistrement action.
+
+- **Fichier** : `js/actions.js` — helpers `getTimerState()`, `setTimerState()`, `formatTimer()` (hors IIFE)
+- **Persistance** : `localStorage` clé `ats_action_timer` (state : `actionId`, `startedAt`, `accumulatedSeconds`, `running`)
+- **Tableau** : Colonne "Durée" dans la table des actions
+- **Dashboard** : KPI "Temps passé" (5e carte, `#kpi-temps`) — somme `duree_minutes` des actions "Fait" de la semaine
+- **HTML** : `index.html` — carte KPI avec `id="kpi-temps"`
+
+### Autocomplete dans la modale action
+
+Les champs Candidat, Décideur et Entreprise de la modale action utilisent un composant de recherche avec dropdown filtré au lieu de `<select>` statiques.
+
+- **Composant** : `UI.searchableSelect(containerId, { items, selectedId, placeholder, emptyLabel, onSelect })` dans `js/components.js`
+- **Items** : `[{ id, label, sub }]` — label pour le nom, sub pour l'info secondaire (poste, fonction, secteur)
+- **Lecture valeur** : `container._getSelectedId()` retourne l'ID sélectionné
+- **CSS** : Classes `.ss-wrapper`, `.ss-input`, `.ss-clear`, `.ss-dropdown`, `.ss-item`, `.ss-item-selected` dans `css/style.css`
+- **Fichier** : `js/actions.js` — containers `#ac-candidat`, `#ac-decideur`, `#ac-entreprise` initialisés après ouverture modale
+
 
 ## Features planifiées (non encore implémentées)
 
