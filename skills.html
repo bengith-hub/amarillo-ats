@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amarillo ATS — Skills IA</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/tailwind.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="icon" type="image/png" href="AS_logo_only.png" />
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="sidebar-logo"><img src="AS_logo_only.png" alt="Amarillo" class="sidebar-logo-icon" />Amarillo ATS</div>
+    <div class="sidebar-nav">
+      <a href="index.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>Dashboard</a>
+      <a href="candidats.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Candidats</a>
+      <a href="missions.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>Missions</a>
+      <a href="entreprises.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>Entreprises</a>
+      <a href="decideurs.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>Decideurs</a>
+      <a href="carte.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>Carte</a>
+      <a href="actions.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>Actions</a>
+      <a href="signaux.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>Signaux</a>
+      <a href="facturation.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Facturation</a>
+      <a href="skills.html" class="active"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>Skills IA</a>
+      <a href="referentiels.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>Referentiels</a>
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid #334155;"><button onclick="UI.showConfigModal()" class="btn btn-secondary" style="width:100%;justify-content:center;font-size:0.75rem;">Configuration API</button></div>
+  </nav>
+
+  <div class="main-content">
+    <header class="topbar" data-entity="skills">
+      <h1 class="topbar-title">Skills IA</h1>
+      <div class="search-global"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg><input type="text" placeholder="Rechercher..." /><div class="search-results-dropdown"></div></div>
+    </header>
+
+    <div class="page-content">
+      <div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;">
+        <p style="font-size:0.875rem;color:#64748b;">
+          Workflows IA configurables. Creez, modifiez et executez des prompts multi-etapes sur vos candidats, entreprises et decideurs.
+        </p>
+        <button id="btn-new-skill" class="btn btn-primary" style="white-space:nowrap;">+ Nouveau Skill</button>
+      </div>
+
+      <!-- Filters -->
+      <div style="margin-bottom:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="filter-entity" style="border:1px solid #e2e8f0;border-radius:6px;padding:6px 12px;font-size:0.8125rem;background:white;">
+          <option value="">Tous les types</option>
+          <option value="candidats">Candidats</option>
+          <option value="entreprises">Entreprises</option>
+          <option value="decideurs">Decideurs</option>
+        </select>
+        <select id="filter-statut" style="border:1px solid #e2e8f0;border-radius:6px;padding:6px 12px;font-size:0.8125rem;background:white;">
+          <option value="">Tous les statuts</option>
+          <option value="actif">Actif</option>
+          <option value="brouillon">Brouillon</option>
+          <option value="archive">Archive</option>
+        </select>
+        <span id="skills-count" style="font-size:0.75rem;color:#94a3b8;margin-left:8px;"></span>
+      </div>
+
+      <!-- Skills grid -->
+      <div id="skills-grid" class="skills-grid"></div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/backup-monitor.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/components.js"></script>
+  <script src="js/referentiels.js"></script>
+  <script src="js/cv-parser.js"></script>
+  <script src="js/interview-analyzer.js"></script>
+  <script src="js/skills-engine.js"></script>
+  <script>
+  (async function() {
+    if (!API.isConfigured()) { UI.showConfigModal(); return; }
+    await Store.loadAll();
+    UI.initGlobalSearch();
+
+    // Ensure default skills exist
+    await SkillsEngine.ensureDefaultSkills();
+
+    function renderGrid() {
+      const filterEntity = document.getElementById('filter-entity').value;
+      const filterStatut = document.getElementById('filter-statut').value;
+
+      let skills = filterStatut ? Store.get('skills').filter(s => s.statut === filterStatut) : SkillsEngine.getSkills();
+      if (filterEntity) skills = skills.filter(s => s.entity_types && s.entity_types.includes(filterEntity));
+
+      const grid = document.getElementById('skills-grid');
+      const countEl = document.getElementById('skills-count');
+      const total = Store.get('skills').length;
+      countEl.textContent = skills.length + ' skill' + (skills.length > 1 ? 's' : '') + (skills.length < total ? ' / ' + total + ' total' : '');
+
+      if (skills.length === 0) {
+        grid.innerHTML = `
+          <div style="grid-column:1/-1;text-align:center;padding:40px;color:#94a3b8;">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width:48px;height:48px;margin:0 auto 12px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            <p style="font-size:0.9rem;">Aucun skill${filterEntity || filterStatut ? ' correspondant aux filtres' : ''}.</p>
+            <p style="font-size:0.8rem;margin-top:4px;">Cliquez sur "+ Nouveau Skill" pour en creer un.</p>
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = skills.map(skill => {
+        const stepsCount = skill.steps ? skill.steps.length : 0;
+        const entityBadges = (skill.entity_types || []).map(et =>
+          '<span style="font-size:0.65rem;background:#f1f5f9;border-radius:4px;padding:1px 6px;color:#64748b;">' + (SkillsEngine.ENTITY_LABELS[et] || et) + '</span>'
+        ).join(' ');
+        const statutBadge = skill.statut === 'brouillon' ? '<span style="font-size:0.6rem;background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 6px;">Brouillon</span>' : skill.statut === 'archive' ? '<span style="font-size:0.6rem;background:#f1f5f9;color:#94a3b8;border-radius:4px;padding:1px 6px;">Archive</span>' : '';
+
+        return `
+          <div class="skill-card" data-skill-id="${skill.id}" style="border-left:3px solid ${skill.color || '#f59e0b'};">
+            <div class="skill-card-header">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="width:10px;height:10px;border-radius:50%;background:${skill.color || '#f59e0b'};display:inline-block;flex-shrink:0;"></span>
+                <strong style="font-size:0.9rem;color:#1e293b;">${UI.escHtml(skill.nom)}</strong>
+                ${statutBadge}
+              </div>
+              <div class="skill-card-actions">
+                <button class="skill-dup-btn" data-skill-id="${skill.id}" title="Dupliquer" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:0.85rem;padding:2px;">&#x2398;</button>
+                <button class="skill-del-btn" data-skill-id="${skill.id}" title="Supprimer" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:0.85rem;padding:2px;">&times;</button>
+              </div>
+            </div>
+            <p style="font-size:0.8rem;color:#64748b;margin:8px 0;min-height:2.4em;">${UI.escHtml(skill.description || '')}</p>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              ${entityBadges}
+              <span style="font-size:0.65rem;color:#94a3b8;">${stepsCount} etape${stepsCount > 1 ? 's' : ''}</span>
+              ${skill.usage_count ? '<span style="font-size:0.65rem;color:#94a3b8;">Utilise ' + skill.usage_count + 'x</span>' : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Wire card clicks (edit)
+      grid.querySelectorAll('.skill-card').forEach(card => {
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.skill-dup-btn') || e.target.closest('.skill-del-btn')) return;
+          const skill = SkillsEngine.getSkill(card.dataset.skillId);
+          if (skill) SkillsEngine.showEditor(skill);
+        });
+      });
+
+      // Wire duplicate buttons
+      grid.querySelectorAll('.skill-dup-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await SkillsEngine.duplicateSkill(btn.dataset.skillId);
+          UI.toast('Skill duplique', 'success');
+          renderGrid();
+        });
+      });
+
+      // Wire delete buttons
+      grid.querySelectorAll('.skill-del-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const skill = SkillsEngine.getSkill(btn.dataset.skillId);
+          UI.modal('Supprimer le skill', `
+            <p>Supprimer <strong>"${UI.escHtml(skill?.nom || '')}"</strong> ?</p>
+            <p style="font-size:0.875rem;color:#64748b;margin-top:8px;">Cette action est irreversible.</p>
+          `, {
+            saveLabel: 'Supprimer',
+            onSave: async () => {
+              await SkillsEngine.deleteSkill(btn.dataset.skillId);
+              UI.toast('Skill supprime');
+              renderGrid();
+            }
+          });
+        });
+      });
+    }
+
+    // Set refresh callback
+    SkillsEngine.setOnRefresh(renderGrid);
+
+    // Initial render
+    renderGrid();
+
+    // New skill button
+    document.getElementById('btn-new-skill').addEventListener('click', () => {
+      SkillsEngine.showEditor(null);
+    });
+
+    // Filters
+    document.getElementById('filter-entity').addEventListener('change', renderGrid);
+    document.getElementById('filter-statut').addEventListener('change', renderGrid);
+  })();
+  </script>
+
+  <style>
+    .skills-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+    }
+    .skill-card {
+      background: white;
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .skill-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      transform: translateY(-1px);
+    }
+    .skill-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .skill-card-actions {
+      display: flex;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .skill-card:hover .skill-card-actions {
+      opacity: 1;
+    }
+    .skill-card-actions button:hover {
+      color: #1e293b !important;
+    }
+  </style>
+</body>
+</html>

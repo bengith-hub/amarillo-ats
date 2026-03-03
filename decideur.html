@@ -22,6 +22,7 @@
       <a href="actions.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>Actions</a>
       <a href="signaux.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>Signaux</a>
       <a href="facturation.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Facturation</a>
+      <a href="skills.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>Skills IA</a>
       <a href="referentiels.html"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>Référentiels</a>
     </div>
     <div style="padding:12px 20px;border-top:1px solid #334155;"><button onclick="UI.showConfigModal()" class="btn btn-secondary" style="width:100%;justify-content:center;font-size:0.75rem;">Configuration</button></div>
@@ -42,6 +43,9 @@
   <script src="js/components.js"></script>
   <script src="js/referentiels.js"></script>
   <script src="js/templates.js"></script>
+  <script src="js/cv-parser.js"></script>
+  <script src="js/interview-analyzer.js"></script>
+  <script src="js/skills-engine.js"></script>
   <script>
   (async function() {
     if (!API.isConfigured()) { UI.showConfigModal(); return; }
@@ -56,6 +60,10 @@
     document.title = `${d.prenom||''} ${d.nom||''} — Amarillo ATS`;
 
     renderPage();
+
+    if (typeof SkillsEngine !== 'undefined') {
+      SkillsEngine.renderEntitySkillsCard('skills-ia-section', 'decideurs', id);
+    }
 
     function renderPage() {
       d = Store.findById('decideurs', id);
@@ -111,6 +119,8 @@
 
         <div class="detail-grid">
           <div class="detail-main">
+            <div id="skills-ia-section" style="margin-bottom:16px;"></div>
+
             <div class="card" data-accent="purple">
               <div class="card-header">
                 <h2>Informations</h2>

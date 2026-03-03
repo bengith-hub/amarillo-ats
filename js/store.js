@@ -90,7 +90,7 @@ const Store = (() => {
 
   // Load all entities — sequential with delay to avoid JSONBin rate limits
   async function loadAll() {
-    const entities = ['candidats', 'entreprises', 'decideurs', 'missions', 'actions', 'facturation', 'references', 'notes'];
+    const entities = ['candidats', 'entreprises', 'decideurs', 'missions', 'actions', 'facturation', 'references', 'notes', 'skills'];
     const results = {};
     let needsApi = 0;
     for (const e of entities) {
@@ -190,7 +190,7 @@ const Store = (() => {
 
   // Force refresh all (sequential with delay to respect rate limits)
   async function refreshAll() {
-    const entities = ['candidats', 'entreprises', 'decideurs', 'missions', 'actions', 'facturation', 'references', 'notes'];
+    const entities = ['candidats', 'entreprises', 'decideurs', 'missions', 'actions', 'facturation', 'references', 'notes', 'skills'];
     for (const e of entities) {
       await refresh(e);
       await new Promise(r => setTimeout(r, 300));
