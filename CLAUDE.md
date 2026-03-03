@@ -312,11 +312,12 @@ BACKUP_ALERT_EMAIL         — Email alertes (défaut: benjamin.fetu@amarillosea
 
 ### Simulateur coût total employeur (fiche candidat)
 
-Dans la carte "Package & Rémunération" de la fiche candidat, le coût total employeur est calculé automatiquement via l'**API URSSAF** (`mon-entreprise.urssaf.fr/api/v1/evaluate`). L'appel utilise l'expression publicodes `salarié . coût total employeur` avec le salaire brut annuel du candidat. Le résultat est affiché dans un encart bleu sous les totaux de package.
+Dans la carte "Package & Rémunération" de la fiche candidat, le coût total employeur est calculé automatiquement via l'**API URSSAF** (`mon-entreprise.urssaf.fr/api/v1/evaluate`). Deux encarts côte à côte affichent le coût employeur pour le **package actuel** (encart bleu) et le **package souhaité** (encart vert).
 
-- **Fichier** : `js/candidat-detail.js` — fonction `fetchCoutEmployeur()` (hors IIFE)
+- **Fichier** : `js/candidat-detail.js` — fonctions `fetchCoutEmployeur()` et `renderUrssafCard()` (hors IIFE)
 - **API** : `POST https://mon-entreprise.urssaf.fr/api/v1/evaluate` — service public maintenu par l'URSSAF/beta.gouv
 - **Cache** : En mémoire (`_urssafCache`) par montant mensuel
+- **Conteneurs** : `#urssaf-actuel` (package actuel) + `#urssaf-souhaite` (package souhaité) dans `#urssaf-cout-employeur`
 - **Déclenchement** : Au chargement de la fiche + après modification du salaire (`onAfterSave` du `UI.inlineEdit`)
 
 ### Chronomètre d'action

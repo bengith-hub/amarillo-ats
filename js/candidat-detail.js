@@ -315,8 +315,13 @@ async function fetchCoutEmployeur(salaireBrutAnnuelKE) {
               Package souhaité : ${pkgSouhaiteMin > 0 && pkgSouhaite > 0 ? `${pkgSouhaiteMin} – ${pkgSouhaite} K€` : pkgSouhaite > 0 ? `${pkgSouhaite} K€` : pkgSouhaiteMin > 0 ? `à partir de ${pkgSouhaiteMin} K€` : '—'}
             </div>
           </div>
-          <div id="urssaf-cout-employeur" style="margin-top:12px;">
-            ${pkg > 0 ? '<div style="font-size:0.75rem;color:#94a3b8;font-style:italic;">Calcul du coût employeur...</div>' : ''}
+          <div id="urssaf-cout-employeur" style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;">
+            <div id="urssaf-actuel" style="flex:1;min-width:200px;">
+              ${pkg > 0 ? '<div style="font-size:0.75rem;color:#94a3b8;font-style:italic;">Calcul du coût employeur...</div>' : ''}
+            </div>
+            <div id="urssaf-souhaite" style="flex:1;min-width:200px;">
+              ${(pkgSouhaite > 0 || pkgSouhaiteMin > 0) ? '<div style="font-size:0.75rem;color:#94a3b8;font-style:italic;">Calcul du coût employeur...</div>' : ''}
+            </div>
           </div>
         </div>
       </div>
@@ -410,26 +415,37 @@ async function fetchCoutEmployeur(salaireBrutAnnuelKE) {
       }
     });
 
-    // URSSAF cost simulation
+    // URSSAF cost simulation — current + target packages
     const currentPkg = (candidat.salaire_fixe_actuel || 0) + (candidat.variable_actuel || 0);
+    const targetPkg = candidat.package_souhaite || candidat.package_souhaite_min || 0;
+
+    function renderUrssafCard(elId, label, brutKE, coutKE, bgColor, borderColor, accentColor) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      if (coutKE) {
+        el.innerHTML = `
+          <div style="background:${bgColor};border:1px solid ${borderColor};border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:12px;">
+            <div style="font-size:1.25rem;">🏛️</div>
+            <div>
+              <div style="font-size:0.75rem;font-weight:600;color:${accentColor};text-transform:uppercase;">${label}</div>
+              <div style="font-size:1.125rem;font-weight:700;color:#1e293b;">${coutKE} K€ / an</div>
+              <div style="font-size:0.6875rem;color:#94a3b8;">Basé sur ${brutKE} K€ brut annuel</div>
+            </div>
+          </div>
+        `;
+      } else {
+        el.innerHTML = '<div style="font-size:0.75rem;color:#94a3b8;">Simulation URSSAF indisponible</div>';
+      }
+    }
+
     if (currentPkg > 0) {
       fetchCoutEmployeur(currentPkg).then(coutKE => {
-        const el = document.getElementById('urssaf-cout-employeur');
-        if (!el) return;
-        if (coutKE) {
-          el.innerHTML = `
-            <div style="background:#f0f4ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:12px;">
-              <div style="font-size:1.25rem;">🏛️</div>
-              <div>
-                <div style="font-size:0.75rem;font-weight:600;color:#3b82f6;text-transform:uppercase;">Coût total employeur (estimation URSSAF)</div>
-                <div style="font-size:1.125rem;font-weight:700;color:#1e293b;">${coutKE} K€ / an</div>
-                <div style="font-size:0.6875rem;color:#94a3b8;">Estimation basée sur le brut annuel de ${currentPkg} K€ (cadre, sans convention collective spécifique)</div>
-              </div>
-            </div>
-          `;
-        } else {
-          el.innerHTML = '<div style="font-size:0.75rem;color:#94a3b8;">Simulation URSSAF indisponible</div>';
-        }
+        renderUrssafCard('urssaf-actuel', 'Coût employeur — package actuel', currentPkg, coutKE, '#f0f4ff', '#bfdbfe', '#3b82f6');
+      });
+    }
+    if (targetPkg > 0) {
+      fetchCoutEmployeur(targetPkg).then(coutKE => {
+        renderUrssafCard('urssaf-souhaite', 'Coût employeur — package souhaité', targetPkg, coutKE, '#f0fdf4', '#bbf7d0', '#16a34a');
       });
     }
 
