@@ -1,5 +1,37 @@
 // Amarillo ATS — Candidat detail page
 
+// --- URSSAF Salary Simulator ---
+const _urssafCache = {};
+async function fetchCoutEmployeur(salaireBrutAnnuelKE) {
+  if (!salaireBrutAnnuelKE || salaireBrutAnnuelKE <= 0) return null;
+
+  const mensuel = Math.round((salaireBrutAnnuelKE * 1000) / 12);
+  if (_urssafCache[mensuel]) return _urssafCache[mensuel];
+
+  try {
+    const res = await fetch('https://mon-entreprise.urssaf.fr/api/v1/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        expressions: ['salarié . coût total employeur'],
+        situation: { 'salarié . contrat . salaire brut': `${mensuel} €/mois` }
+      })
+    });
+    if (!res.ok) throw new Error(`URSSAF API: ${res.status}`);
+    const data = await res.json();
+    const coutMensuel = data?.evaluate?.[0]?.nodeValue ?? data?.[0]?.nodeValue;
+    if (typeof coutMensuel === 'number') {
+      const annuelKE = Math.round((coutMensuel * 12) / 1000);
+      _urssafCache[mensuel] = annuelKE;
+      return annuelKE;
+    }
+    return null;
+  } catch (e) {
+    console.warn('URSSAF simulation failed:', e);
+    return null;
+  }
+}
+
 (async function() {
   if (!API.isConfigured()) { UI.showConfigModal(); return; }
 
@@ -283,6 +315,9 @@
               Package souhaité : ${pkgSouhaiteMin > 0 && pkgSouhaite > 0 ? `${pkgSouhaiteMin} – ${pkgSouhaite} K€` : pkgSouhaite > 0 ? `${pkgSouhaite} K€` : pkgSouhaiteMin > 0 ? `à partir de ${pkgSouhaiteMin} K€` : '—'}
             </div>
           </div>
+          <div id="urssaf-cout-employeur" style="margin-top:12px;">
+            ${pkg > 0 ? '<div style="font-size:0.75rem;color:#94a3b8;font-style:italic;">Calcul du coût employeur...</div>' : ''}
+          </div>
         </div>
       </div>
 
@@ -374,6 +409,29 @@
         refreshDependentViews();
       }
     });
+
+    // URSSAF cost simulation
+    const currentPkg = (candidat.salaire_fixe_actuel || 0) + (candidat.variable_actuel || 0);
+    if (currentPkg > 0) {
+      fetchCoutEmployeur(currentPkg).then(coutKE => {
+        const el = document.getElementById('urssaf-cout-employeur');
+        if (!el) return;
+        if (coutKE) {
+          el.innerHTML = `
+            <div style="background:#f0f4ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:12px;">
+              <div style="font-size:1.25rem;">🏛️</div>
+              <div>
+                <div style="font-size:0.75rem;font-weight:600;color:#3b82f6;text-transform:uppercase;">Coût total employeur (estimation URSSAF)</div>
+                <div style="font-size:1.125rem;font-weight:700;color:#1e293b;">${coutKE} K€ / an</div>
+                <div style="font-size:0.6875rem;color:#94a3b8;">Estimation basée sur le brut annuel de ${currentPkg} K€ (cadre, sans convention collective spécifique)</div>
+              </div>
+            </div>
+          `;
+        } else {
+          el.innerHTML = '<div style="font-size:0.75rem;color:#94a3b8;">Simulation URSSAF indisponible</div>';
+        }
+      });
+    }
 
     UI.inlineEdit('profil-dates-fields', {
       entity: 'candidats', recordId: id,

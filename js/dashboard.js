@@ -168,6 +168,19 @@
       (overdueActions.length > 0 ? ` <span style="font-size:0.75rem;color:#dc2626;font-weight:600;">(${overdueActions.length} en retard)</span>` : '');
     document.getElementById('kpi-fees').textContent = UI.formatCurrency(totalFees);
 
+    // KPI: Temps passé cette semaine
+    const weekMinutes = doneThisWeek.reduce((sum, a) => sum + (a.duree_minutes || 0), 0);
+    const kpiTemps = document.getElementById('kpi-temps');
+    if (kpiTemps) {
+      if (weekMinutes > 0) {
+        const h = Math.floor(weekMinutes / 60);
+        const m = weekMinutes % 60;
+        kpiTemps.textContent = h > 0 ? `${h}h${m > 0 ? String(m).padStart(2, '0') : ''}` : `${m} min`;
+      } else {
+        kpiTemps.textContent = '—';
+      }
+    }
+
     const kpiSub = document.getElementById('kpi-actions-sub');
     if (kpiSub) kpiSub.textContent = `${doneThisWeek.length} faites cette semaine`;
   }

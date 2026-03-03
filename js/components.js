@@ -2020,6 +2020,136 @@ const UI = (() => {
     render();
   }
 
+  // ============================================================
+  // SEARCHABLE SELECT — generic autocomplete replacement for <select>
+  // ============================================================
+  function searchableSelect(containerId, { items, selectedId, placeholder, emptyLabel, onSelect }) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    emptyLabel = emptyLabel || '— Aucun —';
+    let currentId = selectedId || null;
+    let dropdown = null;
+
+    const currentItem = currentId ? items.find(i => i.id === currentId) : null;
+
+    container.style.position = 'relative';
+    container.innerHTML = `
+      <div class="ss-wrapper">
+        <input type="text" class="ss-input"
+          placeholder="${escHtml(placeholder || 'Rechercher...')}"
+          value="${currentItem ? escHtml(currentItem.label) : ''}"
+          autocomplete="off" />
+        ${currentId ? '<button type="button" class="ss-clear" title="Effacer">&times;</button>' : ''}
+      </div>
+    `;
+
+    const input = container.querySelector('.ss-input');
+    let clearBtn = container.querySelector('.ss-clear');
+
+    function ensureClearBtn() {
+      if (!container.querySelector('.ss-clear')) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ss-clear';
+        btn.title = 'Effacer';
+        btn.innerHTML = '&times;';
+        btn.addEventListener('click', () => {
+          currentId = null;
+          input.value = '';
+          if (onSelect) onSelect(null);
+          btn.remove();
+          clearBtn = null;
+        });
+        container.querySelector('.ss-wrapper').appendChild(btn);
+        clearBtn = btn;
+      }
+    }
+
+    function clearSelection() {
+      currentId = null;
+      input.value = '';
+      if (onSelect) onSelect(null);
+      if (clearBtn) { clearBtn.remove(); clearBtn = null; }
+    }
+
+    function buildDropdown() {
+      if (dropdown) dropdown.remove();
+      const q = input.value.toLowerCase().trim();
+
+      let matches;
+      if (q.length === 0) {
+        matches = items.slice(0, 15);
+      } else {
+        matches = items.filter(i =>
+          i.label.toLowerCase().includes(q) ||
+          (i.sub && i.sub.toLowerCase().includes(q))
+        ).slice(0, 10);
+      }
+
+      dropdown = document.createElement('div');
+      dropdown.className = 'ss-dropdown';
+
+      // "None" option
+      const noneItem = document.createElement('div');
+      noneItem.className = 'ss-item ss-item-none';
+      noneItem.textContent = emptyLabel;
+      noneItem.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        clearSelection();
+        if (dropdown) { dropdown.remove(); dropdown = null; }
+      });
+      dropdown.appendChild(noneItem);
+
+      matches.forEach(item => {
+        const el = document.createElement('div');
+        el.className = 'ss-item' + (item.id === currentId ? ' ss-item-selected' : '');
+        el.innerHTML = `<strong>${escHtml(item.label)}</strong>${item.sub ? ` <span class="ss-item-sub">${escHtml(item.sub)}</span>` : ''}`;
+        el.addEventListener('mousedown', (ev) => {
+          ev.preventDefault();
+          currentId = item.id;
+          input.value = item.label;
+          if (dropdown) { dropdown.remove(); dropdown = null; }
+          if (onSelect) onSelect(item.id);
+          ensureClearBtn();
+        });
+        dropdown.appendChild(el);
+      });
+
+      if (matches.length === 0 && q.length > 0) {
+        const noMatch = document.createElement('div');
+        noMatch.className = 'ss-item ss-item-empty';
+        noMatch.textContent = 'Aucun résultat';
+        dropdown.appendChild(noMatch);
+      }
+
+      container.appendChild(dropdown);
+    }
+
+    input.addEventListener('input', () => {
+      currentId = null;
+      buildDropdown();
+    });
+
+    input.addEventListener('focus', buildDropdown);
+
+    input.addEventListener('blur', () => {
+      setTimeout(() => {
+        if (dropdown) { dropdown.remove(); dropdown = null; }
+        if (!currentId) {
+          input.value = '';
+          if (onSelect) onSelect(null);
+        }
+      }, 200);
+    });
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => clearSelection());
+    }
+
+    container._getSelectedId = () => currentId;
+  }
+
   return {
     badge, autoBadgeStyle, entityLink, resolveLink,
     dataTable, filterBar, modal, toast,
@@ -2028,7 +2158,7 @@ const UI = (() => {
     candidatDecideurLink,
     inlineEdit, statusBadge, showStatusPicker,
     documentsSection, drawer, journalSection,
-    linkedinBadge, rowCount,
+    linkedinBadge, rowCount, searchableSelect,
     escHtml, renderRichText, normalizeUrl, formatDate, formatMonthYear, formatCurrency, getParam
   };
 })();

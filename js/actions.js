@@ -1,5 +1,26 @@
 // Amarillo ATS — Actions / CRM logic
 
+// --- Action Timer helpers ---
+const TIMER_LS_KEY = 'ats_action_timer';
+
+function getTimerState() {
+  try { return JSON.parse(localStorage.getItem(TIMER_LS_KEY)) || null; }
+  catch { return null; }
+}
+
+function setTimerState(state) {
+  if (state) localStorage.setItem(TIMER_LS_KEY, JSON.stringify(state));
+  else localStorage.removeItem(TIMER_LS_KEY);
+}
+
+function formatTimer(totalSeconds) {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
 (async function() {
   if (!API.isConfigured()) { UI.showConfigModal(); return; }
 
@@ -183,6 +204,12 @@
         }},
         { key: 'next_step', label: 'Next step', render: r => r.next_step ? `<span style="font-size:0.75rem;color:#c9a000;">→ ${UI.escHtml(r.next_step)}</span>` : '' },
         { key: 'relance', label: 'Relance', render: r => r.date_relance ? `<span style="font-size:0.75rem;${r.date_relance <= todayStr ? 'color:#dc2626;font-weight:600;' : 'color:#64748b;'}">${UI.formatDate(r.date_relance)}</span>` : '' },
+        { key: 'duree_minutes', label: 'Durée', render: r => {
+          if (!r.duree_minutes) return '';
+          const h = Math.floor(r.duree_minutes / 60);
+          const m = r.duree_minutes % 60;
+          return `<span style="font-size:0.75rem;color:#0369a1;">${h > 0 ? h + 'h' : ''}${m > 0 ? m + 'min' : (h > 0 ? '' : '0min')}</span>`;
+        }},
         { key: 'statut', label: 'Statut', render: r => UI.statusBadge(r.statut || 'À faire', ['À faire', 'En cours', 'Fait', 'Annulé'], { entity: 'actions', recordId: r.id, fieldName: 'statut', onUpdate: async (newStatus) => {
           if (newStatus === 'Fait' && r.next_step) {
             const fu = await createFollowUp(r);
@@ -263,20 +290,24 @@
           <input type="date" id="a-relance" value="${a.date_relance || ''}" />
         </div>
       </div>
+      <div class="form-group" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:14px;text-align:center;">
+        <label style="margin-bottom:8px;display:block;">Temps passé</label>
+        <div id="timer-display" style="font-size:2rem;font-weight:700;color:#0369a1;font-variant-numeric:tabular-nums;letter-spacing:0.05em;">00:00</div>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;">
+          <button type="button" class="btn btn-primary btn-sm" id="timer-start">Démarrer</button>
+          <button type="button" class="btn btn-sm" id="timer-pause" style="display:none;">Pause</button>
+          <button type="button" class="btn btn-sm" id="timer-reset" style="display:none;">Reset</button>
+        </div>
+        ${a.duree_minutes ? `<div style="font-size:0.75rem;color:#64748b;margin-top:6px;">Précédemment : ${a.duree_minutes} min</div>` : ''}
+      </div>
       <div class="form-row">
         <div class="form-group">
           <label>Candidat</label>
-          <select id="a-candidat">
-            <option value="">— Aucun —</option>
-            ${candidats.map(c => `<option value="${c.id}" ${a.candidat_id===c.id?'selected':''}>${UI.escHtml((c.prenom||'')+' '+(c.nom||''))}</option>`).join('')}
-          </select>
+          <div id="ac-candidat"></div>
         </div>
         <div class="form-group">
           <label>Décideur</label>
-          <select id="a-decideur">
-            <option value="">— Aucun —</option>
-            ${decideurs.map(d => `<option value="${d.id}" ${a.decideur_id===d.id?'selected':''}>${UI.escHtml((d.prenom||'')+' '+(d.nom||''))}</option>`).join('')}
-          </select>
+          <div id="ac-decideur"></div>
         </div>
       </div>
       <div class="form-row">
@@ -289,10 +320,7 @@
         </div>
         <div class="form-group">
           <label>Entreprise</label>
-          <select id="a-entreprise">
-            <option value="">— Aucune —</option>
-            ${entreprises.map(e => `<option value="${e.id}" ${a.entreprise_id===e.id?'selected':''}>${UI.escHtml(e.nom)}</option>`).join('')}
-          </select>
+          <div id="ac-entreprise"></div>
         </div>
       </div>
       <div class="form-group">
@@ -333,15 +361,25 @@
           statut: overlay.querySelector('#a-statut').value,
           priorite: overlay.querySelector('#a-priorite').value || null,
           date_action: overlay.querySelector('#a-date').value,
-          candidat_id: overlay.querySelector('#a-candidat').value || null,
-          decideur_id: overlay.querySelector('#a-decideur').value || null,
+          candidat_id: document.getElementById('ac-candidat')?._getSelectedId?.() || null,
+          decideur_id: document.getElementById('ac-decideur')?._getSelectedId?.() || null,
           mission_id: overlay.querySelector('#a-mission').value || null,
-          entreprise_id: overlay.querySelector('#a-entreprise').value || null,
+          entreprise_id: document.getElementById('ac-entreprise')?._getSelectedId?.() || null,
           reponse: overlay.querySelector('#a-reponse').value === 'true',
           message_notes: overlay.querySelector('#a-notes').value.trim(),
           next_step: overlay.querySelector('#a-next').value.trim(),
           date_relance: overlay.querySelector('#a-relance').value || null,
+          duree_minutes: (() => {
+            const ts = getTimerState();
+            if (!ts) return a.duree_minutes || null;
+            let secs = ts.accumulatedSeconds || 0;
+            if (ts.running && ts.startedAt) secs += Math.floor((Date.now() - ts.startedAt) / 1000);
+            return secs > 0 ? Math.ceil(secs / 60) : null;
+          })(),
         };
+
+        // Clear timer state after saving
+        setTimerState(null);
 
         if (isEdit) {
           await Store.update('actions', a.id, data);
@@ -366,6 +404,42 @@
         location.reload();
       }
     });
+
+    // Searchable selects for candidat, decideur, entreprise
+    setTimeout(() => {
+      UI.searchableSelect('ac-candidat', {
+        items: candidats.map(c => ({
+          id: c.id,
+          label: `${c.prenom || ''} ${c.nom || ''}`.trim(),
+          sub: c.poste_actuel || ''
+        })),
+        selectedId: a.candidat_id || null,
+        placeholder: 'Rechercher un candidat...',
+        emptyLabel: '— Aucun —'
+      });
+
+      UI.searchableSelect('ac-decideur', {
+        items: decideurs.map(d => ({
+          id: d.id,
+          label: `${d.prenom || ''} ${d.nom || ''}`.trim(),
+          sub: d.fonction || ''
+        })),
+        selectedId: a.decideur_id || null,
+        placeholder: 'Rechercher un décideur...',
+        emptyLabel: '— Aucun —'
+      });
+
+      UI.searchableSelect('ac-entreprise', {
+        items: entreprises.map(e => ({
+          id: e.id,
+          label: e.nom || '',
+          sub: [e.secteur, e.localisation].filter(Boolean).join(' \u2022 ')
+        })),
+        selectedId: a.entreprise_id || null,
+        placeholder: 'Rechercher une entreprise...',
+        emptyLabel: '— Aucune —'
+      });
+    }, 50);
 
     // Template selector: preview + inject into notes
     setTimeout(() => {
@@ -393,6 +467,88 @@
             tplPreview.style.display = 'none';
           }
         });
+      }
+    }, 100);
+
+    // --- Timer logic ---
+    setTimeout(() => {
+      const display = document.getElementById('timer-display');
+      const btnStart = document.getElementById('timer-start');
+      const btnPause = document.getElementById('timer-pause');
+      const btnReset = document.getElementById('timer-reset');
+      if (!display || !btnStart) return;
+
+      const actionId = isEdit ? a.id : null;
+      let timerInterval = null;
+
+      // Restore timer state from localStorage (only if same action)
+      let state = getTimerState();
+      if (state && state.actionId !== actionId) state = null;
+
+      // Pre-populate from existing duree_minutes
+      if (!state && a.duree_minutes) {
+        state = { actionId, startedAt: null, accumulatedSeconds: a.duree_minutes * 60, running: false };
+      }
+
+      function getElapsed() {
+        if (!state) return 0;
+        let total = state.accumulatedSeconds || 0;
+        if (state.running && state.startedAt) total += Math.floor((Date.now() - state.startedAt) / 1000);
+        return total;
+      }
+
+      function updateDisplay() { display.textContent = formatTimer(getElapsed()); }
+
+      function startTimer() {
+        if (!state) state = { actionId, startedAt: null, accumulatedSeconds: 0, running: false };
+        state.startedAt = Date.now();
+        state.running = true;
+        setTimerState(state);
+        btnStart.style.display = 'none';
+        btnPause.style.display = '';
+        btnReset.style.display = '';
+        timerInterval = setInterval(updateDisplay, 1000);
+      }
+
+      function pauseTimer() {
+        if (!state || !state.running) return;
+        state.accumulatedSeconds += Math.floor((Date.now() - state.startedAt) / 1000);
+        state.startedAt = null;
+        state.running = false;
+        setTimerState(state);
+        clearInterval(timerInterval);
+        btnStart.style.display = '';
+        btnStart.textContent = 'Reprendre';
+        btnPause.style.display = 'none';
+      }
+
+      function resetTimer() {
+        clearInterval(timerInterval);
+        state = null;
+        setTimerState(null);
+        display.textContent = '00:00';
+        btnStart.style.display = '';
+        btnStart.textContent = 'Démarrer';
+        btnPause.style.display = 'none';
+        btnReset.style.display = 'none';
+      }
+
+      btnStart.addEventListener('click', startTimer);
+      btnPause.addEventListener('click', pauseTimer);
+      btnReset.addEventListener('click', resetTimer);
+
+      // Restore running timer
+      if (state) {
+        updateDisplay();
+        if (state.running) {
+          btnStart.style.display = 'none';
+          btnPause.style.display = '';
+          btnReset.style.display = '';
+          timerInterval = setInterval(updateDisplay, 1000);
+        } else if (state.accumulatedSeconds > 0) {
+          btnStart.textContent = 'Reprendre';
+          btnReset.style.display = '';
+        }
       }
     }, 100);
   }
