@@ -23,7 +23,7 @@ Application web hébergée sur **Netlify** avec stockage serverless via **Netlif
 | PDF | jsPDF — template "Talent à Impact" |
 | Cartes | Leaflet.js + OpenRouteService |
 | Auth | Google OAuth2 (Drive, Gmail) |
-| APIs externes | Pappers (entreprises FR), OpenAI (parsing CV/entretiens) |
+| APIs externes | Pappers (entreprises FR), OpenAI (parsing CV/entretiens, Skills IA) |
 | Hébergement | Netlify |
 
 ---
@@ -55,6 +55,7 @@ amarillo-ats/
 │   ├── signal-regions.js     # Régions pour signaux
 │   ├── cv-parser.js          # Extraction CV via OpenAI
 │   ├── interview-analyzer.js # Analyse entretiens via IA
+│   ├── skills-engine.js      # **[NOUVEAU]** Moteur Skills IA configurables
 │   ├── dsi-scoring.js        # Scoring DSI candidats
 │   ├── google-auth.js        # OAuth2 unifié Google
 │   ├── gmail.js              # Intégration Gmail API
@@ -87,7 +88,7 @@ amarillo-ats/
 - **Modules** : Pattern IIFE — `const Module = (() => { ... return { publicMethod }; })()`
 - **Pas de bundler** : Chaque module est un fichier `.js` chargé via `<script>` dans le HTML
 - **Langue** : Noms de variables/fonctions en anglais, commentaires et UI en français
-- **IDs** : Préfixe par entité — `can_`, `ent_`, `dec_`, `mis_`, `act_`
+- **IDs** : Préfixe par entité — `can_`, `ent_`, `dec_`, `mis_`, `act_`, `ski_`
 - **Dates** : Format ISO (strings) stockées dans les objets JSON
 
 ### Patterns d'appel API
@@ -231,6 +232,28 @@ Toutes les entités ont : `id`, `created_at`, `updated_at`
 | `next_step` | string | Prochaine étape |
 | `duree_minutes` | number | Durée mesurée par le chronomètre (en minutes) |
 
+#### Skills IA (`ski_*`) — **[NOUVEAU]**
+| Champ | Type | Description |
+|-------|------|-------------|
+| `nom` | string | Nom du skill |
+| `description` | string | Description courte |
+| `color` | string | Couleur d'accentuation (hex) |
+| `entity_types` | string[] | Entités applicables : `candidats`, `entreprises`, `decideurs` |
+| `steps` | array | Étapes séquentielles (voir structure ci-dessous) |
+| `inputs` | array | Inputs optionnels demandés à l'utilisateur avant exécution |
+| `statut` | enum | actif, brouillon, archive |
+| `usage_count` | number | Compteur d'utilisation |
+| `last_run_at` | date | Dernière exécution |
+
+**Structure d'une étape (`steps[]`)** :
+| Champ | Type | Description |
+|-------|------|-------------|
+| `id` | string | ID étape (step_1, step_2...) |
+| `nom` | string | Nom de l'étape |
+| `system_prompt` | string | Prompt système (supporte `{{variables}}`) |
+| `user_prompt` | string | Prompt utilisateur (supporte `{{variables}}`) |
+| `scrape_entity_urls` | boolean | Scraper auto les URLs de l'entité (LinkedIn, site web) |
+
 #### Présentations (nested dans candidats.presentations[])
 | Champ | Type | Description |
 |-------|------|-------------|
@@ -266,6 +289,8 @@ Mission  ──→ Candidat[] (candidats_ids)
          ──→ Facturation[] (factures_ids)
 
 Action   ──→ Candidat, Décideur, Mission, Entreprise (tous optionnels)
+
+Skill    ──→ applicable à Candidat, Entreprise, Décideur (via entity_types[])
 ```
 
 ---
@@ -287,6 +312,7 @@ Action   ──→ Candidat, Décideur, Mission, Entreprise (tous optionnels)
 | Carte | `carte.html` | `carte.js` | Carte géographique |
 | Signaux | `signaux.html` | `signal-engine.js` | Signaux business |
 | Facturation | `facturation.html` | — | Suivi facturation |
+| **Skills IA** | **`skills.html`** | **`skills-engine.js`** | **Bibliothèque Skills IA** |
 | Référentiels | `referentiels.html` | `referentiels.js` | Config picklists |
 | Teaser | `teaser-template.html` | — | Template teaser |
 
@@ -309,6 +335,46 @@ BACKUP_ALERT_EMAIL         — Email alertes (défaut: benjamin.fetu@amarillosea
 ---
 
 ## Features récentes
+
+### Skills IA — Moteur de prompts configurables (NOUVEAU)
+
+Moteur de workflows IA intégré remplaçant la dépendance à DIA (assistant navigateur externe). Permet de créer, éditer et exécuter des prompts IA multi-étapes directement sur les entités de l'ATS.
+
+- **Module** : `js/skills-engine.js` — IIFE `SkillsEngine`
+- **Page** : `skills.html` — Bibliothèque avec grille de cards, création/édition via modale
+- **Stockage** : Entité `skills` dans Netlify Blobs (ajoutée à `store.js` et `store.mjs`)
+- **Modèle IA** : gpt-4o-mini (fixe), température 0.2, max_tokens 3000
+- **Clé API** : Via `CVParser.getOpenAIKey()` (même clé que l'analyse d'entretien)
+
+**Architecture du module :**
+- **CRUD** : `getSkills()`, `getSkill(id)`, `saveSkill(skill)`, `deleteSkill(id)`, `duplicateSkill(id)`
+- **Exécution** : `runSkill(skillId, entityType, entityId, userInputs, onProgress)` — exécute les étapes séquentiellement, résout les variables, scrape les URLs si configuré
+- **Variables** : `getAvailableVariables(entityType)`, résolution via `{{candidat.nom}}`, `{{previous_step_result}}`, `{{scraped_content}}`, `{{input.*}}`
+- **Scraping** : `_scrapeEntityUrls(entity, entityType)` — via CORS proxy existant (`cors-proxy.js`), scrape LinkedIn et sites web des entités
+- **UI Éditeur** : `showEditor(existingSkill)` — modale 800px avec étapes, prompts, variables cliquables
+- **UI Runner** : `showRunner(skill, entityType, entityId)` — modale d'exécution avec progress bar et résultat copiable
+- **Carte entité** : `renderEntitySkillsCard(containerId, entityType, entityId)` — affiche les skills applicables sous forme de boutons
+
+**Intégration sur les pages entité :**
+- `candidat.html` / `candidat-detail.js` — Section Skills IA dans l'onglet Entretien (avant la carte Analyse IA)
+- `entreprise.html` — Section Skills IA en haut du détail
+- `decideur.html` — Section Skills IA en haut du détail
+
+**Variables de template `{{...}}` disponibles :**
+- `{{candidat.*}}` — tous les champs candidat + `notes_entretien`, `entreprise_actuelle`
+- `{{entreprise.*}}` — tous les champs entreprise
+- `{{decideur.*}}` — tous les champs décideur + `entreprise`
+- `{{previous_step_result}}` — sortie de l'étape précédente
+- `{{step_N_result}}` — sortie de l'étape N
+- `{{input.*}}` — valeurs saisies par l'utilisateur
+- `{{scraped_content}}` — texte extrait des URLs de l'entité
+
+**Skills exemples pré-chargés (3) :**
+1. **Lecture Recruteur** (2 étapes, candidats) — Extraction factuelle → Analyse FIT poste/culture/risques/marché
+2. **Prospection Décideur** (2 étapes, décideurs) — Qualification contexte → Recommandation approche
+3. **Accroche LinkedIn** (1 étape, décideurs) — Génération messages d'accroche personnalisés (3 variantes)
+
+**Migration future (Phase 2) :** Les 4 prompts d'entretien existants (`interview-analyzer.js` : synthese_30s, parcours_cible, motivation_drivers, lecture_recruteur) pourront être migrés vers le système de Skills pour devenir éditables.
 
 ### Simulateur coût total employeur (fiche candidat)
 
