@@ -339,6 +339,7 @@ Les champs Candidat, Décideur et Entreprise de la modale action utilisent un co
 - **CSS** : Classes `.ss-wrapper`, `.ss-input`, `.ss-clear`, `.ss-dropdown`, `.ss-item`, `.ss-item-selected` dans `css/style.css`
 - **Fichier** : `js/actions.js` — containers `#ac-candidat`, `#ac-decideur`, `#ac-entreprise` initialisés après ouverture modale
 
+
 ## Features planifiées (non encore implémentées)
 
 - **Mode offline** — Voir `PLAN-OFFLINE-MODE.md` (sync queue, service worker, indicateur UI)
