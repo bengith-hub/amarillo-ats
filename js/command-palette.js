@@ -322,14 +322,28 @@ const CommandPalette = (() => {
 
   function _initGlobalListener() {
     document.addEventListener('keydown', (e) => {
-      // Open on '/' when not in an input field
-      if (e.key === '/' && !_open) {
-        const tag = document.activeElement?.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-        if (document.activeElement?.isContentEditable) return;
+      if (e.key !== '/' || _open) return;
+
+      const el = document.activeElement;
+      const tag = el?.tagName;
+
+      // In a text field: trigger only if cursor is at start of empty field or start of line
+      if (tag === 'INPUT' || tag === 'TEXTAREA') {
+        const val = el.value;
+        const pos = el.selectionStart || 0;
+        const atLineStart = pos === 0 || val[pos - 1] === '\n';
+        if (!atLineStart) return; // let '/' type normally
         e.preventDefault();
         open();
+        return;
       }
+
+      // Skip selects and contentEditable
+      if (tag === 'SELECT') return;
+      if (el?.isContentEditable) return;
+
+      e.preventDefault();
+      open();
     });
   }
 
