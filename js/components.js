@@ -643,7 +643,7 @@ const UI = (() => {
     }
     if (inUl) html += '</ul>';
     if (inOl) html += '</ol>';
-    return html;
+    return linkifyText(html);
   }
 
   // Utility functions
@@ -1918,7 +1918,7 @@ const UI = (() => {
                   <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9;" data-journal-id="${e.id}">
                     <div style="min-width:80px;font-size:0.75rem;font-weight:600;color:#64748b;padding-top:2px;">${formatDate(e.date)}</div>
                     <div style="flex:1;min-width:0;">
-                      ${e.categorie ? badge(e.categorie) + ' ' : ''}<span class="jnl-content" data-jnl-edit="${e.id}" style="font-size:0.8125rem;white-space:pre-wrap;cursor:pointer;" title="Cliquer pour modifier">${escHtml(e.content)}</span>
+                      ${e.categorie ? badge(e.categorie) + ' ' : ''}<span class="jnl-content" data-jnl-edit="${e.id}" style="font-size:0.8125rem;white-space:pre-wrap;cursor:pointer;" title="Cliquer pour modifier">${linkifyText(escHtml(e.content))}</span>
                     </div>
                     <button data-jnl-delete="${e.id}" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:1rem;padding:0 4px;flex-shrink:0;" title="Supprimer">&times;</button>
                   </div>
@@ -2150,6 +2150,318 @@ const UI = (() => {
     container._getSelectedId = () => currentId;
   }
 
+  // ============================================================
+  // LINKIFY TEXT — make URLs clickable in escaped HTML
+  // ============================================================
+  function linkifyText(text) {
+    if (!text) return '';
+    return text.replace(
+      /(https?:\/\/[^\s<>&"')\]]+)/g,
+      '<a href="$1" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:underline;">$1</a>'
+    );
+  }
+
+  // ============================================================
+  // TIMER HELPERS — shared across all action modals
+  // ============================================================
+  const TIMER_LS_KEY = 'ats_action_timer';
+
+  function getTimerState() {
+    try { return JSON.parse(localStorage.getItem(TIMER_LS_KEY)) || null; }
+    catch { return null; }
+  }
+
+  function setTimerState(state) {
+    if (state) localStorage.setItem(TIMER_LS_KEY, JSON.stringify(state));
+    else localStorage.removeItem(TIMER_LS_KEY);
+  }
+
+  function formatTimerDisplay(totalSeconds) {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+
+  function formatDurationText(totalSeconds) {
+    if (!totalSeconds || totalSeconds <= 0) return '';
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    if (h > 0) return `${h}h ${String(m).padStart(2,'0')}min`;
+    if (m > 0) return `${m}min ${s > 0 ? String(s).padStart(2,'0') + 's' : ''}`.trim();
+    return `${s}s`;
+  }
+
+  // ============================================================
+  // TIMER WIDGET — reusable chrono for action modals
+  // ============================================================
+  /**
+   * timerWidget(containerId, actionId, existingDureeSeconds)
+   * Injects timer UI into container. Returns { getElapsedSeconds(), destroy() }
+   */
+  function timerWidget(containerId, actionId, existingDureeSeconds) {
+    const container = document.getElementById(containerId);
+    if (!container) return { getElapsedSeconds: () => 0, destroy: () => {} };
+
+    let intervalId = null;
+    let stopped = false;
+    let stoppedSeconds = 0;
+    const existingSecs = existingDureeSeconds || 0;
+
+    // Icon SVGs (compact)
+    const ICON_PLAY = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><polygon points="4,2 14,8 4,14"/></svg>';
+    const ICON_PAUSE = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="2" width="3.5" height="12"/><rect x="9.5" y="2" width="3.5" height="12"/></svg>';
+    const ICON_STOP = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>';
+    const ICON_RESET = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8a5 5 0 1 1 1 3.5"/><polyline points="3,5 3,8.5 6,8.5"/></svg>';
+
+    container.innerHTML = `
+      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:14px;text-align:center;">
+        <label style="margin-bottom:8px;display:block;font-size:0.8125rem;font-weight:600;color:#64748b;">Temps passé</label>
+        <div id="tw-display" style="font-size:2rem;font-weight:700;color:#0369a1;font-variant-numeric:tabular-nums;">00:00</div>
+        <div id="tw-buttons" style="display:flex;gap:8px;justify-content:center;margin-top:10px;"></div>
+        ${existingSecs > 0 ? `<div style="font-size:0.75rem;color:#64748b;margin-top:6px;">Précédemment : ${formatDurationText(existingSecs)}</div>` : ''}
+      </div>
+    `;
+
+    const display = container.querySelector('#tw-display');
+    const btnContainer = container.querySelector('#tw-buttons');
+
+    function makeBtn(icon, title, cls, onClick) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.innerHTML = icon;
+      btn.title = title;
+      btn.className = cls;
+      btn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;border:1px solid #e2e8f0;cursor:pointer;transition:all 0.15s;';
+      btn.addEventListener('click', onClick);
+      return btn;
+    }
+
+    function getElapsed() {
+      if (stopped) return stoppedSeconds;
+      const ts = getTimerState();
+      if (!ts || ts.actionId !== actionId) return existingSecs;
+      let secs = ts.accumulatedSeconds || 0;
+      if (ts.running && ts.startedAt) secs += Math.floor((Date.now() - ts.startedAt) / 1000);
+      return secs;
+    }
+
+    function updateDisplay() {
+      display.textContent = formatTimerDisplay(getElapsed());
+    }
+
+    function renderButtons() {
+      btnContainer.innerHTML = '';
+      const ts = getTimerState();
+      const isActive = ts && ts.actionId === actionId;
+
+      if (stopped) {
+        // Stopped state: only reset
+        const resetBtn = makeBtn(ICON_RESET, 'Reset', '', () => { stopped = false; stoppedSeconds = 0; setTimerState(null); updateDisplay(); renderButtons(); });
+        resetBtn.style.background = '#f1f5f9';
+        resetBtn.style.color = '#64748b';
+        btnContainer.appendChild(resetBtn);
+        return;
+      }
+
+      if (!isActive || !ts.running) {
+        // Not running: show play
+        const playBtn = makeBtn(ICON_PLAY, isActive ? 'Reprendre' : 'Démarrer', '', () => {
+          const current = getTimerState();
+          const acc = (current && current.actionId === actionId) ? (current.accumulatedSeconds || 0) : existingSecs;
+          setTimerState({ actionId, startedAt: Date.now(), accumulatedSeconds: acc, running: true });
+          startInterval();
+          renderButtons();
+        });
+        playBtn.style.background = '#0369a1';
+        playBtn.style.color = '#fff';
+        btnContainer.appendChild(playBtn);
+
+        if (isActive && (ts.accumulatedSeconds > 0 || existingSecs > 0)) {
+          // Has accumulated time: show stop and reset
+          const stopBtn = makeBtn(ICON_STOP, 'Arrêter', '', doStop);
+          stopBtn.style.background = '#dc2626';
+          stopBtn.style.color = '#fff';
+          btnContainer.appendChild(stopBtn);
+
+          const resetBtn = makeBtn(ICON_RESET, 'Reset', '', () => { setTimerState(null); updateDisplay(); renderButtons(); });
+          resetBtn.style.background = '#f1f5f9';
+          resetBtn.style.color = '#64748b';
+          btnContainer.appendChild(resetBtn);
+        }
+      } else {
+        // Running: show pause + stop
+        const pauseBtn = makeBtn(ICON_PAUSE, 'Pause', '', () => {
+          const cur = getTimerState();
+          if (cur && cur.running && cur.startedAt) {
+            const elapsed = Math.floor((Date.now() - cur.startedAt) / 1000);
+            setTimerState({ ...cur, accumulatedSeconds: (cur.accumulatedSeconds || 0) + elapsed, startedAt: null, running: false });
+          }
+          clearInterval(intervalId); intervalId = null;
+          updateDisplay();
+          renderButtons();
+        });
+        pauseBtn.style.background = '#f59e0b';
+        pauseBtn.style.color = '#fff';
+        btnContainer.appendChild(pauseBtn);
+
+        const stopBtn = makeBtn(ICON_STOP, 'Arrêter', '', doStop);
+        stopBtn.style.background = '#dc2626';
+        stopBtn.style.color = '#fff';
+        btnContainer.appendChild(stopBtn);
+      }
+    }
+
+    function doStop() {
+      stoppedSeconds = getElapsed();
+      stopped = true;
+      clearInterval(intervalId); intervalId = null;
+      setTimerState(null);
+      updateDisplay();
+      renderButtons();
+    }
+
+    function startInterval() {
+      if (intervalId) clearInterval(intervalId);
+      intervalId = setInterval(updateDisplay, 1000);
+    }
+
+    // Initialize: restore state if timer was running for this action
+    const ts = getTimerState();
+    if (ts && ts.actionId === actionId && ts.running) {
+      startInterval();
+    }
+    updateDisplay();
+    renderButtons();
+
+    return {
+      getElapsedSeconds: () => getElapsed(),
+      destroy: () => { if (intervalId) clearInterval(intervalId); }
+    };
+  }
+
+  // ============================================================
+  // TIME AGGREGATION — total time card for entity detail pages
+  // ============================================================
+  function renderTimeAggregation(containerId, entityType, entityId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const actions = Store.get('actions') || [];
+    let totalSecs = 0;
+    let directSecs = 0;
+    let decideurSecs = 0;
+
+    function getActionSeconds(a) {
+      if (a.duree_seconds) return a.duree_seconds;
+      if (a.duree_minutes) return a.duree_minutes * 60;
+      return 0;
+    }
+
+    if (entityType === 'candidats') {
+      actions.forEach(a => { if (a.candidat_id === entityId) totalSecs += getActionSeconds(a); });
+    } else if (entityType === 'decideurs') {
+      actions.forEach(a => { if (a.decideur_id === entityId) totalSecs += getActionSeconds(a); });
+    } else if (entityType === 'entreprises') {
+      // Direct actions on entreprise
+      actions.forEach(a => { if (a.entreprise_id === entityId) directSecs += getActionSeconds(a); });
+      // Actions on décideurs of this entreprise
+      const decideurs = (Store.get('decideurs') || []).filter(d => d.entreprise_id === entityId);
+      const decIds = new Set(decideurs.map(d => d.id));
+      actions.forEach(a => { if (a.decideur_id && decIds.has(a.decideur_id)) decideurSecs += getActionSeconds(a); });
+      totalSecs = directSecs + decideurSecs;
+    }
+
+    if (totalSecs <= 0) {
+      container.innerHTML = '';
+      return;
+    }
+
+    let detail = '';
+    if (entityType === 'entreprises' && (directSecs > 0 || decideurSecs > 0)) {
+      const parts = [];
+      if (directSecs > 0) parts.push(`Direct : ${formatDurationText(directSecs)}`);
+      if (decideurSecs > 0) parts.push(`Décideurs : ${formatDurationText(decideurSecs)}`);
+      detail = `<div style="font-size:0.7rem;color:#64748b;margin-top:4px;">${parts.join(' • ')}</div>`;
+    }
+
+    container.innerHTML = `
+      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 14px;margin-bottom:12px;text-align:center;">
+        <div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:2px;">⏱ Temps total</div>
+        <div style="font-size:1.25rem;font-weight:700;color:#0369a1;">${formatDurationText(totalSecs)}</div>
+        ${detail}
+      </div>
+    `;
+  }
+
+  // ============================================================
+  // SKILLS CARD — sidebar widget for entity detail pages
+  // ============================================================
+  function renderSkillsCard(containerId, entityType, entityId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    // SkillsEngine may not be loaded on all pages
+    if (typeof SkillsEngine === 'undefined') {
+      container.innerHTML = '';
+      return;
+    }
+
+    const skills = SkillsEngine.getSkillsForEntity(entityType);
+
+    if (skills.length === 0) {
+      container.innerHTML = `
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-header"><h2>Skills IA</h2></div>
+          <div class="card-body" style="text-align:center;padding:12px;">
+            <div style="font-size:0.8125rem;color:#94a3b8;">Aucun skill configuré</div>
+            <a href="skills.html" style="font-size:0.75rem;color:#2563eb;text-decoration:underline;">Créer un skill →</a>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    const chips = skills.map(s => {
+      const color = s.color || '#3b82f6';
+      return `<button type="button" class="skill-chip" data-skill-id="${s.id}" style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;border:1px solid ${color}33;background:${color}0d;cursor:pointer;font-size:0.8rem;color:#334155;transition:all 0.15s;" onmouseover="this.style.background='${color}22'" onmouseout="this.style.background='${color}0d'">
+        <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>
+        ${escHtml(s.nom)}
+      </button>`;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">
+          <h2>Skills IA</h2>
+          ${typeof CommandPalette !== 'undefined' ? '<button type="button" id="btn-open-palette" class="btn btn-sm" style="font-size:0.75rem;" title="Ouvrir la palette (/)">⌘</button>' : ''}
+        </div>
+        <div class="card-body" style="display:flex;flex-wrap:wrap;gap:6px;padding:12px;">
+          ${chips}
+        </div>
+        <div style="padding:6px 12px 10px;text-align:right;">
+          <a href="skills.html" style="font-size:0.7rem;color:#94a3b8;">Gérer les skills →</a>
+        </div>
+      </div>
+    `;
+
+    // Bind click handlers
+    container.querySelectorAll('.skill-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const skillId = btn.dataset.skillId;
+        const skill = skills.find(s => s.id === skillId);
+        if (skill) SkillsEngine.showRunner(skill, entityType, entityId);
+      });
+    });
+
+    // Palette button
+    container.querySelector('#btn-open-palette')?.addEventListener('click', () => {
+      if (typeof CommandPalette !== 'undefined') CommandPalette.open();
+    });
+  }
+
   return {
     badge, autoBadgeStyle, entityLink, resolveLink,
     dataTable, filterBar, modal, toast,
@@ -2159,7 +2471,9 @@ const UI = (() => {
     inlineEdit, statusBadge, showStatusPicker,
     documentsSection, drawer, journalSection,
     linkedinBadge, rowCount, searchableSelect,
-    escHtml, renderRichText, normalizeUrl, formatDate, formatMonthYear, formatCurrency, getParam
+    escHtml, renderRichText, normalizeUrl, formatDate, formatMonthYear, formatCurrency, getParam,
+    linkifyText, getTimerState, setTimerState, formatTimerDisplay, formatDurationText,
+    timerWidget, renderTimeAggregation, renderSkillsCard
   };
 })();
 

@@ -301,6 +301,8 @@
         </div>
 
         <div class="detail-sidebar">
+          <div id="ent-skills-card"></div>
+          <div id="ent-time-card"></div>
           <div id="ent-map-widget"></div>
           <div class="card">
             <div class="card-header"><h2>Résumé</h2></div>
@@ -385,12 +387,14 @@
     UI.inlineEdit('ent-notes-fields', {
       entity: 'entreprises', recordId: entId,
       fields: [
-        { key: 'angle_approche', label: "Angle d'approche", type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
-        { key: 'notes', label: 'Notes', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' },
+        { key: 'angle_approche', label: "Angle d'approche", type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.linkifyText(UI.escHtml(v))}</span>` : '' },
+        { key: 'notes', label: 'Notes', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.linkifyText(UI.escHtml(v))}</span>` : '' },
       ]
     });
 
     UI.journalSection('ent-journal-section', { entity: 'entreprises', recordId: entId, onUpdate: () => renderEntreprisePage() });
+    UI.renderSkillsCard('ent-skills-card', 'entreprises', entId);
+    UI.renderTimeAggregation('ent-time-card', 'entreprises', entId);
 
     // Documents section
     UI.documentsSection('ent-documents-section', {
@@ -528,7 +532,7 @@
         ${candidatName ? `<div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Candidat</div><div style="font-size:0.875rem;">${UI.escHtml(candidatName)}</div></div>` : ''}
         ${action.date_relance ? `<div><div style="font-size:0.75rem;font-weight:600;color:#64748b;">Relance</div><div style="font-size:0.875rem;">${UI.formatDate(action.date_relance)}</div></div>` : ''}
       </div>
-      ${action.message_notes ? `<div style="margin-bottom:12px;"><div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:4px;">Message / Notes</div><div style="background:#f8fafc;border-radius:8px;padding:12px;font-size:0.8125rem;white-space:pre-wrap;max-height:300px;overflow-y:auto;border:1px solid #e2e8f0;">${UI.escHtml(action.message_notes)}</div></div>` : ''}
+      ${action.message_notes ? `<div style="margin-bottom:12px;"><div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:4px;">Message / Notes</div><div style="background:#f8fafc;border-radius:8px;padding:12px;font-size:0.8125rem;white-space:pre-wrap;max-height:300px;overflow-y:auto;border:1px solid #e2e8f0;">${UI.linkifyText(UI.escHtml(action.message_notes))}</div></div>` : ''}
       ${action.next_step ? `<div style="margin-bottom:16px;"><div style="font-size:0.75rem;font-weight:600;color:#c9a000;margin-bottom:4px;">→ Next step</div><div style="font-size:0.875rem;">${UI.escHtml(action.next_step)}</div></div>` : ''}
       <div style="display:flex;gap:8px;border-top:1px solid #e2e8f0;padding-top:16px;">
         <button class="btn btn-primary btn-sm" id="ent-action-edit-btn" style="flex:1;">✏️ Modifier</button>
@@ -588,6 +592,7 @@
         <div class="form-group"><label>Mission</label><select id="ea-mission"><option value="">—</option>${allMissions.map(m=>`<option value="${m.id}" ${a.mission_id===m.id?'selected':''}>${UI.escHtml(m.nom||m.ref)}</option>`).join('')}</select></div>
         <div class="form-group"><label>Réponse</label><select id="ea-reponse"><option value="false" ${!a.reponse?'selected':''}>Non</option><option value="true" ${a.reponse?'selected':''}>Oui</option></select></div>
       </div>
+      <div class="form-group" id="ea-timer-container"></div>
       <div class="form-group"><label>Message / Notes</label><textarea id="ea-notes" style="min-height:120px;">${UI.escHtml(a.message_notes || '')}</textarea></div>
       <div class="form-row">
         <div class="form-group"><label>Next step</label><input type="text" id="ea-next" value="${UI.escHtml(a.next_step || '')}" /></div>
@@ -596,6 +601,7 @@
     `, {
       width: 640,
       onSave: async (overlay) => {
+        const secs = _eaTimerWidget ? _eaTimerWidget.getElapsedSeconds() : 0;
         const updatedData = {
           action: overlay.querySelector('#ea-action').value.trim(),
           type_action: overlay.querySelector('#ea-type').value,
@@ -609,13 +615,22 @@
           message_notes: overlay.querySelector('#ea-notes').value.trim(),
           next_step: overlay.querySelector('#ea-next').value.trim(),
           date_relance: overlay.querySelector('#ea-relance').value || null,
+          duree_seconds: secs > 0 ? secs : (a.duree_seconds || null),
+          duree_minutes: secs > 0 ? Math.ceil(secs / 60) : (a.duree_minutes || null),
         };
+        if (_eaTimerWidget) { _eaTimerWidget.destroy(); _eaTimerWidget = null; }
+        UI.setTimerState(null);
         await Store.update('actions', a.id, updatedData);
         await Store.syncRelanceDates({ ...a, ...updatedData, entreprise_id: a.entreprise_id || entId });
         UI.toast('Action mise à jour');
         renderEntreprisePage();
       }
     });
+    let _eaTimerWidget = null;
+    setTimeout(() => {
+      const existingSecs = a.duree_seconds || (a.duree_minutes ? a.duree_minutes * 60 : 0);
+      _eaTimerWidget = UI.timerWidget('ea-timer-container', a.id, existingSecs);
+    }, 50);
   }
 
   function showNewEntAction() {
@@ -642,6 +657,7 @@
         <div class="form-group"><label>Mission</label><select id="na-mission"><option value="">—</option>${allMissions.map(m=>`<option value="${m.id}">${UI.escHtml(m.nom||m.ref)}</option>`).join('')}</select></div>
         <div class="form-group"><label>Réponse</label><select id="na-reponse"><option value="false">Non</option><option value="true">Oui</option></select></div>
       </div>
+      <div class="form-group" id="na-timer-container"></div>
       <div class="form-group"><label>Message / Notes</label><textarea id="na-notes" style="min-height:120px;"></textarea></div>
       <div class="form-row">
         <div class="form-group"><label>Next step</label><input type="text" id="na-next" /></div>
@@ -670,13 +686,19 @@
           finalite: '',
           objectif: '',
           moment_suivi: '',
+          duree_seconds: _naTimerWidget ? (_naTimerWidget.getElapsedSeconds() || null) : null,
+          duree_minutes: _naTimerWidget ? ((_naTimerWidget.getElapsedSeconds() > 0) ? Math.ceil(_naTimerWidget.getElapsedSeconds() / 60) : null) : null,
         };
+        if (_naTimerWidget) { _naTimerWidget.destroy(); _naTimerWidget = null; }
+        UI.setTimerState(null);
         await Store.add('actions', data);
         await Store.syncRelanceDates(data);
         UI.toast('Action créée');
         renderEntreprisePage();
       }
     });
+    let _naTimerWidget = null;
+    setTimeout(() => { _naTimerWidget = UI.timerWidget('na-timer-container', null, 0); }, 50);
   }
 
   // --- Entreprises liées functions ---
