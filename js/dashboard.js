@@ -169,13 +169,11 @@
     document.getElementById('kpi-fees').textContent = UI.formatCurrency(totalFees);
 
     // KPI: Temps passé cette semaine
-    const weekMinutes = doneThisWeek.reduce((sum, a) => sum + (a.duree_minutes || 0), 0);
+    const weekSeconds = doneThisWeek.reduce((sum, a) => sum + (a.duree_seconds || (a.duree_minutes ? a.duree_minutes * 60 : 0)), 0);
     const kpiTemps = document.getElementById('kpi-temps');
     if (kpiTemps) {
-      if (weekMinutes > 0) {
-        const h = Math.floor(weekMinutes / 60);
-        const m = weekMinutes % 60;
-        kpiTemps.textContent = h > 0 ? `${h}h${m > 0 ? String(m).padStart(2, '0') : ''}` : `${m} min`;
+      if (weekSeconds > 0) {
+        kpiTemps.textContent = UI.formatDurationText(weekSeconds);
       } else {
         kpiTemps.textContent = '—';
       }

@@ -472,7 +472,7 @@ async function fetchCoutEmployeur(salaireBrutAnnuelKE) {
     UI.inlineEdit('profil-notes', {
       entity: 'candidats', recordId: id,
       fields: [
-        { key: 'notes', label: 'Notes', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.escHtml(v)}</span>` : '' }
+        { key: 'notes', label: 'Notes', type: 'textarea', render: (v) => v ? `<span style="white-space:pre-wrap;">${UI.linkifyText(UI.escHtml(v))}</span>` : '' }
       ]
     });
 
@@ -1297,6 +1297,10 @@ async function fetchCoutEmployeur(salaireBrutAnnuelKE) {
         { key: 'canal', label: 'Canal', render: r => UI.badge(r.canal) },
         { key: 'date_action', label: 'Date', render: r => UI.formatDate(r.date_action) },
         { key: 'next_step', label: 'Next step', render: r => r.next_step ? `<span style="font-size:0.75rem;color:#c9a000;">→ ${UI.escHtml(r.next_step)}</span>` : '' },
+        { key: 'duree', label: 'Durée', render: r => {
+          const secs = r.duree_seconds || (r.duree_minutes ? r.duree_minutes * 60 : 0);
+          return secs ? `<span style="font-size:0.75rem;color:#0369a1;">${UI.formatDurationText(secs)}</span>` : '';
+        }},
         { key: 'statut', label: 'Statut', render: r => UI.statusBadge(r.statut || 'À faire', ['À faire', 'En cours', 'Fait', 'Annulé'], { entity: 'actions', recordId: r.id, fieldName: 'statut', onUpdate: () => renderActions() }) },
       ],
       data: actions,
@@ -1330,7 +1334,7 @@ async function fetchCoutEmployeur(salaireBrutAnnuelKE) {
       ${action.message_notes ? `
         <div style="margin-bottom:12px;">
           <div style="font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:4px;">Message / Notes</div>
-          <div style="background:#f8fafc;border-radius:8px;padding:12px;font-size:0.8125rem;white-space:pre-wrap;max-height:300px;overflow-y:auto;border:1px solid #e2e8f0;">${UI.escHtml(action.message_notes)}</div>
+          <div style="background:#f8fafc;border-radius:8px;padding:12px;font-size:0.8125rem;white-space:pre-wrap;max-height:300px;overflow-y:auto;border:1px solid #e2e8f0;">${UI.linkifyText(UI.escHtml(action.message_notes))}</div>
         </div>
       ` : ''}
       ${action.next_step ? `
@@ -1394,6 +1398,7 @@ async function fetchCoutEmployeur(salaireBrutAnnuelKE) {
         <div class="form-group"><label>Réponse</label><select id="ea-reponse"><option value="false" ${!a.reponse?'selected':''}>Non</option><option value="true" ${a.reponse?'selected':''}>Oui</option></select></div>
       </div>
       ${tplOpts ? `<div class="form-group" style="background:#FFFDF0;border:1px solid #FEE566;border-radius:8px;padding:12px;"><label style="color:#c9a000;">📋 Trame</label><select id="ea-template"><option value="">—</option>${tplOpts}</select><div id="ea-tpl-preview" style="display:none;max-height:150px;overflow-y:auto;font-size:0.8125rem;background:#fff;border-radius:6px;padding:8px;border:1px solid #e2e8f0;margin-top:8px;"></div></div>` : ''}
+      <div class="form-group" id="ea-timer-container"></div>
       <div class="form-group"><label>Message / Notes</label><textarea id="ea-notes" style="min-height:120px;">${UI.escHtml(a.message_notes || '')}</textarea></div>
       <div class="form-row">
         <div class="form-group"><label>Next step</label><input type="text" id="ea-next" value="${UI.escHtml(a.next_step || '')}" /></div>
@@ -1403,6 +1408,7 @@ async function fetchCoutEmployeur(salaireBrutAnnuelKE) {
       width: 640,
       draftKey: 'action_edit_' + a.id,
       onSave: async (overlay) => {
+        const secs = _eaTimerWidget ? _eaTimerWidget.getElapsedSeconds() : 0;
         await Store.update('actions', a.id, {
           action: overlay.querySelector('#ea-action').value.trim(),
           type_action: overlay.querySelector('#ea-type').value,
@@ -1414,11 +1420,20 @@ async function fetchCoutEmployeur(salaireBrutAnnuelKE) {
           message_notes: overlay.querySelector('#ea-notes').value.trim(),
           next_step: overlay.querySelector('#ea-next').value.trim(),
           date_relance: overlay.querySelector('#ea-relance').value || null,
+          duree_seconds: secs > 0 ? secs : (a.duree_seconds || null),
+          duree_minutes: secs > 0 ? Math.ceil(secs / 60) : (a.duree_minutes || null),
         });
+        if (_eaTimerWidget) { _eaTimerWidget.destroy(); _eaTimerWidget = null; }
+        UI.setTimerState(null);
         UI.toast('Action mise à jour');
         location.reload();
       }
     });
+    let _eaTimerWidget = null;
+    setTimeout(() => {
+      const existingSecs = a.duree_seconds || (a.duree_minutes ? a.duree_minutes * 60 : 0);
+      _eaTimerWidget = UI.timerWidget('ea-timer-container', a.id, existingSecs);
+    }, 50);
     // Template inject for edit
     setTimeout(() => {
       const sel = document.getElementById('ea-template');
@@ -1530,6 +1545,10 @@ async function fetchCoutEmployeur(salaireBrutAnnuelKE) {
 
     // Init double casquette candidat/décideur
     UI.candidatDecideurLink('candidat-decideur-link', id);
+
+    // Skills card and time aggregation in sidebar
+    UI.renderSkillsCard('candidat-skills-card', 'candidats', id);
+    UI.renderTimeAggregation('candidat-time-card', 'candidats', id);
   }
 
   // Helper
@@ -1616,6 +1635,7 @@ async function fetchCoutEmployeur(salaireBrutAnnuelKE) {
         <div id="a-template-preview" style="display:none;max-height:200px;overflow-y:auto;font-size:0.8125rem;color:#475569;background:#fff;border-radius:6px;padding:10px;border:1px solid #e2e8f0;"></div>
       </div>
       ` : ''}
+      <div class="form-group" id="a-timer-container"></div>
       <div class="form-group">
         <label>Message / Notes</label>
         <textarea id="a-notes" style="min-height:120px;"></textarea>
@@ -1653,12 +1673,18 @@ async function fetchCoutEmployeur(salaireBrutAnnuelKE) {
           finalite: '',
           objectif: '',
           moment_suivi: '',
+          duree_seconds: _naTimerWidget ? (_naTimerWidget.getElapsedSeconds() || null) : null,
+          duree_minutes: _naTimerWidget ? ((_naTimerWidget.getElapsedSeconds() > 0) ? Math.ceil(_naTimerWidget.getElapsedSeconds() / 60) : null) : null,
         };
+        if (_naTimerWidget) { _naTimerWidget.destroy(); _naTimerWidget = null; }
+        UI.setTimerState(null);
         await Store.add('actions', action);
         UI.toast('Action créée');
         location.reload();
       }
     });
+    let _naTimerWidget = null;
+    setTimeout(() => { _naTimerWidget = UI.timerWidget('a-timer-container', null, 0); }, 50);
 
     // Template selector handler
     setTimeout(() => {
