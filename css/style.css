@@ -888,6 +888,45 @@ body {
 .topbar[data-entity="facturation"] { border-bottom-color: #06b6d4; }
 .topbar[data-entity="dashboard"] { border-bottom-color: #FECC02; }
 
+.topbar-skill-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.topbar-skill-btn:hover {
+  background: #f59e0b;
+  color: #fff;
+  border-color: #f59e0b;
+}
+.topbar-skill-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.topbar-skill-btn kbd {
+  font-size: 0.65rem;
+  padding: 1px 4px;
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+  background: #fff;
+  color: #94a3b8;
+  font-family: inherit;
+}
+.topbar-skill-btn:hover kbd {
+  border-color: rgba(255,255,255,0.4);
+  background: rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.8);
+}
+
 /* Sidebar nav icons color */
 .sidebar-nav a.active svg { color: var(--sidebar-active); }
 .sidebar-nav a svg { color: #64748b; transition: color 0.15s; }

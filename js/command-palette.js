@@ -36,39 +36,46 @@ const CommandPalette = (() => {
   function open() {
     if (_open) return;
     _open = true;
-    _mode = 'skills';
-    _pendingSkill = null;
-    _selectedIndex = 0;
+    try {
+      _mode = 'skills';
+      _pendingSkill = null;
+      _selectedIndex = 0;
 
-    // Create overlay
-    _overlay = document.createElement('div');
-    _overlay.className = 'cmd-palette-overlay';
-    _overlay.innerHTML = `
-      <div class="cmd-palette">
-        <div class="cmd-palette-input-wrap">
-          <span class="cmd-palette-slash">/</span>
-          <input type="text" class="cmd-palette-input" placeholder="Rechercher un skill..." autofocus />
+      // Create overlay
+      _overlay = document.createElement('div');
+      _overlay.className = 'cmd-palette-overlay';
+      _overlay.innerHTML = `
+        <div class="cmd-palette">
+          <div class="cmd-palette-input-wrap">
+            <span class="cmd-palette-slash">/</span>
+            <input type="text" class="cmd-palette-input" placeholder="Rechercher un skill..." autofocus />
+          </div>
+          <div class="cmd-palette-list"></div>
+          <div class="cmd-palette-footer">
+            <a href="skills.html" class="cmd-palette-manage">Gerer les skills &rarr;</a>
+          </div>
         </div>
-        <div class="cmd-palette-list"></div>
-        <div class="cmd-palette-footer">
-          <a href="skills.html" class="cmd-palette-manage">Gerer les skills &rarr;</a>
-        </div>
-      </div>
-    `;
+      `;
 
-    document.body.appendChild(_overlay);
+      document.body.appendChild(_overlay);
 
-    // Events
-    const input = _overlay.querySelector('.cmd-palette-input');
-    input.addEventListener('input', () => _onFilterChange(input.value));
-    input.addEventListener('keydown', _onKeyDown);
-    _overlay.addEventListener('click', (e) => {
-      if (e.target === _overlay) close();
-    });
+      // Events
+      const input = _overlay.querySelector('.cmd-palette-input');
+      input.addEventListener('input', () => _onFilterChange(input.value));
+      input.addEventListener('keydown', _onKeyDown);
+      _overlay.addEventListener('click', (e) => {
+        if (e.target === _overlay) close();
+      });
 
-    // Initial render
-    _renderSkillsList('');
-    requestAnimationFrame(() => input.focus());
+      // Initial render
+      _renderSkillsList('');
+      requestAnimationFrame(() => input.focus());
+    } catch (err) {
+      console.error('[CommandPalette] Error opening:', err);
+      _open = false;
+      if (_overlay && _overlay.parentNode) _overlay.parentNode.removeChild(_overlay);
+      _overlay = null;
+    }
   }
 
   function close() {
@@ -90,7 +97,12 @@ const CommandPalette = (() => {
     const { entityType } = _getCurrentContext();
 
     // Get all active skills
-    let skills = SkillsEngine.getSkills().filter(s => s.statut === 'actif');
+    let skills = [];
+    try {
+      skills = SkillsEngine.getSkills().filter(s => s.statut === 'actif');
+    } catch (err) {
+      console.warn('[CommandPalette] Could not load skills:', err);
+    }
 
     // Filter by entity type if on a detail page
     if (entityType) {
@@ -127,7 +139,7 @@ const CommandPalette = (() => {
           ${skill.description ? `<span class="cmd-palette-item-desc">${_escHtml(skill.description)}</span>` : ''}
         </div>
         <div class="cmd-palette-item-meta">
-          ${skill.entity_types ? skill.entity_types.map(t => `<span class="cmd-palette-badge">${SkillsEngine.ENTITY_LABELS[t] || t}</span>`).join('') : ''}
+          ${skill.entity_types ? skill.entity_types.map(t => `<span class="cmd-palette-badge">${(typeof SkillsEngine !== 'undefined' && SkillsEngine.ENTITY_LABELS[t]) || t}</span>`).join('') : ''}
           ${skill.steps && skill.steps.length > 1 ? `<span class="cmd-palette-steps">${skill.steps.length} etapes</span>` : ''}
         </div>
       </div>
@@ -155,7 +167,7 @@ const CommandPalette = (() => {
     const input = _overlay.querySelector('.cmd-palette-input');
     const slash = _overlay.querySelector('.cmd-palette-slash');
     input.value = '';
-    input.placeholder = 'Chercher un(e) ' + (skill.entity_types || []).map(t => SkillsEngine.ENTITY_LABELS[t] || t).join(' / ') + '...';
+    input.placeholder = 'Chercher un(e) ' + (skill.entity_types || []).map(t => (typeof SkillsEngine !== 'undefined' && SkillsEngine.ENTITY_LABELS[t]) || t).join(' / ') + '...';
     if (slash) slash.textContent = '>';
 
     _renderEntityList('');
@@ -232,7 +244,7 @@ const CommandPalette = (() => {
           <span class="cmd-palette-item-name">${_escHtml(ent.label)}</span>
           ${ent.sub ? `<span class="cmd-palette-item-desc">${_escHtml(ent.sub)}</span>` : ''}
         </div>
-        <span class="cmd-palette-badge">${SkillsEngine.ENTITY_LABELS[ent.type] || ent.type}</span>
+        <span class="cmd-palette-badge">${(typeof SkillsEngine !== 'undefined' && SkillsEngine.ENTITY_LABELS[ent.type]) || ent.type}</span>
       </div>
     `).join('');
 
@@ -322,7 +334,18 @@ const CommandPalette = (() => {
 
   function _initGlobalListener() {
     document.addEventListener('keydown', (e) => {
-      if (e.key !== '/' || _open) return;
+      // Ctrl+K / Cmd+K — always opens, regardless of focus
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        if (_open) { close(); } else { open(); }
+        return;
+      }
+
+      if (e.key !== '/') return;
+      if (_open) {
+        console.warn('[CommandPalette] / pressed but palette already open');
+        return;
+      }
 
       const el = document.activeElement;
       const tag = el?.tagName;
@@ -345,6 +368,7 @@ const CommandPalette = (() => {
       e.preventDefault();
       open();
     });
+    console.log('[CommandPalette] Global listener registered');
   }
 
   // Auto-init
