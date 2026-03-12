@@ -2410,71 +2410,88 @@ if (typeof Store !== 'undefined' && Store.onSyncError) {
       if (age < STALE_THRESHOLD) return; // All good
     }
 
-    // Show banner based on cached info
-    if (lastSuccess || lastError) {
-      showBanner(lastSuccess, lastError);
-    }
-
-    // Background check the backup bin if we haven't checked recently
+    // If localStorage is stale, check server before showing banner
+    // (the scheduled backup updates Netlify Blobs but not localStorage)
     if (!lastCheck || (now - parseInt(lastCheck)) > CHECK_INTERVAL) {
       checkBackupBin();
+    } else if (lastSuccess || lastError) {
+      // Only show banner from cache if we've checked recently
+      showBanner(lastSuccess, lastError);
     }
   }
 
   async function checkBackupBin() {
-    const binId = ATS_CONFIG.bins?.backups;
-    if (!binId) return; // Backup bin not yet created
+    let status = null;
 
+    // 1. Try Netlify Blobs first — the scheduled backup always writes here
     try {
-      const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
-        headers: { 'X-Master-Key': ATS_CONFIG.apiKey }
-      });
-
-      if (!res.ok) return;
-
-      const result = await res.json();
-      const container = result.record || {};
-      const status = container.status || {};
-
-      localStorage.setItem(LS_LAST_CHECK, Date.now().toString());
-
-      if (status.last_success) {
-        localStorage.setItem(LS_LAST_SUCCESS, status.last_success);
+      const blobRes = await fetch('/.netlify/functions/store?entity=_backup_status');
+      if (blobRes.ok) {
+        const blobStatus = await blobRes.json();
+        if (blobStatus && typeof blobStatus === 'object' && blobStatus.last_success) {
+          status = blobStatus;
+        }
       }
+    } catch (_) {}
 
-      if (status.result === 'error' && status.error) {
-        localStorage.setItem(LS_LAST_ERROR, JSON.stringify({
-          date: status.last_run,
-          message: status.error
-        }));
+    // 2. Fallback to JSONBin backup bin
+    if (!status) {
+      const binId = ATS_CONFIG.bins?.backups;
+      if (!binId) return;
+
+      try {
+        const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+          headers: { 'X-Master-Key': ATS_CONFIG.apiKey }
+        });
+
+        if (!res.ok) return;
+
+        const result = await res.json();
+        const container = result.record || {};
+        status = container.status || {};
+      } catch (e) {
+        console.warn('Backup monitor check failed:', e.message);
+        return;
+      }
+    }
+
+    if (!status) return;
+
+    localStorage.setItem(LS_LAST_CHECK, Date.now().toString());
+
+    if (status.last_success) {
+      localStorage.setItem(LS_LAST_SUCCESS, status.last_success);
+    }
+
+    if (status.result === 'error' && status.error) {
+      localStorage.setItem(LS_LAST_ERROR, JSON.stringify({
+        date: status.last_run,
+        message: status.error
+      }));
+    } else {
+      localStorage.removeItem(LS_LAST_ERROR);
+    }
+
+    // Re-evaluate after fresh data
+    const now = Date.now();
+    const dismissed = localStorage.getItem(LS_DISMISSED);
+    if (dismissed && (now - parseInt(dismissed)) < DISMISS_DURATION) return;
+
+    if (status.last_success) {
+      const age = now - new Date(status.last_success).getTime();
+      if (age >= STALE_THRESHOLD) {
+        showBanner(status.last_success, status.result === 'error' ? JSON.stringify({ date: status.last_run, message: status.error }) : null);
       } else {
-        localStorage.removeItem(LS_LAST_ERROR);
+        removeBanner();
       }
+    }
 
-      // Re-evaluate after fresh data
-      const now = Date.now();
-      const dismissed = localStorage.getItem(LS_DISMISSED);
-      if (dismissed && (now - parseInt(dismissed)) < DISMISS_DURATION) return;
-
-      if (status.last_success) {
-        const age = now - new Date(status.last_success).getTime();
-        if (age >= STALE_THRESHOLD) {
-          showBanner(status.last_success, status.result === 'error' ? JSON.stringify({ date: status.last_run, message: status.error }) : null);
-        } else {
-          removeBanner();
-        }
+    // Send email alert if Gmail is configured and there's a new error
+    if (status.result === 'error' && status.error) {
+      const notifiedKey = 'ats_backup_alert_notified_' + status.last_run;
+      if (!localStorage.getItem(notifiedKey) && typeof Backup !== 'undefined' && typeof Gmail !== 'undefined') {
+        trySendEmailAlert(status, notifiedKey);
       }
-
-      // Send email alert if Gmail is configured and there's a new error
-      if (status.result === 'error' && status.error) {
-        const notifiedKey = 'ats_backup_alert_notified_' + status.last_run;
-        if (!localStorage.getItem(notifiedKey) && typeof Backup !== 'undefined' && typeof Gmail !== 'undefined') {
-          trySendEmailAlert(status, notifiedKey);
-        }
-      }
-    } catch (e) {
-      // Silent fail — don't block the page
-      console.warn('Backup monitor check failed:', e.message);
     }
   }
 
